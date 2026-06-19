@@ -740,6 +740,21 @@ const PLATFORM_PROFILES = {
         ]
       },
       {
+        id: "home-feed-ads",
+        labelKey: "surfaceHide.youtube.homeAds",
+        // Site-wide: in-feed promoted cards + the home masthead/banner ad.
+        // Not tied to the author axis, so app-scoped.
+        selectors: [
+          "ytd-ad-slot-renderer",
+          "ytd-in-feed-ad-layout-renderer",
+          "ytd-rich-item-renderer:has(ytd-ad-slot-renderer)",
+          "ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer)",
+          "ytd-rich-section-renderer:has(ytd-statement-banner-renderer)",
+          "ytd-rich-section-renderer:has(ytd-ad-slot-renderer)",
+          "#masthead-ad"
+        ]
+      },
+      {
         id: "comments",
         labelKey: "surfaceHide.youtube.comments",
         selectors: ["ytd-comments#comments", "#comments"]

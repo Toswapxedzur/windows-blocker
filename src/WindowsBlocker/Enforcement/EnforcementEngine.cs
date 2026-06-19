@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using WindowsBlocker.Bridge;
 using WindowsBlocker.Core;
 using WindowsBlocker.WebUI;
 
@@ -23,15 +24,20 @@ public sealed class EnforcementEngine
 {
     private readonly WebStore _store;
     private readonly BlockedAppRegistry _registry;
+    private readonly ConnectionHub? _hub;
     private readonly double _tickSeconds;
     private IntPtr _selfWindow;
+    // Groups whose local total has already been seeded into the shared cluster
+    // budget, so subsequent reports send only this tick's increment.
+    private readonly HashSet<string> _clusterSeeded = new();
 
     public BlockedAppRegistry Registry => _registry;
 
-    public EnforcementEngine(WebStore store, BlockedAppRegistry registry, double tickSeconds = 1.0)
+    public EnforcementEngine(WebStore store, BlockedAppRegistry registry, ConnectionHub? hub = null, double tickSeconds = 1.0)
     {
         _store = store;
         _registry = registry;
+        _hub = hub;
         _tickSeconds = tickSeconds;
     }
 
@@ -122,22 +128,71 @@ public sealed class EnforcementEngine
             return true;
         }, IntPtr.Zero);
 
-        // Accrue time for timed groups whose target is currently running.
+        // Accrue time for timed groups whose target is currently running. For a
+        // clustered group (linked over the web-app bridge) the cluster owns ONE
+        // shared budget: we report this tick's local increment to the hub and
+        // fold the authoritative shared total back into the local timer, so the
+        // Windows countdown + enforcement reflect time spent on every linked
+        // member (e.g. browser website time) — exactly like the macOS app.
         var usageUpdates = new Dictionary<string, double>();
+        var resetUpdates = new Dictionary<string, double>();
         foreach (var group in timedGroupsToMaybeAccrue)
         {
             var running = group.Targets
                 .Where(t => t.Kind == BlockTarget.TargetKind.Application)
                 .Any(t => TargetRunning(t.NormalizedValue, runningPaths, runningNames));
+
+            var current = timers.TimersMs.GetValueOrDefault(group.Id, 0);
+            var addedMs = 0.0;
             if (running)
             {
-                var current = timers.TimersMs.GetValueOrDefault(group.Id, 0);
-                usageUpdates[group.Id] = current + _tickSeconds * 1000.0;
+                addedMs = _tickSeconds * 1000.0;
+                current += addedMs;
+                usageUpdates[group.Id] = current;
+            }
+
+            // The gate keeps non-bridge groups entirely local: SharedUsage is null
+            // unless this group is actually in a cluster involving this app.
+            if (_hub != null && _hub.SharedUsage(group.Name) != null)
+            {
+                if (_clusterSeeded.Contains(group.Id))
+                {
+                    // resetAtMs:0 — the browser is the reset authority; our local
+                    // window anchor isn't comparable, so we never drive rollover.
+                    _hub.ReportLocalUsage(group.Name, addedMs, 0);
+                }
+                else
+                {
+                    // First report since joining: seed the shared budget with our
+                    // current local total (no delta) so prior usage is preserved.
+                    _hub.ReportLocalUsage(group.Name, 0, 0, current);
+                    _clusterSeeded.Add(group.Id);
+                }
+
+                var shared = _hub.SharedUsage(group.Name);
+                if (shared.HasValue)
+                {
+                    var total = Math.Max(0, shared.Value.Ms);
+                    if (Math.Abs(current - total) > 0.5)
+                    {
+                        usageUpdates[group.Id] = total;
+                    }
+                    if (shared.Value.ResetAtMs > 0
+                        && Math.Abs(timers.ResetAtMs.GetValueOrDefault(group.Id, -1) - shared.Value.ResetAtMs) > 0.5)
+                    {
+                        resetUpdates[group.Id] = shared.Value.ResetAtMs;
+                    }
+                }
+            }
+            else
+            {
+                // Not clustered: forget any seed flag so a future re-link re-seeds.
+                _clusterSeeded.Remove(group.Id);
             }
         }
-        if (usageUpdates.Count > 0)
+        if (usageUpdates.Count > 0 || resetUpdates.Count > 0)
         {
-            _store.WriteUsage(usageUpdates, new Dictionary<string, double>());
+            _store.WriteUsage(usageUpdates, resetUpdates);
         }
 
         return new EnforcementStatus

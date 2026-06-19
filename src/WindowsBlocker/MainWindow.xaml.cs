@@ -8,6 +8,7 @@ using System.Windows.Interop;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
+using WindowsBlocker.Bridge;
 using WindowsBlocker.Enforcement;
 using WindowsBlocker.SelfPreservation;
 using WindowsBlocker.WebUI;
@@ -21,6 +22,7 @@ public partial class MainWindow : Window
 
     private readonly WebStore _store = new();
     private readonly BlockedAppRegistry _registry = new();
+    private readonly ConnectionHub _hub = new();
     private readonly EnforcementEngine _engine;
     private readonly SelfPreservationGuard _guard = new();
     private WinEventMonitor? _monitor;
@@ -30,7 +32,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        _engine = new EnforcementEngine(_store, _registry);
+        _engine = new EnforcementEngine(_store, _registry, _hub);
         _store.SeedIfNeeded();
         Loaded += OnLoaded;
         Closing += OnClosing;
@@ -42,6 +44,13 @@ public partial class MainWindow : Window
         _engine.SetSelfWindow(_selfHwnd);
         await InitWebViewAsync();
         StartMonitorAndTimer();
+
+        // Bring the bridge up if the user previously enabled it (same as macOS,
+        // which auto-starts the hub on launch from the persisted setting).
+        if (_store.LoadConnectionServerEnabled())
+        {
+            _hub.Start();
+        }
     }
 
     private async System.Threading.Tasks.Task InitWebViewAsync()
@@ -74,8 +83,45 @@ public partial class MainWindow : Window
         core.AddWebResourceRequestedFilter("*app-inventory.json", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += OnWebResourceRequested;
         core.NewWindowRequested += (_, args) => args.Handled = true;
+        core.NavigationCompleted += OnNavigationCompleted;
 
         core.Navigate($"https://{VirtualHost}/popup.html");
+    }
+
+    private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+    {
+        if (!e.IsSuccess || Web.CoreWebView2 is null)
+        {
+            return;
+        }
+        // Push the live application inventory directly into the editor. WebView2
+        // serves virtual-host paths from the mapped folder and does not reliably
+        // raise WebResourceRequested for them, so chrome-shim's fetch of the
+        // (non-existent) app-inventory.json file can 404. Pushing the data via the
+        // same __cbApplyAppInventory hook makes the app picker deterministic and
+        // removes the dependency on intercepting that request.
+        PushAppInventory();
+        // Seed the bridge UI immediately rather than waiting for the first tick.
+        PushConnectionState();
+        PushClusters();
+    }
+
+    private void PushAppInventory()
+    {
+        if (Web.CoreWebView2 is null)
+        {
+            return;
+        }
+        try
+        {
+            var json = AppInventory.BuildJson();
+            _ = Web.CoreWebView2.ExecuteScriptAsync(
+                $"window.__cbApplyAppInventory && window.__cbApplyAppInventory({json});");
+        }
+        catch
+        {
+            // A failure to enumerate apps must not break editor load.
+        }
     }
 
     private static string SeedScript(string storeJson)
@@ -112,6 +158,37 @@ public partial class MainWindow : Window
                         _store.SaveRaw(store.GetRawText());
                     }
                     break;
+
+                // Web-app bridge: the editor drives the local hub through cbBridge,
+                // exactly as the macOS BlockerWebView wires ConnectionHub. Each
+                // message carries the original sendMessage payload under "message".
+                case "connection-server-start":
+                    _hub.Start();
+                    PushConnectionState();
+                    break;
+                case "connection-server-stop":
+                    _hub.Stop();
+                    PushConnectionState();
+                    break;
+                case "connection-status":
+                    PushConnectionState();
+                    break;
+                case "groups-announce":
+                    _hub.AnnounceFromBridge(MessageJson(root));
+                    break;
+                case "group-connect":
+                    _hub.ConnectFromBridge(MessageJson(root));
+                    break;
+                case "group-disconnect":
+                    _hub.DisconnectFromBridge(MessageJson(root));
+                    break;
+                case "group-sync":
+                    _hub.SyncFromBridge(MessageJson(root));
+                    break;
+                case "clusters-status":
+                    PushClusters();
+                    break;
+
                 // run-custom-group and the custom-rule surface are intentionally
                 // not wired: custom JavaScript rules are out of scope for the port.
                 // Snooze/freeze state rides along inside the persisted store.
@@ -164,11 +241,57 @@ public partial class MainWindow : Window
             _engine.Tick();
             PushUsage();
             PushPermission();
+            // Mirror macOS: push live bridge status / clusters / rejections each
+            // second so the editor's connection panel stays current.
+            PushConnectionState();
+            PushClusters();
+            PushGroupRejection();
         }
         catch
         {
             // Swallow and continue on the next tick.
         }
+    }
+
+    /// Extracts the inner sendMessage payload the chrome-shim wraps as `message`.
+    private static string MessageJson(JsonElement root) =>
+        root.TryGetProperty("message", out var message) ? message.GetRawText() : "{}";
+
+    private void PushConnectionState()
+    {
+        if (Web.CoreWebView2 is null)
+        {
+            return;
+        }
+        var json = _hub.CurrentStatusJson();
+        _ = Web.CoreWebView2.ExecuteScriptAsync(
+            $"window.__cbConnectionState && window.__cbConnectionState({json});");
+    }
+
+    private void PushClusters()
+    {
+        if (Web.CoreWebView2 is null)
+        {
+            return;
+        }
+        var json = _hub.ClustersJson();
+        _ = Web.CoreWebView2.ExecuteScriptAsync(
+            $"window.__cbClustersState && window.__cbClustersState({json});");
+    }
+
+    private void PushGroupRejection()
+    {
+        if (Web.CoreWebView2 is null)
+        {
+            return;
+        }
+        var json = _hub.TakeLocalRejectionJson();
+        if (json is null)
+        {
+            return;
+        }
+        _ = Web.CoreWebView2.ExecuteScriptAsync(
+            $"window.__cbGroupRejected && window.__cbGroupRejected({json});");
     }
 
     private void PushUsage()
@@ -214,5 +337,6 @@ public partial class MainWindow : Window
         }
         _timer?.Stop();
         _monitor?.Dispose();
+        _hub.Stop();
     }
 }

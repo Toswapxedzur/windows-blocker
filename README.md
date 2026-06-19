@@ -28,6 +28,7 @@ red "X" — backed by a re-close loop so a blocked app cannot be reopened.
 | Running-app sweep | `MacProcessTerminator.swift` | `Enforcement/WindowCloser.cs` |
 | Focus/launch events | `BrowserFocusObserver.swift` | `Enforcement/WinEventMonitor.cs` |
 | App identity | macOS bundle ID | `Enforcement/ProcessIdentity.cs` (exe path + UWP AUMID descent) |
+| Web-app bridge hub | `ConnectionHub.swift` | `Bridge/ConnectionHub.cs` |
 
 ## Enforcement model (the red "X")
 
@@ -51,6 +52,31 @@ red "X" — backed by a re-close loop so a blocked app cannot be reopened.
 - A **hard** `TerminateProcess` (Task Manager "End process") cannot be
   intercepted from user space; self-preservation only covers cooperative quits.
 - **Elevated** apps cannot be closed by this non-elevated process (Windows UIPI).
+
+## Web-app bridge (acts as a server, like macOS)
+
+windowsBlocker hosts the **same loopback WebSocket hub** the macOS app runs, so
+the `customBlocker` browser extension links to it identically — the extension is
+OS-agnostic and always dials `ws://127.0.0.1:8787`, so no extension change was
+needed. `Bridge/ConnectionHub.cs` is a faithful port of `ConnectionHub.swift`:
+
+- **Loopback only.** Binds `http://127.0.0.1:8787/` (a literal-loopback prefix
+  needs no `netsh urlacl` / admin), so the hub is never exposed on the LAN.
+- **Per-group clusters.** Same-named, unfrozen groups on two programs link into a
+  cluster with one shared budget; scalars are last-writer-wins, block lists are
+  unioned (apps from this app, sites from browsers), freeze takes the most
+  restrictive member, and the usage timer is a delta accumulator.
+- **Auto-start + persistence.** The hub auto-starts on launch when the editor's
+  "Web-app bridge" server toggle was last enabled, and the cluster registry is
+  persisted to `clusters.json` so links survive a restart — same as macOS.
+- **Editor wiring.** The embedded editor drives the hub through the `cbBridge`
+  channel (`connection-server-start/stop`, `groups-announce`, `group-connect`,
+  `group-disconnect`, `group-sync`, `clusters-status`) and the hub pushes
+  `__cbConnectionState` / `__cbClustersState` / `__cbGroupRejected` each second.
+
+> The first connect may need a Windows Defender Firewall allow on the private
+> network; loopback traffic is normally permitted without a prompt. Safari is
+> not relevant on Windows (it uses native messaging on macOS, not this socket).
 
 ## Scope
 
