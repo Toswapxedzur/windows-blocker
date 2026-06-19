@@ -146,6 +146,22 @@ public sealed class WebStore
         return result;
     }
 
+    // Reads globalSettings.connection.serverEnabled so the hub can auto-start on
+    // launch if the user previously enabled it (same behavior as the macOS app).
+    public bool LoadConnectionServerEnabled()
+    {
+        var root = LoadObject();
+        if (root?["globalSettings"] is not JsonObject settings)
+        {
+            return false;
+        }
+        if (settings["connection"] is not JsonObject connection)
+        {
+            return false;
+        }
+        return connection["serverEnabled"]?.GetValueKind() == JsonValueKind.True;
+    }
+
     private JsonObject? LoadObject()
     {
         var json = LoadRawJson();
