@@ -52,7 +52,7 @@ public partial class MainWindow : Window
             UserDataFolder = Path.Combine(Storage.RootDirectory, "WebView2")
         };
         await Web.EnsureCoreWebView2Async();
-        var core = Web.CoreWebView2;
+        var core = Web.CoreWebView2!;
 
         core.SetVirtualHostNameToFolderMapping(VirtualHost, assets, CoreWebView2HostResourceAccessKind.Allow);
         core.Settings.AreDefaultContextMenusEnabled = false;
@@ -157,9 +157,18 @@ public partial class MainWindow : Window
 
     private void OnTick(object? sender, EventArgs e)
     {
-        _engine.Tick();
-        PushUsage();
-        PushPermission();
+        // A transient failure (e.g. a momentarily malformed store write) must
+        // never kill the enforcement timer, or blocking would silently stop.
+        try
+        {
+            _engine.Tick();
+            PushUsage();
+            PushPermission();
+        }
+        catch
+        {
+            // Swallow and continue on the next tick.
+        }
     }
 
     private void PushUsage()

@@ -9,7 +9,6 @@
     <AssemblyName>WindowsBlocker</AssemblyName>
     <RootNamespace>WindowsBlocker</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Platforms>x64;ARM64</Platforms>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
@@ -22,7 +21,7 @@
   <ItemGroup>
     <!-- The customBlocker web UI, copied verbatim. Shipped next to the exe and
          served to WebView2 via a virtual host mapping. -->
-    <Content Include="WebAssets/**/*">
+    <Content Include="WebAssets/**/*" Exclude="WebAssets/**/.DS_Store">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

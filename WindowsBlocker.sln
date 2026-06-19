@@ -6,19 +6,16 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WindowsBlocker", "src\Windo
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
-		Debug|x64 = Debug|x64
-		Release|x64 = Release|x64
-		Debug|ARM64 = Debug|ARM64
-		Release|ARM64 = Release|ARM64
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{B1F0A0E1-2C3D-4E5F-8A9B-0C1D2E3F4A5B}.Debug|x64.ActiveCfg = Debug|x64
-		{B1F0A0E1-2C3D-4E5F-8A9B-0C1D2E3F4A5B}.Debug|x64.Build.0 = Debug|x64
-		{B1F0A0E1-2C3D-4E5F-8A9B-0C1D2E3F4A5B}.Release|x64.ActiveCfg = Release|x64
-		{B1F0A0E1-2C3D-4E5F-8A9B-0C1D2E3F4A5B}.Release|x64.Build.0 = Release|x64
-		{B1F0A0E1-2C3D-4E5F-8A9B-0C1D2E3F4A5B}.Debug|ARM64.ActiveCfg = Debug|ARM64
-		{B1F0A0E1-2C3D-4E5F-8A9B-0C1D2E3F4A5B}.Debug|ARM64.Build.0 = Debug|ARM64
-		{B1F0A0E1-2C3D-4E5F-8A9B-0C1D2E3F4A5B}.Release|ARM64.ActiveCfg = Release|ARM64
-		{B1F0A0E1-2C3D-4E5F-8A9B-0C1D2E3F4A5B}.Release|ARM64.Build.0 = Release|ARM64
+		{B1F0A0E1-2C3D-4E5F-8A9B-0C1D2E3F4A5B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B1F0A0E1-2C3D-4E5F-8A9B-0C1D2E3F4A5B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B1F0A0E1-2C3D-4E5F-8A9B-0C1D2E3F4A5B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B1F0A0E1-2C3D-4E5F-8A9B-0C1D2E3F4A5B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
 	EndGlobalSection
 EndGlobal
