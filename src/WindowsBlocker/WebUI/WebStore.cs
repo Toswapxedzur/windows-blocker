@@ -140,7 +140,7 @@ public sealed class WebStore
                 StartsAt = MsToDate(d["startsAtMs"]),
                 Until = MsToDate(d["untilMs"]),
                 CooldownUntil = MsToDate(d["cooldownUntilMs"]),
-                Justification = d["justification"]?.GetValue<string>() ?? ""
+                Justification = StringValue(d["justification"])
             };
         }
         return result;
@@ -193,6 +193,9 @@ public sealed class WebStore
         }
         return result;
     }
+
+    private static string StringValue(JsonNode? node) =>
+        node is not null && node.GetValueKind() == JsonValueKind.String ? node.GetValue<string>() : "";
 
     private static DateTimeOffset? MsToDate(JsonNode? node)
     {
