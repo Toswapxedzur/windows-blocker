@@ -106,7 +106,7 @@ public partial class MainWindow : Window
         PushClusters();
     }
 
-    private void PushAppInventory()
+    private async void PushAppInventory()
     {
         if (Web.CoreWebView2 is null)
         {
@@ -114,7 +114,13 @@ public partial class MainWindow : Window
         }
         try
         {
-            var json = AppInventory.BuildJson();
+            // Enumerating installed apps (Shell COM) + extracting icons is heavy,
+            // so it runs off the UI thread; push the result once it's ready.
+            var json = await AppInventory.BuildJsonAsync().ConfigureAwait(true);
+            if (Web.CoreWebView2 is null)
+            {
+                return;
+            }
             _ = Web.CoreWebView2.ExecuteScriptAsync(
                 $"window.__cbApplyAppInventory && window.__cbApplyAppInventory({json});");
         }
@@ -210,7 +216,7 @@ public partial class MainWindow : Window
             {
                 return;
             }
-            var json = AppInventory.BuildJson();
+            var json = AppInventory.CachedJson();
             var bytes = Encoding.UTF8.GetBytes(json);
             var stream = new MemoryStream(bytes);
             e.Response = Web.CoreWebView2.Environment.CreateWebResourceResponse(

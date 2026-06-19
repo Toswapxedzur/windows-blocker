@@ -107,6 +107,7 @@ public sealed class EnforcementEngine
         // close any currently-open blocked windows (the tick backstop).
         var runningPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var runningNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var runningAumids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var closed = 0;
         NativeMethods.EnumWindows((hwnd, _) =>
         {
@@ -119,6 +120,7 @@ public sealed class EnforcementEngine
             {
                 if (!string.IsNullOrEmpty(identity.ExecutablePath)) runningPaths.Add(identity.ExecutablePath);
                 if (!string.IsNullOrEmpty(identity.ExecutableName)) runningNames.Add(identity.ExecutableName);
+                if (!string.IsNullOrEmpty(identity.Aumid)) runningAumids.Add(identity.Aumid);
                 if (_registry.IsBlocked(identity))
                 {
                     WindowCloser.CloseWindow(hwnd);
@@ -140,7 +142,7 @@ public sealed class EnforcementEngine
         {
             var running = group.Targets
                 .Where(t => t.Kind == BlockTarget.TargetKind.Application)
-                .Any(t => TargetRunning(t.NormalizedValue, runningPaths, runningNames));
+                .Any(t => TargetRunning(t.NormalizedValue, runningPaths, runningNames, runningAumids));
 
             var current = timers.TimersMs.GetValueOrDefault(group.Id, 0);
             var addedMs = 0.0;
@@ -207,12 +209,16 @@ public sealed class EnforcementEngine
     public void OnWindowEvent(IntPtr hwnd) =>
         WindowCloser.CloseIfBlocked(hwnd, _registry, _selfWindow);
 
-    private static bool TargetRunning(string normalizedValue, HashSet<string> paths, HashSet<string> names)
+    private static bool TargetRunning(string normalizedValue, HashSet<string> paths, HashSet<string> names, HashSet<string> aumids)
     {
         var value = normalizedValue.Trim().ToLowerInvariant();
         if (value.Length == 0)
         {
             return false;
+        }
+        if (value.Contains('!'))
+        {
+            return aumids.Contains(value);
         }
         if (value.Contains('\\') || value.Contains('/'))
         {

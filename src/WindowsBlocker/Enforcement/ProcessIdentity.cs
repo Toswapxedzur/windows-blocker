@@ -14,8 +14,13 @@ public sealed class AppIdentity
     public uint ProcessId { get; init; }
     public string ExecutablePath { get; init; } = "";
     public string ExecutableName { get; init; } = "";
+    // Application User Model ID for packaged (UWP/Store) apps, lowercased. Empty
+    // for unpackaged Win32 apps. This is the only stable identity a Store app the
+    // user picked while it wasn't running can be matched by, since its on-disk
+    // executable path under WindowsApps isn't knowable from the picker.
+    public string Aumid { get; init; } = "";
 
-    public bool IsEmpty => ProcessId == 0 && ExecutablePath.Length == 0;
+    public bool IsEmpty => ProcessId == 0 && ExecutablePath.Length == 0 && Aumid.Length == 0;
 }
 
 public static class ProcessIdentity
@@ -44,7 +49,13 @@ public static class ProcessIdentity
             }
         }
 
-        return new AppIdentity { ProcessId = pid, ExecutablePath = path, ExecutableName = name };
+        return new AppIdentity
+        {
+            ProcessId = pid,
+            ExecutablePath = path,
+            ExecutableName = name,
+            Aumid = AumidForProcess(pid)
+        };
     }
 
     private static AppIdentity RealOwnerOfFrameHost(IntPtr frameWindow, uint frameHostPid)
@@ -62,7 +73,8 @@ public static class ProcessIdentity
                     {
                         ProcessId = childPid,
                         ExecutablePath = path,
-                        ExecutableName = Path.GetFileName(path).ToLowerInvariant()
+                        ExecutableName = Path.GetFileName(path).ToLowerInvariant(),
+                        Aumid = AumidForProcess(childPid)
                     };
                     return false; // stop enumerating
                 }
@@ -70,6 +82,43 @@ public static class ProcessIdentity
             return true;
         }, IntPtr.Zero);
         return found;
+    }
+
+    // Resolves the lowercased Application User Model ID of a packaged process, or
+    // "" when the process is unpackaged (plain Win32) or inaccessible.
+    public static string AumidForProcess(uint pid)
+    {
+        var handle = NativeMethods.OpenProcess(NativeMethods.PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (handle == IntPtr.Zero)
+        {
+            return "";
+        }
+        try
+        {
+            uint length = 0;
+            // First call sizes the buffer (returns ERROR_INSUFFICIENT_BUFFER); a
+            // length of 0 means the process has no app model identity.
+            NativeMethods.GetApplicationUserModelId(handle, ref length, null);
+            if (length == 0)
+            {
+                return "";
+            }
+            var buffer = new char[length];
+            var rc = NativeMethods.GetApplicationUserModelId(handle, ref length, buffer);
+            if (rc != 0)
+            {
+                return "";
+            }
+            return new string(buffer, 0, (int)Math.Max(0, length - 1)).TrimEnd('\0').ToLowerInvariant();
+        }
+        catch
+        {
+            return "";
+        }
+        finally
+        {
+            NativeMethods.CloseHandle(handle);
+        }
     }
 
     public static string PathForProcess(uint pid)
