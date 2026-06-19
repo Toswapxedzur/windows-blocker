@@ -1,0 +1,24 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+ARM64/
+*.user
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.suo
+
+# NuGet
+*.nupkg
+packages/
+
+# WebView2 runtime user data (if ever created in-tree)
+WebView2/
+
+# OS
+.DS_Store
+Thumbs.db
