@@ -77,4 +77,11 @@ internal static class NativeMethods
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     public static extern bool QueryFullProcessImageName(
         IntPtr hProcess, uint dwFlags, StringBuilder lpExeName, ref uint lpdwSize);
+
+    // Returns the package Application User Model ID for a packaged (UWP/Store)
+    // process. ERROR_SUCCESS (0) on success; APPMODEL_ERROR_NO_APPLICATION for an
+    // unpackaged process; ERROR_INSUFFICIENT_BUFFER (122) sizes the buffer.
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetApplicationUserModelId(
+        IntPtr hProcess, ref uint applicationUserModelIdLength, char[]? applicationUserModelId);
 }

@@ -28,6 +28,7 @@ red "X" — backed by a re-close loop so a blocked app cannot be reopened.
 | Running-app sweep | `MacProcessTerminator.swift` | `Enforcement/WindowCloser.cs` |
 | Focus/launch events | `BrowserFocusObserver.swift` | `Enforcement/WinEventMonitor.cs` |
 | App identity | macOS bundle ID | `Enforcement/ProcessIdentity.cs` (exe path + UWP AUMID descent) |
+| App picker inventory | installed `.app` scan | `WebUI/InstalledAppCatalog.cs` + `WebUI/AppInventory.cs` |
 | Web-app bridge hub | `ConnectionHub.swift` | `Bridge/ConnectionHub.cs` |
 
 ## Enforcement model (the red "X")
@@ -52,6 +53,26 @@ red "X" — backed by a re-close loop so a blocked app cannot be reopened.
 - A **hard** `TerminateProcess` (Task Manager "End process") cannot be
   intercepted from user space; self-preservation only covers cooperative quits.
 - **Elevated** apps cannot be closed by this non-elevated process (Windows UIPI).
+
+## App picker (lists installed apps, like macOS)
+
+Where macOS lists every installed `.app`, the picker enumerates every launchable
+app via the Shell **AppsFolder** (`shell:AppsFolder` — the Start menu's "All
+apps"), so apps that **aren't running right now** are still selectable, including
+**UWP/Store** apps (`WebUI/InstalledAppCatalog.cs`). Each entry carries its real
+icon (extracted via `IShellItemImageFactory` → PNG data URL).
+
+Identity is chosen so what you pick is exactly what gets blocked:
+
+- **UWP/Store app** → its **AUMID** (`PackageFamily!AppId`). A running Store
+  window is matched by AUMID via `GetApplicationUserModelId`, so it blocks even
+  though its on-disk path under `WindowsApps` is never exposed to the picker.
+- **Win32 desktop app** → its target **executable path** (matched by path/name).
+
+`WebUI/AppInventory.cs` runs this on a dedicated STA thread (Shell COM needs it),
+then folds in any currently-running, windowed, *unpackaged* app missing from the
+AppsFolder (e.g. portable exes). The result is pushed into the editor via
+`window.__cbApplyAppInventory(...)` after navigation completes.
 
 ## Web-app bridge (acts as a server, like macOS)
 
