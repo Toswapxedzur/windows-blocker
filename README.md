@@ -29,6 +29,7 @@ red "X" — backed by a re-close loop so a blocked app cannot be reopened.
 | Focus/launch events | `BrowserFocusObserver.swift` | `Enforcement/WinEventMonitor.cs` |
 | App identity | macOS bundle ID | `Enforcement/ProcessIdentity.cs` (exe path + UWP AUMID descent) |
 | App picker inventory | installed `.app` scan | `WebUI/InstalledAppCatalog.cs` + `WebUI/AppInventory.cs` |
+| Timer overlay HUD | `TimerOverlayPanel.swift` | `TimerOverlayWindow.xaml(.cs)` |
 | Web-app bridge hub | `ConnectionHub.swift` | `Bridge/ConnectionHub.cs` |
 
 ## Enforcement model (the red "X")
@@ -73,6 +74,23 @@ Identity is chosen so what you pick is exactly what gets blocked:
 then folds in any currently-running, windowed, *unpackaged* app missing from the
 AppsFolder (e.g. portable exes). The result is pushed into the editor via
 `window.__cbApplyAppInventory(...)` after navigation completes.
+
+## Timer overlay HUD (floats over other apps, like macOS)
+
+`TimerOverlayWindow` is the Windows analog of macOS's `TimerOverlayPanel`: a
+borderless, always-on-top, **click-through** window that shows the live
+`Name: MM:SS` countdown for every timed group that is currently counting down. It
+never steals focus and passes all input to the window beneath it
+(`WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE`), and is hidden from
+Alt-Tab (`WS_EX_TOOLWINDOW`). It is fed each second from the `EnforcementStatus`
+the engine already produces, and auto-hides when nothing is counting down.
+
+- **Placement:** top-left of the primary work area (16px inset), matching macOS.
+- **Known limit:** topmost floats over normal/maximized/fullscreen-video windows,
+  but a true *exclusive*-fullscreen app (some games) can still cover it — there is
+  no Windows equivalent of macOS's screen-saver window level.
+- **Not yet ported:** the toast/log overlay and custom-rule interactive panels
+  (the latter depend on the custom-JS rule runtime, which is out of scope).
 
 ## Web-app bridge (acts as a server, like macOS)
 

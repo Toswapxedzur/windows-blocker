@@ -1,0 +1,18 @@
+<Window x:Class="WindowsBlocker.TimerOverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Topmost="True" ShowInTaskbar="False" ShowActivated="False"
+        ResizeMode="NoResize" SizeToContent="WidthAndHeight"
+        Focusable="False" IsHitTestVisible="False">
+    <Border CornerRadius="10" Padding="10,8" Background="#DB0F172A" SnapsToDevicePixels="True">
+        <ItemsControl x:Name="Rows">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock Text="{Binding}" Foreground="#F8FAFC"
+                               FontFamily="Consolas" FontSize="13" Margin="0,1"/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </Border>
+</Window>
