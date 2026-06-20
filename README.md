@@ -79,12 +79,17 @@ AppsFolder (e.g. portable exes). The result is pushed into the editor via
 
 `TimerOverlayWindow` is the Windows analog of macOS's `TimerOverlayPanel`: a
 borderless, always-on-top, **click-through** window that shows the live
-`Name: MM:SS` countdown for every timed group that is currently counting down. It
+`Name: MM:SS` countdown for the timed group whose app is **currently focused**
+(foreground). Time only accrues — and the HUD only appears — while that app is
+the foreground window, matching macOS's frontmost-app gating. It
 never steals focus and passes all input to the window beneath it
 (`WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE`), and is hidden from
 Alt-Tab (`WS_EX_TOOLWINDOW`). It is fed each second from the `EnforcementStatus`
 the engine already produces, and auto-hides when nothing is counting down.
 
+- **Accrual:** a timed group's budget ticks down only while its target app is the
+  foreground window (`GetForegroundWindow` → `ProcessIdentity.ForWindow`), so
+  background apps never burn time — identical to macOS `reconcileUsage`.
 - **Placement:** top-left of the primary work area (16px inset), matching macOS.
 - **Known limit:** topmost floats over normal/maximized/fullscreen-video windows,
   but a true *exclusive*-fullscreen app (some games) can still cover it — there is
