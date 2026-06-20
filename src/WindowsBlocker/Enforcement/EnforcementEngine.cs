@@ -51,6 +51,11 @@ public sealed class EnforcementEngine
         var timers = _store.LoadUsageTimers();
         var snoozes = _store.LoadSnoozes();
 
+        // Time only accrues while the target app is the FOCUSED (foreground) app,
+        // and the HUD only shows that app's countdown — exactly like macOS, which
+        // gates both accrual and the timer overlay on the frontmost application.
+        var foreground = ProcessIdentity.ForWindow(NativeMethods.GetForegroundWindow());
+
         var blockedIdentities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var blockedGroupNames = new List<string>();
         var timerItems = new List<TimerDisplayItem>();
@@ -87,7 +92,6 @@ public sealed class EnforcementEngine
                     var usedMs = timers.TimersMs.GetValueOrDefault(group.Id, 0);
                     var allowedMs = Math.Max(0, group.AllowedMinutes) * 60_000.0;
                     var remainingSeconds = Math.Max(0, (allowedMs - usedMs) / 1000.0);
-                    timerItems.Add(new TimerDisplayItem(group.Id, group.Name, remainingSeconds));
                     if (remainingSeconds <= 0)
                     {
                         foreach (var id in appTargets) blockedIdentities.Add(id);
@@ -96,6 +100,12 @@ public sealed class EnforcementEngine
                     else
                     {
                         timedGroupsToMaybeAccrue.Add(group);
+                        // HUD shows the countdown only while this group's app is
+                        // focused (macOS shows only the frontmost app's timer).
+                        if (GroupTargetsForeground(group, foreground))
+                        {
+                            timerItems.Add(new TimerDisplayItem(group.Id, group.Name, remainingSeconds));
+                        }
                     }
                     break;
             }
@@ -103,11 +113,9 @@ public sealed class EnforcementEngine
 
         _registry.Update(blockedIdentities);
 
-        // Single enumeration pass: collect running identities (for accrual) and
-        // close any currently-open blocked windows (the tick backstop).
-        var runningPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var runningNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var runningAumids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Single enumeration pass: close any currently-open blocked windows (the
+        // tick backstop). Blocking applies to every window of a blocked app,
+        // regardless of focus.
         var closed = 0;
         NativeMethods.EnumWindows((hwnd, _) =>
         {
@@ -116,22 +124,16 @@ public sealed class EnforcementEngine
                 return true;
             }
             var identity = ProcessIdentity.ForWindow(hwnd);
-            if (!identity.IsEmpty)
+            if (!identity.IsEmpty && _registry.IsBlocked(identity))
             {
-                if (!string.IsNullOrEmpty(identity.ExecutablePath)) runningPaths.Add(identity.ExecutablePath);
-                if (!string.IsNullOrEmpty(identity.ExecutableName)) runningNames.Add(identity.ExecutableName);
-                if (!string.IsNullOrEmpty(identity.Aumid)) runningAumids.Add(identity.Aumid);
-                if (_registry.IsBlocked(identity))
-                {
-                    WindowCloser.CloseWindow(hwnd);
-                    closed++;
-                }
+                WindowCloser.CloseWindow(hwnd);
+                closed++;
             }
             return true;
         }, IntPtr.Zero);
 
-        // Accrue time for timed groups whose target is currently running. For a
-        // clustered group (linked over the web-app bridge) the cluster owns ONE
+        // Accrue time for timed groups whose target app is currently FOCUSED. For
+        // a clustered group (linked over the web-app bridge) the cluster owns ONE
         // shared budget: we report this tick's local increment to the hub and
         // fold the authoritative shared total back into the local timer, so the
         // Windows countdown + enforcement reflect time spent on every linked
@@ -140,13 +142,11 @@ public sealed class EnforcementEngine
         var resetUpdates = new Dictionary<string, double>();
         foreach (var group in timedGroupsToMaybeAccrue)
         {
-            var running = group.Targets
-                .Where(t => t.Kind == BlockTarget.TargetKind.Application)
-                .Any(t => TargetRunning(t.NormalizedValue, runningPaths, runningNames, runningAumids));
+            var focused = GroupTargetsForeground(group, foreground);
 
             var current = timers.TimersMs.GetValueOrDefault(group.Id, 0);
             var addedMs = 0.0;
-            if (running)
+            if (focused)
             {
                 addedMs = _tickSeconds * 1000.0;
                 current += addedMs;
@@ -209,7 +209,23 @@ public sealed class EnforcementEngine
     public void OnWindowEvent(IntPtr hwnd) =>
         WindowCloser.CloseIfBlocked(hwnd, _registry, _selfWindow);
 
-    private static bool TargetRunning(string normalizedValue, HashSet<string> paths, HashSet<string> names, HashSet<string> aumids)
+    // True when any of the group's application targets is the focused identity —
+    // the Windows analog of macOS's `targets.contains { $0.id == frontmost }`.
+    private static bool GroupTargetsForeground(BlockGroup group, AppIdentity foreground)
+    {
+        if (foreground.IsEmpty)
+        {
+            return false;
+        }
+        return group.Targets
+            .Where(t => t.Kind == BlockTarget.TargetKind.Application)
+            .Any(t => TargetMatchesIdentity(t.NormalizedValue, foreground));
+    }
+
+    // Matches one app target value (AUMID, full path, or bare name) against a
+    // single resolved window identity. Mirrors BlockedAppRegistry's shapes; the
+    // identity's path/name/AUMID are already lowercased.
+    private static bool TargetMatchesIdentity(string normalizedValue, AppIdentity identity)
     {
         var value = normalizedValue.Trim().ToLowerInvariant();
         if (value.Length == 0)
@@ -218,13 +234,15 @@ public sealed class EnforcementEngine
         }
         if (value.Contains('!'))
         {
-            return aumids.Contains(value);
+            return !string.IsNullOrEmpty(identity.Aumid) && value == identity.Aumid;
         }
         if (value.Contains('\\') || value.Contains('/'))
         {
-            return paths.Contains(value) || names.Contains(Path.GetFileName(value));
+            return (!string.IsNullOrEmpty(identity.ExecutablePath) && value == identity.ExecutablePath)
+                || (!string.IsNullOrEmpty(identity.ExecutableName) && Path.GetFileName(value) == identity.ExecutableName);
         }
-        return names.Contains(value.EndsWith(".exe") ? value : value + ".exe");
+        var exe = value.EndsWith(".exe") ? value : value + ".exe";
+        return !string.IsNullOrEmpty(identity.ExecutableName) && exe == identity.ExecutableName;
     }
 
     private static bool IsCloseableTopLevel(IntPtr hwnd)
