@@ -27,6 +27,7 @@ public partial class MainWindow : Window
     private readonly SelfPreservationGuard _guard = new();
     private WinEventMonitor? _monitor;
     private DispatcherTimer? _timer;
+    private TimerOverlayWindow? _overlay;
     private IntPtr _selfHwnd;
 
     public MainWindow()
@@ -233,6 +234,12 @@ public partial class MainWindow : Window
         _monitor = new WinEventMonitor(hwnd => _engine.OnWindowEvent(hwnd));
         _monitor.Start();
 
+        // The floating timer HUD (macOS TimerOverlayPanel analog). Create the
+        // handle up front so the click-through extended styles are applied before
+        // it is ever shown; it stays hidden until there is a countdown to show.
+        _overlay = new TimerOverlayWindow();
+        new WindowInteropHelper(_overlay).EnsureHandle();
+
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += OnTick;
         _timer.Start();
@@ -244,7 +251,8 @@ public partial class MainWindow : Window
         // never kill the enforcement timer, or blocking would silently stop.
         try
         {
-            _engine.Tick();
+            var status = _engine.Tick();
+            _overlay?.UpdateRows(status.Timers);
             PushUsage();
             PushPermission();
             // Mirror macOS: push live bridge status / clusters / rejections each
@@ -344,5 +352,9 @@ public partial class MainWindow : Window
         _timer?.Stop();
         _monitor?.Dispose();
         _hub.Stop();
+        // Close the HUD too, or the app would keep running (it is a second
+        // top-level window under the default OnLastWindowClose shutdown mode).
+        _overlay?.Close();
+        _overlay = null;
     }
 }
