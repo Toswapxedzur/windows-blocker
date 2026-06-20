@@ -2303,7 +2303,19 @@ function renderSurfaceHides(group, draft, editable) {
     input.value = entry.id;
     input.checked = enabled.has(entry.id);
     input.disabled = !editable;
-    input.addEventListener("change", () => handleSurfaceHideChange(group.id));
+    input.addEventListener("change", () => {
+      // Some hides (e.g. hiding ads) can violate platform Terms of Service and
+      // risk the account — warn and require confirmation every time they're
+      // turned on. Cancelling reverts the checkbox without saving.
+      if (input.checked && entry.warnOnEnableKey) {
+        const accepted = window.confirm(t(entry.warnOnEnableKey));
+        if (!accepted) {
+          input.checked = false;
+          return;
+        }
+      }
+      handleSurfaceHideChange(group.id);
+    });
 
     const text = document.createElement("span");
     text.textContent = t(entry.labelKey);
@@ -3223,6 +3235,7 @@ function createDefaultGroup(groupType = DEFAULT_GROUP_TYPE) {
     sites: [],
     apps: [],
     blockHomePage: false,
+    effect: "block",
     fallbackUrl: "",
     skipToNextOnBlock: false
   };
@@ -3371,6 +3384,7 @@ function sanitizeGroups(groups) {
         : [],
       apps: sanitizeApps(group?.apps),
       blockHomePage: Boolean(group?.blockHomePage),
+      effect: group?.effect === "allow" ? "allow" : "block",
       fallbackUrl: typeof group?.fallbackUrl === "string" ? group.fallbackUrl.trim() : "",
       skipToNextOnBlock: Boolean(group?.skipToNextOnBlock)
     };
