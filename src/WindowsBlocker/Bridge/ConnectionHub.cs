@@ -43,7 +43,7 @@ public sealed class ConnectionHub
         public Peer(WebSocket socket) => Socket = socket;
     }
 
-    private readonly record struct GroupInfo(string Name, string Type, bool Frozen);
+    private readonly record struct GroupInfo(string Id, string Name, string Type, bool Frozen);
 
     private sealed class ClusterState
     {
@@ -51,6 +51,12 @@ public sealed class ConnectionHub
         public string GroupName = "";
         public string GroupType = "";
         public HashSet<string> Members = new();
+        // Per-program local group id: the specific group *instance* that program
+        // linked. Membership is pinned to this id so deleting a group and later
+        // re-creating one with the same name does NOT silently re-join the old
+        // cluster. Empty for clusters formed before id pinning; those fall back to
+        // name+type matching and are backfilled from the roster on next announce.
+        public Dictionary<string, string> MemberGroupIds = new();
         public Dictionary<string, JsonObject> Contributions = new();
         public JsonObject SharedScalars = new();
         public double SharedTs;
@@ -454,6 +460,14 @@ public sealed class ConnectionHub
     // MARK: Cluster registry API ------------------------------------------
 
     /// Records an endpoint's eligible groups. `program` "macapp" is this app.
+    ///
+    /// A roster announcement is the full current set of bridge-eligible groups for
+    /// that program (re-sent after every edit, delete, and reconnect), so it
+    /// doubles as the authoritative "decouple on delete" signal. Membership is
+    /// pinned to the linked group *instance* (its id), so a delete decouples, a
+    /// rename decouples (name changes), and a same-named group created later can't
+    /// silently re-join (new id). Works even when the peer is offline — the peer
+    /// reconciles from the clusters snapshot on its next reconnect.
     public void SetRoster(string program, JsonArray? groups)
     {
         if (string.IsNullOrEmpty(program)) return;
@@ -464,11 +478,53 @@ public sealed class ConnectionHub
             {
                 if (g is JsonObject go)
                 {
-                    infos.Add(new GroupInfo(Str(go["name"]), Str(go["type"]), Bool(go["frozen"])));
+                    infos.Add(new GroupInfo(Str(go["id"]), Str(go["name"]), Str(go["type"]), Bool(go["frozen"])));
                 }
             }
         }
-        lock (_lock) _rosters[program] = infos;
+        var snapshots = new List<string>();
+        lock (_lock)
+        {
+            _rosters[program] = infos;
+            var affected = _clusters.Values.Where(c => c.Members.Contains(program)).ToList();
+            var changed = false;
+            foreach (var cluster in affected)
+            {
+                // Backfill the pinned id for clusters formed before id pinning (or
+                // restored from disk) by matching name+type once; auto-migrates.
+                cluster.MemberGroupIds.TryGetValue(program, out var pinnedId);
+                pinnedId ??= "";
+                if (pinnedId == "")
+                {
+                    var legacy = infos.FirstOrDefault(i => i.Name == cluster.GroupName && i.Type == cluster.GroupType);
+                    if (!string.IsNullOrEmpty(legacy.Id))
+                    {
+                        pinnedId = legacy.Id;
+                        cluster.MemberGroupIds[program] = pinnedId;
+                        changed = true;
+                    }
+                }
+                // Keep the member only if its pinned instance is still present under
+                // the same name+type.
+                bool stillPresent = pinnedId == ""
+                    ? infos.Any(i => i.Name == cluster.GroupName && i.Type == cluster.GroupType)
+                    : infos.Any(i => i.Id == pinnedId && i.Name == cluster.GroupName && i.Type == cluster.GroupType);
+                if (stillPresent) continue;
+
+                cluster.Members.Remove(program);
+                cluster.MemberGroupIds.Remove(program);
+                cluster.Contributions.Remove(program);
+                if (cluster.Members.Count < 2)
+                {
+                    _clusters.Remove(cluster.Id);
+                    cluster.Members.Clear();
+                }
+                changed = true;
+                snapshots.Add(ClusterJsonObject(cluster).ToJsonString());
+            }
+            if (changed) PersistClustersLocked();
+        }
+        foreach (var snap in snapshots) BroadcastClusterText(snap);
     }
 
     /// Links the same-named group on two programs into one cluster. Requires both
@@ -501,6 +557,12 @@ public sealed class ConnectionHub
                 }
                 cluster.Members.Add(from);
                 cluster.Members.Add(to);
+                // Pin each member to the specific local group instance it linked,
+                // so a later delete + same-name re-create can't re-join this cluster.
+                var fromId = RosterGroupIdLocked(from, groupName, groupType);
+                if (!string.IsNullOrEmpty(fromId)) cluster.MemberGroupIds[from] = fromId!;
+                var toId = RosterGroupIdLocked(to, groupName, groupType);
+                if (!string.IsNullOrEmpty(toId)) cluster.MemberGroupIds[to] = toId!;
                 PersistClustersLocked();
                 snapshot = ClusterJsonObject(cluster).ToJsonString();
             }
@@ -520,6 +582,7 @@ public sealed class ConnectionHub
             if (target is null) return;
 
             target.Members.Remove(program);
+            target.MemberGroupIds.Remove(program);
             target.Contributions.Remove(program);
             if (target.Members.Count < 2)
             {
@@ -700,6 +763,18 @@ public sealed class ConnectionHub
         return infos.Any(i => i.Name == name && i.Type == type && !i.Frozen);
     }
 
+    /// Caller must hold `_lock`. The local group id for an eligible (unfrozen)
+    /// same-named group, used to pin cluster membership to a specific instance.
+    private string? RosterGroupIdLocked(string program, string name, string type)
+    {
+        if (!_rosters.TryGetValue(program, out var infos)) return null;
+        foreach (var i in infos)
+        {
+            if (i.Name == name && i.Type == type && !i.Frozen) return i.Id;
+        }
+        return null;
+    }
+
     /// Caller must hold `_lock`. Programs with a live connected peer, plus this
     /// app itself (always online while the hub runs).
     private HashSet<string> OnlineProgramsLocked()
@@ -767,7 +842,14 @@ public sealed class ConnectionHub
         var members = new JsonArray();
         foreach (var m in cluster.Members.OrderBy(x => x, StringComparer.Ordinal))
         {
-            members.Add(new JsonObject { ["program"] = m, ["groupName"] = cluster.GroupName, ["online"] = online.Contains(m) });
+            cluster.MemberGroupIds.TryGetValue(m, out var memberGroupId);
+            members.Add(new JsonObject
+            {
+                ["program"] = m,
+                ["groupName"] = cluster.GroupName,
+                ["groupId"] = memberGroupId ?? "",
+                ["online"] = online.Contains(m)
+            });
         }
 
         var dict = new JsonObject
@@ -813,12 +895,15 @@ public sealed class ConnectionHub
             foreach (var (k, v) in c.Contributions) contribs[k] = v.DeepClone();
             var members = new JsonArray();
             foreach (var m in c.Members) members.Add(m);
+            var memberGroupIds = new JsonObject();
+            foreach (var (k, v) in c.MemberGroupIds) memberGroupIds[k] = v;
             arr.Add(new JsonObject
             {
                 ["id"] = c.Id,
                 ["groupName"] = c.GroupName,
                 ["groupType"] = c.GroupType,
                 ["members"] = members,
+                ["memberGroupIds"] = memberGroupIds,
                 ["contributions"] = contribs,
                 ["sharedScalars"] = c.SharedScalars.DeepClone(),
                 ["sharedTs"] = c.SharedTs,
@@ -857,6 +942,13 @@ public sealed class ConnectionHub
                     foreach (var m in members)
                     {
                         if (m?.GetValueKind() == JsonValueKind.String) cluster.Members.Add(m.GetValue<string>());
+                    }
+                }
+                if (o["memberGroupIds"] is JsonObject memberGroupIds)
+                {
+                    foreach (var (k, v) in memberGroupIds)
+                    {
+                        if (v?.GetValueKind() == JsonValueKind.String) cluster.MemberGroupIds[k] = v.GetValue<string>();
                     }
                 }
                 if (o["contributions"] is JsonObject contribs)
