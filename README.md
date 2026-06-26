@@ -7,8 +7,11 @@ reuses the **verbatim** customBlocker editor UI (the same `popup.html`,
 blocking is done by **closing windows** — the exact effect of clicking the
 red "X" — backed by a re-close loop so a blocked app cannot be reopened.
 
-> Built with .NET 8 / WPF + WebView2. The custom JavaScript rule engine from
-> macosBlocker is **intentionally excluded** from this port (see Scope).
+> Built with .NET 8 / WPF + WebView2. This port has **full feature parity** with
+> macosBlocker, including the custom JavaScript rule engine, the floating timer
+> HUD, the toast/log overlay, and interactive custom-rule + system overlay panels
+> (see Custom rule engine). The only macOS capability not reproduced natively is
+> reading **browser tabs** — that stays the browser extension's job (see Scope).
 
 ## What was ported
 
@@ -30,6 +33,10 @@ red "X" — backed by a re-close loop so a blocked app cannot be reopened.
 | App identity | macOS bundle ID | `Enforcement/ProcessIdentity.cs` (exe path + UWP AUMID descent) |
 | App picker inventory | installed `.app` scan | `WebUI/InstalledAppCatalog.cs` + `WebUI/AppInventory.cs` |
 | Timer overlay HUD | `TimerOverlayPanel.swift` | `TimerOverlayWindow.xaml(.cs)` |
+| Toast / log overlay | `ToastOverlayPanelController` | `ToastOverlayWindow.xaml(.cs)` |
+| Interactive + system panels | `PanelOverlayPanelController` | `PanelOverlayWindow.xaml(.cs)` |
+| Custom JS rule runtime | `custom-rule-runtime.js` (in JSCore) | `WebAssets/custom-rule-runtime.js` (in WebView2) |
+| Custom-rule orchestration | `CustomJavaScriptPolicyRuntime.swift` + bridge | `Rules/RuleEngine.cs` + `Rules/CustomRuleRuntime.cs` |
 | Web-app bridge hub | `ConnectionHub.swift` | `Bridge/ConnectionHub.cs` |
 
 ## Enforcement model (the red "X")
@@ -94,8 +101,33 @@ the engine already produces, and auto-hides when nothing is counting down.
 - **Known limit:** topmost floats over normal/maximized/fullscreen-video windows,
   but a true *exclusive*-fullscreen app (some games) can still cover it — there is
   no Windows equivalent of macOS's screen-saver window level.
-- **Not yet ported:** the toast/log overlay and custom-rule interactive panels
-  (the latter depend on the custom-JS rule runtime, which is out of scope).
+
+## Custom rule engine (full JavaScript parity)
+
+The custom JavaScript rule engine is ported in full. Rather than embed a second
+JS engine, the **verbatim** `custom-rule-runtime.js` from macosBlocker (the same
+self-contained `MacBlockerRuntime` macOS runs in JavaScriptCore) is injected into
+the editor's WebView2 page at document-creation time and driven over
+`ExecuteScriptAsync`, so rules behave identically to macOS.
+
+- **Orchestration** (`Rules/RuleEngine.cs`) is the Windows analog of the
+  custom-rule half of `MacEnforcementBridge`: each second it reconciles loaded
+  rules against the editor's groups, diffs running apps to synthesize lifecycle
+  events (`openApp`/`closeApp`/`focus`/`unfocus`/`switchApp`/`appChanged`), fires
+  `tickEvent`, and dispatches every event through the runtime
+  (`Rules/CustomRuleRuntime.cs`). Decisions and intents are folded back into
+  native enforcement: `shield`/`blockApp` join the same `WM_CLOSE` sweep,
+  `close`/`openApp`/`unblockApp` act immediately, and rule **custom timers**
+  appear in the same floating HUD as native timers.
+- **Overlays.** Rule `log`/`overlay.show` output is shown as bottom-right
+  **toast** cards (`ToastOverlayWindow`), and rule-created **interactive panels**
+  (`getPanelHelper`) plus host-driven **system panels** (e.g. the parental-PIN
+  prompt) are rendered as live, focus-preserving WPF cards
+  (`PanelOverlayWindow` + `PanelOverlay`), one window per screen position. Panel
+  input is throttled (leading edge + trailing flush) like macOS's panel handler.
+- **Local files.** `getLocalFolderHelper` read/write/append/list/exists requests
+  are serviced from `%LOCALAPPDATA%\WindowsBlocker\LocalFiles\` (`.txt`/`.csv`/
+  `.json` only, path-escape guarded), feeding a `localFileEvent` back to the rule.
 
 ## Web-app bridge (acts as a server, like macOS)
 
@@ -124,11 +156,14 @@ needed. `Bridge/ConnectionHub.cs` is a faithful port of `ConnectionHub.swift`:
 
 ## Scope
 
-Excluded: the custom JavaScript rule engine (`CustomJavaScriptPolicyRuntime` /
-JavaScriptCore). The editor's custom-rule UI still loads (it is part of the
-verbatim web UI and its in-page syntax check runs), but rules are **not**
-executed or enforced natively. Site/tab/DOM-level blocking remains the job of
-the `customBlocker` browser extension; windowsBlocker only blocks whole apps.
+The native app blocks **whole apps** (window-level), runs the full custom JS rule
+engine, and hosts the web-app bridge. As on macOS, **site/tab/DOM-level** blocking
+is the `customBlocker` browser extension's job: a rule's browser intents
+(`blockSite`, `closeTab`, `closeTabsByPattern`, …) are logged and left to the
+extension, and the rule runtime's `__nativeGetAllTabs` hook returns no tabs (the
+native app does not read browser tabs). Everything else — app shields, custom
+timers, toast logs, interactive + system panels, local-file rule storage — runs
+natively at parity with macosBlocker.
 
 ## Build & run (Windows only)
 
@@ -150,6 +185,7 @@ State lives under `%LOCALAPPDATA%\WindowsBlocker\`:
 
 ```text
 web-store.json   the editor's chrome.storage snapshot (groups, settings, usage)
+clusters.json    web-app bridge cluster registry (survives restart)
 WebView2/        WebView2 user-data folder
-LocalFiles/      managed local-files folder for the editor
+LocalFiles/      managed local-files folder for custom-rule file I/O
 ```

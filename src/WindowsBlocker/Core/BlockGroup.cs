@@ -3,9 +3,9 @@ using System.Collections.Generic;
 
 namespace WindowsBlocker.Core;
 
-// Ported from MacBlockerCore/BlockGroup.swift. The custom JavaScript rule
-// engine is intentionally excluded from the Windows port, but the `Custom`
-// group type is kept so imported stores round-trip without data loss.
+// Ported from MacBlockerCore/BlockGroup.swift. The Windows port runs the same
+// custom JavaScript rule engine as macOS (see Rules/RuleEngine), so the `Custom`
+// group type and CustomRuleSource are first-class, not just round-tripped.
 public enum BlockGroupType
 {
     Site,
@@ -87,8 +87,8 @@ public sealed class BlockGroup
     public string? ParentalPasswordSalt { get; init; }
     public string FallbackMessage { get; init; } = "";
 
-    // Retained from the imported store so the editor round-trips, but never
-    // executed natively on Windows (custom rules are out of scope for the port).
+    // The user's custom JavaScript rule source. Executed by Rules/RuleEngine via
+    // the WebView2-hosted MacBlockerRuntime, exactly as macOS runs it in JSCore.
     public string CustomRuleSource { get; init; } = "";
     public List<BlockTarget> Targets { get; init; } = new();
     public List<string> UnsupportedLegacyFeatures { get; init; } = new();

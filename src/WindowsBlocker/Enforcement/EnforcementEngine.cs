@@ -15,11 +15,12 @@ public sealed class EnforcementStatus
     public int WindowsClosedThisTick { get; init; }
 }
 
-// The Windows analog of MacEnforcementBridge: on each tick it derives the live
-// blocked-app set from the editor's groups, updates the registry that drives the
-// WM_CLOSE sweep + the WinEvent re-close path, and accrues "time spent" for
-// timed groups so the editor countdown ticks. Custom JavaScript rules are out of
-// scope, so there is no rule runtime here.
+// The Windows analog of the native half of MacEnforcementBridge: on each tick it
+// derives the live blocked-app set from the editor's groups, updates the registry
+// that drives the WM_CLOSE sweep + the WinEvent re-close path, and accrues "time
+// spent" for timed groups so the editor countdown ticks. Custom JavaScript rules
+// are evaluated by Rules/RuleEngine, whose per-tick blocked-app set is unioned in
+// here via the ruleBlockedIdentities parameter.
 public sealed class EnforcementEngine
 {
     private readonly WebStore _store;
@@ -43,18 +44,35 @@ public sealed class EnforcementEngine
 
     public void SetSelfWindow(IntPtr hwnd) => _selfWindow = hwnd;
 
-    public EnforcementStatus Tick()
+    /// Runs one enforcement tick.
+    ///
+    /// <paramref name="foreground"/> is the focused-app identity (computed once by
+    /// the caller and shared with the rule engine) — time only accrues, and the
+    /// HUD only shows a countdown, while a timed group's target app is frontmost,
+    /// exactly like macOS, which gates both on the frontmost application.
+    ///
+    /// <paramref name="ruleBlockedIdentities"/> are app identities a custom rule
+    /// asked to block/shield (from the previous tick's async rule dispatch); they
+    /// are unioned into the group-derived blocked set so rule-driven app blocks
+    /// drive the same WM_CLOSE sweep + re-close path.
+    public EnforcementStatus Tick(AppIdentity? foreground = null, IReadOnlySet<string>? ruleBlockedIdentities = null)
     {
+        var fg = foreground ?? ProcessIdentity.ForWindow(NativeMethods.GetForegroundWindow());
+
         var now = DateTimeOffset.Now;
         var imported = _store.ImportedGroups();
         var groups = imported?.Groups ?? new List<BlockGroup>();
         var timers = _store.LoadUsageTimers();
         var snoozes = _store.LoadSnoozes();
 
-        // Time only accrues while the target app is the FOCUSED (foreground) app,
-        // and the HUD only shows that app's countdown — exactly like macOS, which
-        // gates both accrual and the timer overlay on the frontmost application.
-        var foreground = ProcessIdentity.ForWindow(NativeMethods.GetForegroundWindow());
+        var usageUpdates = new Dictionary<string, double>();
+        var resetUpdates = new Dictionary<string, double>();
+
+        // Reset-interval rollover (macOS reconcileUsage parity): zero a timed
+        // group's used time once its reset window elapses. This runs for every
+        // enabled timed group, independent of whether it is currently active or
+        // snoozed, so a budget that expired mid-window is restored on schedule.
+        ReconcileResets(groups, timers, now, usageUpdates, resetUpdates);
 
         var blockedIdentities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var blockedGroupNames = new List<string>();
@@ -102,12 +120,25 @@ public sealed class EnforcementEngine
                         timedGroupsToMaybeAccrue.Add(group);
                         // HUD shows the countdown only while this group's app is
                         // focused (macOS shows only the frontmost app's timer).
-                        if (GroupTargetsForeground(group, foreground))
+                        if (GroupTargetsForeground(group, fg))
                         {
                             timerItems.Add(new TimerDisplayItem(group.Id, group.Name, remainingSeconds));
                         }
                     }
                     break;
+            }
+        }
+
+        // Union in identities a custom rule asked to block (rule shield/blockApp
+        // decisions from the previous tick's async dispatch).
+        if (ruleBlockedIdentities != null)
+        {
+            foreach (var id in ruleBlockedIdentities)
+            {
+                if (!string.IsNullOrWhiteSpace(id))
+                {
+                    blockedIdentities.Add(id);
+                }
             }
         }
 
@@ -138,11 +169,9 @@ public sealed class EnforcementEngine
         // fold the authoritative shared total back into the local timer, so the
         // Windows countdown + enforcement reflect time spent on every linked
         // member (e.g. browser website time) — exactly like the macOS app.
-        var usageUpdates = new Dictionary<string, double>();
-        var resetUpdates = new Dictionary<string, double>();
         foreach (var group in timedGroupsToMaybeAccrue)
         {
-            var focused = GroupTargetsForeground(group, foreground);
+            var focused = GroupTargetsForeground(group, fg);
 
             var current = timers.TimersMs.GetValueOrDefault(group.Id, 0);
             var addedMs = 0.0;
@@ -209,9 +238,118 @@ public sealed class EnforcementEngine
     public void OnWindowEvent(IntPtr hwnd) =>
         WindowCloser.CloseIfBlocked(hwnd, _registry, _selfWindow);
 
+    /// Snapshot the identities of every currently-open closeable top-level
+    /// window, de-duplicated. Used by the rule engine for the `allApps` event
+    /// payload and for open/close lifecycle diffing — reusing the exact same
+    /// identity resolution that drives blocking so rule ids and block ids agree.
+    public List<AppIdentity> SnapshotRunningIdentities()
+    {
+        var result = new List<AppIdentity>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        NativeMethods.EnumWindows((hwnd, _) =>
+        {
+            if (hwnd == _selfWindow || !IsCloseableTopLevel(hwnd))
+            {
+                return true;
+            }
+            var identity = ProcessIdentity.ForWindow(hwnd);
+            if (!identity.IsEmpty && seen.Add(identity.Canonical))
+            {
+                result.Add(identity);
+            }
+            return true;
+        }, IntPtr.Zero);
+        return result;
+    }
+
+    /// Close every open top-level window whose owning app matches one of the
+    /// given target identities (rule close()/shield on the current tick). One-shot
+    /// — does not add to the persistent registry.
+    public int CloseMatching(IEnumerable<string> identities)
+    {
+        var targets = identities
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Select(v => v.Trim().ToLowerInvariant())
+            .ToList();
+        if (targets.Count == 0)
+        {
+            return 0;
+        }
+        var closed = 0;
+        NativeMethods.EnumWindows((hwnd, _) =>
+        {
+            if (hwnd == _selfWindow || !IsCloseableTopLevel(hwnd))
+            {
+                return true;
+            }
+            var identity = ProcessIdentity.ForWindow(hwnd);
+            if (identity.IsEmpty)
+            {
+                return true;
+            }
+            if (targets.Any(t => TargetMatchesIdentity(t, identity)))
+            {
+                WindowCloser.CloseWindow(hwnd);
+                closed++;
+            }
+            return true;
+        }, IntPtr.Zero);
+        return closed;
+    }
+
+    // Reset-interval rollover, ported from MacEnforcementBridge.reconcileUsage.
+    // Ensures each enabled timed group has a reset anchor and zeroes its used
+    // time once a full reset interval has elapsed (advancing the anchor by whole
+    // intervals so it stays phase-aligned). Mutates `timers` in place and records
+    // the changes for persistence.
+    private static void ReconcileResets(
+        List<BlockGroup> groups,
+        WebStore.UsageTimers timers,
+        DateTimeOffset now,
+        Dictionary<string, double> usageUpdates,
+        Dictionary<string, double> resetUpdates)
+    {
+        double nowMs = now.ToUnixTimeMilliseconds();
+        foreach (var group in groups)
+        {
+            if (!group.Enabled)
+            {
+                continue;
+            }
+            if (group.Mode != BlockingMode.Timer && group.Mode != BlockingMode.AfterMinutes)
+            {
+                continue;
+            }
+            var gid = group.Id;
+
+            if (!timers.ResetAtMs.TryGetValue(gid, out var anchor) || anchor <= 0)
+            {
+                anchor = nowMs;
+                timers.ResetAtMs[gid] = anchor;
+                resetUpdates[gid] = anchor;
+            }
+
+            var intervalMs = Math.Max(0, group.ResetIntervalHours) * 3_600_000.0;
+            if (intervalMs <= 0)
+            {
+                continue;
+            }
+            var sinceReset = nowMs - anchor;
+            if (sinceReset >= intervalMs)
+            {
+                var elapsedIntervals = Math.Floor(sinceReset / intervalMs);
+                var newStart = anchor + elapsedIntervals * intervalMs;
+                timers.TimersMs[gid] = 0;
+                timers.ResetAtMs[gid] = newStart;
+                usageUpdates[gid] = 0;
+                resetUpdates[gid] = newStart;
+            }
+        }
+    }
+
     // True when any of the group's application targets is the focused identity —
     // the Windows analog of macOS's `targets.contains { $0.id == frontmost }`.
-    private static bool GroupTargetsForeground(BlockGroup group, AppIdentity foreground)
+    internal static bool GroupTargetsForeground(BlockGroup group, AppIdentity foreground)
     {
         if (foreground.IsEmpty)
         {
@@ -225,7 +363,7 @@ public sealed class EnforcementEngine
     // Matches one app target value (AUMID, full path, or bare name) against a
     // single resolved window identity. Mirrors BlockedAppRegistry's shapes; the
     // identity's path/name/AUMID are already lowercased.
-    private static bool TargetMatchesIdentity(string normalizedValue, AppIdentity identity)
+    internal static bool TargetMatchesIdentity(string normalizedValue, AppIdentity identity)
     {
         var value = normalizedValue.Trim().ToLowerInvariant();
         if (value.Length == 0)
