@@ -26,9 +26,12 @@ public sealed class RuleTickOutput
 /// close/open intents, local-file I/O), the timer HUD (custom timers), the toast
 /// overlay (hud logs) and the panel overlay (interactive + system panels).
 ///
-/// Browser/site intents (blockSite, closeTab, …) are intentionally logged and
-/// left to the customBlocker browser extension, matching the port's scope: the
-/// native app blocks whole apps; the extension owns site/tab/DOM enforcement.
+/// Web-level intents (blockSite, unblockSite, closeTab, …) are intentionally
+/// ignored — neither acted on nor logged — and left entirely to the customBlocker
+/// browser extension, matching the port's scope: the native app blocks whole
+/// apps; the extension owns site/tab/DOM enforcement. The native app never reads
+/// browser tabs (__nativeGetAllTabs returns none), so it cannot and must not
+/// interfere with web-level events.
 public sealed class RuleEngine
 {
     public const string SystemGroupId = "__system__";
@@ -46,6 +49,12 @@ public sealed class RuleEngine
     private readonly List<Dictionary<string, string>> _systemPanelEvents = new();
     private HashSet<string> _lastRunningIds = new(StringComparer.OrdinalIgnoreCase);
     private string _lastForegroundId = "";
+    // Until the first tick has captured the baseline running/foreground state we
+    // must NOT synthesize lifecycle events, or every already-running app would be
+    // reported as just-"launched" (and the first focus as a switch) at startup.
+    // macOS avoids this naturally by using event-driven NSWorkspace launch/
+    // terminate notifications; the Windows port diffs snapshots, so it seeds once.
+    private bool _lifecycleSeeded;
 
     private HashSet<string> _blockedIdentities = new(StringComparer.OrdinalIgnoreCase);
 
@@ -74,13 +83,32 @@ public sealed class RuleEngine
 
         // Lifecycle (open/close) diff + focus/switch derivation.
         var runningIds = new HashSet<string>(running.Select(r => r.Canonical), StringComparer.OrdinalIgnoreCase);
-        var launched = runningIds.Except(_lastRunningIds).ToList();
-        var terminated = _lastRunningIds.Except(runningIds).ToList();
-        _lastRunningIds = runningIds;
-
         var curForeground = foreground.IsEmpty ? "" : foreground.Canonical;
-        var prevForeground = _lastForegroundId;
-        var switched = curForeground != prevForeground;
+
+        List<string> launched;
+        List<string> terminated;
+        string prevForeground;
+        bool switched;
+        if (!_lifecycleSeeded)
+        {
+            // First tick: capture the baseline only. No app "launched" just
+            // because windowsBlocker started, and no spurious initial focus
+            // switch — exactly like macOS, which fires nothing for the apps that
+            // were already running when it launched.
+            _lifecycleSeeded = true;
+            launched = new List<string>();
+            terminated = new List<string>();
+            prevForeground = curForeground;
+            switched = false;
+        }
+        else
+        {
+            launched = runningIds.Except(_lastRunningIds).ToList();
+            terminated = _lastRunningIds.Except(runningIds).ToList();
+            prevForeground = _lastForegroundId;
+            switched = curForeground != prevForeground;
+        }
+        _lastRunningIds = runningIds;
         _lastForegroundId = curForeground;
 
         var runningJson = RunningAppsJson(running);
@@ -107,6 +135,7 @@ public sealed class RuleEngine
                 var events = BuildEvents(group, foreground, runningJson, launched, terminated,
                     switched, prevForeground, curForeground);
 
+                DispatchResult? latest = null;
                 foreach (var ev in events)
                 {
                     if (ev.Type != "tickEvent")
@@ -121,20 +150,25 @@ public sealed class RuleEngine
                         continue;
                     }
                     await ApplyResultAsync(group, result, foreground, thisTickShield, allowed, output, 0);
+                    latest = result;
+                }
 
-                    if (ev.Type == "tickEvent")
+                // Panels and custom timers are whole-state snapshots the runtime
+                // re-emits on every dispatch, so the LAST event's result is the
+                // most current — it reflects every handler that ran this tick
+                // (e.g. a panel a focusEvent created, or a timer it started).
+                if (latest != null)
+                {
+                    if (latest.Panels.Count > 0)
                     {
-                        if (result.Panels.Count > 0)
-                        {
-                            nextPanels[group.Id] = result.Panels;
-                        }
-                        foreach (var timer in result.Timers.Where(t => !t.IsPaused))
-                        {
-                            output.CustomTimers.Add(new TimerDisplayItem(
-                                $"{timer.GroupId}.{timer.Id}",
-                                string.IsNullOrEmpty(timer.DisplayName) ? timer.Id : timer.DisplayName,
-                                Math.Max(0, timer.CurrentMs / 1000.0)));
-                        }
+                        nextPanels[group.Id] = latest.Panels;
+                    }
+                    foreach (var timer in latest.Timers.Where(t => !t.IsPaused))
+                    {
+                        output.CustomTimers.Add(new TimerDisplayItem(
+                            $"{timer.GroupId}.{timer.Id}",
+                            string.IsNullOrEmpty(timer.DisplayName) ? timer.Id : timer.DisplayName,
+                            Math.Max(0, timer.CurrentMs / 1000.0)));
                     }
                 }
             }
@@ -294,14 +328,12 @@ public sealed class RuleEngine
             case "openApp":
                 if (!string.IsNullOrEmpty(intent.Target)) OpenApp(intent.Target!);
                 break;
-            // Site/tab intents are the browser extension's job on Windows.
-            case "blockSite":
-            case "unblockSite":
-            case "closeTab":
-            case "closeTabsByPattern":
-                var what = intent.Pattern ?? intent.Target ?? "";
-                AppendLog("log", "system", $"{intent.Action} (handled by browser extension): {what}");
-                break;
+            // Web-level intents (blockSite / unblockSite / closeTab /
+            // closeTabsByPattern) are deliberately ignored here: site/tab/DOM
+            // enforcement belongs entirely to the customBlocker browser
+            // extension, which runs the same rule against its own web events.
+            // The native app must not touch web-level events, so it neither acts
+            // on nor logs them — it only enforces whole-app intents above.
         }
     }
 
@@ -345,9 +377,16 @@ public sealed class RuleEngine
         {
             return null;
         }
-        var baseDir = LocalFolderBase;
+        var baseDir = Path.GetFullPath(LocalFolderBase);
         var resolved = Path.GetFullPath(Path.Combine(baseDir, cleaned));
-        return resolved.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase) ? resolved : null;
+        // Separator-bounded containment so a sibling like "LocalFilesEvil" can
+        // never satisfy a bare prefix check.
+        var boundary = baseDir.EndsWith(Path.DirectorySeparatorChar)
+            ? baseDir
+            : baseDir + Path.DirectorySeparatorChar;
+        return resolved.Equals(baseDir, StringComparison.OrdinalIgnoreCase)
+            || resolved.StartsWith(boundary, StringComparison.OrdinalIgnoreCase)
+            ? resolved : null;
     }
 
     // Performs a local-file operation requested by a rule and returns the
