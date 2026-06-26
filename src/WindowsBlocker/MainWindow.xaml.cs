@@ -1,15 +1,21 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using WindowsBlocker.Bridge;
+using WindowsBlocker.Core;
 using WindowsBlocker.Enforcement;
+using WindowsBlocker.Rules;
 using WindowsBlocker.SelfPreservation;
 using WindowsBlocker.WebUI;
 
@@ -24,16 +30,29 @@ public partial class MainWindow : Window
     private readonly BlockedAppRegistry _registry = new();
     private readonly ConnectionHub _hub = new();
     private readonly EnforcementEngine _engine;
+    private readonly RuleEngine _ruleEngine;
     private readonly SelfPreservationGuard _guard = new();
     private WinEventMonitor? _monitor;
     private DispatcherTimer? _timer;
     private TimerOverlayWindow? _overlay;
+    private ToastOverlayWindow? _toast;
+    private PanelOverlay? _panel;
+    private CustomRuleRuntime? _runtime;
+    private bool _ruleBusy;
     private IntPtr _selfHwnd;
+
+    // Leading-edge throttle for high-frequency panel change events (slider drag,
+    // typing) so the rule isn't dispatched on every keystroke — mirrors macOS's
+    // 0.1s panel throttle with a trailing flush.
+    private readonly Dictionary<string, DateTime> _panelLastFire = new();
+    private readonly Dictionary<string, Action> _panelPending = new();
+    private DispatcherTimer? _panelFlush;
 
     public MainWindow()
     {
         InitializeComponent();
         _engine = new EnforcementEngine(_store, _registry, _hub);
+        _ruleEngine = new RuleEngine(_store);
         _store.SeedIfNeeded();
         Loaded += OnLoaded;
         Closing += OnClosing;
@@ -78,6 +97,20 @@ public partial class MainWindow : Window
         if (seed is not null)
         {
             await core.AddScriptToExecuteOnDocumentCreatedAsync(SeedScript(seed));
+        }
+
+        // 3) Inject the verbatim custom-rule runtime (MacBlockerRuntime) so custom
+        //    JavaScript rules run inside this page exactly as they do in macOS's
+        //    JavaScriptCore. A __nativeGetAllTabs stub returns no tabs (browser
+        //    tab reading is the extension's job on Windows).
+        var runtimeJs = TryReadAsset(assets, "custom-rule-runtime.js");
+        if (runtimeJs is not null)
+        {
+            await core.AddScriptToExecuteOnDocumentCreatedAsync(
+                "window.__nativeGetAllTabs = function(){ return \"[]\"; };");
+            await core.AddScriptToExecuteOnDocumentCreatedAsync(runtimeJs);
+            _runtime = new CustomRuleRuntime(core);
+            _ruleEngine.AttachRuntime(_runtime);
         }
 
         core.WebMessageReceived += OnWebMessage;
@@ -128,6 +161,19 @@ public partial class MainWindow : Window
         catch
         {
             // A failure to enumerate apps must not break editor load.
+        }
+    }
+
+    private static string? TryReadAsset(string assetsDir, string fileName)
+    {
+        try
+        {
+            var path = Path.Combine(assetsDir, fileName);
+            return File.Exists(path) ? File.ReadAllText(path) : null;
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -196,9 +242,66 @@ public partial class MainWindow : Window
                     PushClusters();
                     break;
 
-                // run-custom-group and the custom-rule surface are intentionally
-                // not wired: custom JavaScript rules are out of scope for the port.
-                // Snooze/freeze state rides along inside the persisted store.
+                // Custom-rule surface: the editor drives the WebView2-hosted
+                // MacBlockerRuntime through these, exactly as macOS's BlockerWebView
+                // drives MacEnforcementBridge.
+                case "run-custom-group":
+                {
+                    var (gid, src) = ReadGroupSource(root);
+                    if (gid.Length > 0)
+                    {
+                        _ = RunRuleAndPushLogAsync(gid, src);
+                    }
+                    break;
+                }
+                case "unload-custom-group":
+                {
+                    var gid = ReadMessageString(root, "groupId");
+                    if (gid.Length > 0)
+                    {
+                        _ = _ruleEngine.UnloadGroupAsync(gid);
+                    }
+                    break;
+                }
+                case "fire-snooze-press":
+                {
+                    var gid = ReadMessageString(root, "groupId");
+                    if (gid.Length > 0)
+                    {
+                        _ = FireUserEventAndRenderAsync("snoozePress", gid, new Dictionary<string, string>());
+                    }
+                    break;
+                }
+                case "custom-panel-event":
+                {
+                    var (gid, data) = ReadPanelMessage(root);
+                    if (gid.Length > 0)
+                    {
+                        _ = FireUserEventAndRenderAsync("panelEvent", gid, data);
+                    }
+                    break;
+                }
+                case "show-system-panel":
+                {
+                    var snapshot = ReadMessageObjectJson(root, "snapshot");
+                    if (snapshot is not null)
+                    {
+                        _ruleEngine.ShowSystemPanel(snapshot);
+                        _panel?.ReplaceAll(_ruleEngine.PanelsSnapshot());
+                    }
+                    break;
+                }
+                case "dismiss-system-panel":
+                    _ruleEngine.DismissSystemPanel(ReadMessageString(root, "id"));
+                    _panel?.ReplaceAll(_ruleEngine.PanelsSnapshot());
+                    break;
+                case "refresh-blocking-rules":
+                    // Next tick re-evaluates groups; nothing extra to do here.
+                    break;
+                case "local-folder-reveal":
+                    RevealLocalFolder();
+                    break;
+
                 default:
                     break;
             }
@@ -240,19 +343,29 @@ public partial class MainWindow : Window
         _overlay = new TimerOverlayWindow();
         new WindowInteropHelper(_overlay).EnsureHandle();
 
+        // Toast/log overlay (macOS ToastOverlayPanelController) and interactive
+        // panel overlay (PanelOverlayPanelController) for custom-rule output.
+        _toast = new ToastOverlayWindow();
+        new WindowInteropHelper(_toast).EnsureHandle();
+        _panel = new PanelOverlay { OnEvent = OnPanelEvent };
+
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += OnTick;
         _timer.Start();
     }
 
-    private void OnTick(object? sender, EventArgs e)
+    private async void OnTick(object? sender, EventArgs e)
     {
         // A transient failure (e.g. a momentarily malformed store write) must
         // never kill the enforcement timer, or blocking would silently stop.
         try
         {
-            var status = _engine.Tick();
-            _overlay?.UpdateRows(status.Timers);
+            // Resolve the focused app once and share it with both engines: native
+            // enforcement consumes last tick's rule-blocked set; the rule engine
+            // produces this tick's set for the next pass (≤1s latency).
+            var foreground = ProcessIdentity.ForWindow(NativeMethods.GetForegroundWindow());
+            var status = _engine.Tick(foreground, _ruleEngine.BlockedIdentities);
+
             PushUsage();
             PushPermission();
             // Mirror macOS: push live bridge status / clusters / rejections each
@@ -260,11 +373,253 @@ public partial class MainWindow : Window
             PushConnectionState();
             PushClusters();
             PushGroupRejection();
+
+            // Drive custom rules. The dispatch is async (WebView2), so guard
+            // against overlapping ticks; native enforcement above always runs.
+            if (_runtime is not null && !_ruleBusy)
+            {
+                _ruleBusy = true;
+                try
+                {
+                    var running = _engine.SnapshotRunningIdentities();
+                    var ruleOut = await _ruleEngine.TickAsync(foreground, running);
+
+                    if (ruleOut.CloseOnce.Count > 0)
+                    {
+                        _engine.CloseMatching(ruleOut.CloseOnce);
+                    }
+
+                    var rows = new List<TimerDisplayItem>(status.Timers);
+                    rows.AddRange(ruleOut.CustomTimers);
+                    _overlay?.UpdateRows(rows);
+
+                    foreach (var (message, level) in ruleOut.HudLogs)
+                    {
+                        _toast?.Show(message, level);
+                    }
+                    _panel?.ReplaceAll(_ruleEngine.PanelsSnapshot());
+                }
+                finally
+                {
+                    _ruleBusy = false;
+                }
+            }
+            else
+            {
+                _overlay?.UpdateRows(status.Timers);
+            }
+
+            // Rule logs + system-panel events (e.g. parental-PIN round-trip) are
+            // drained every tick, independent of whether the rule runtime ran,
+            // so a system panel shown via the editor still gets its events back.
+            PushRuleLog();
+            PushSystemPanelEvents();
         }
         catch
         {
             // Swallow and continue on the next tick.
         }
+    }
+
+    // ---- Custom-rule helpers ------------------------------------------------
+
+    private async Task RunRuleAndPushLogAsync(string groupId, string source)
+    {
+        try
+        {
+            await _ruleEngine.RunRuleAsync(groupId, source);
+            PushRuleLog();
+        }
+        catch
+        {
+            // A rule that fails to load must not break the editor.
+        }
+    }
+
+    private async Task FireUserEventAndRenderAsync(string type, string groupId, Dictionary<string, string> data)
+    {
+        if (_runtime is null)
+        {
+            return;
+        }
+        try
+        {
+            var foreground = ProcessIdentity.ForWindow(NativeMethods.GetForegroundWindow());
+            var output = await _ruleEngine.FireUserEventAsync(type, groupId, data, foreground);
+            if (output.CloseOnce.Count > 0)
+            {
+                _engine.CloseMatching(output.CloseOnce);
+            }
+            foreach (var (message, level) in output.HudLogs)
+            {
+                _toast?.Show(message, level);
+            }
+            _panel?.ReplaceAll(_ruleEngine.PanelsSnapshot());
+            PushRuleLog();
+        }
+        catch
+        {
+            // Ignore a single failed user-event dispatch.
+        }
+    }
+
+    // Routes a panel-overlay interaction to the rule (or buffers system-panel
+    // events for the editor), mirroring MacEnforcementBridge's panel handler.
+    private void OnPanelEvent(string groupId, string panelId, string controlId, string eventName, string value, string valuesJson)
+    {
+        var data = new Dictionary<string, string>
+        {
+            ["panelId"] = panelId,
+            ["controlId"] = controlId,
+            ["eventName"] = eventName,
+            ["value"] = value
+        };
+        if (!string.IsNullOrEmpty(valuesJson))
+        {
+            data["valuesJSON"] = valuesJson;
+        }
+
+        if (groupId == RuleEngine.SystemGroupId)
+        {
+            _ruleEngine.BufferSystemPanelEvent(data);
+            return;
+        }
+
+        if (eventName == "click")
+        {
+            _ = FireUserEventAndRenderAsync("panelEvent", groupId, data);
+            return;
+        }
+
+        // Throttle change events (leading edge + trailing flush).
+        var key = $"{groupId}|{panelId}|{controlId}";
+        var now = DateTime.UtcNow;
+        if (_panelLastFire.TryGetValue(key, out var last) && (now - last).TotalMilliseconds < 100)
+        {
+            _panelPending[key] = () => _ = FireUserEventAndRenderAsync("panelEvent", groupId, data);
+            EnsurePanelFlush();
+            return;
+        }
+        _panelLastFire[key] = now;
+        _panelPending.Remove(key);
+        _ = FireUserEventAndRenderAsync("panelEvent", groupId, data);
+    }
+
+    private void EnsurePanelFlush()
+    {
+        if (_panelFlush is not null)
+        {
+            return;
+        }
+        _panelFlush = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
+        _panelFlush.Tick += (_, _) =>
+        {
+            _panelFlush?.Stop();
+            _panelFlush = null;
+            var pending = _panelPending.Values.ToList();
+            _panelPending.Clear();
+            foreach (var fire in pending)
+            {
+                fire();
+            }
+        };
+        _panelFlush.Start();
+    }
+
+    private void PushRuleLog()
+    {
+        if (Web.CoreWebView2 is null)
+        {
+            return;
+        }
+        var json = _ruleEngine.DrainLogJson();
+        if (json is not null)
+        {
+            _ = Web.CoreWebView2.ExecuteScriptAsync(
+                $"window.__cbApplyNativeRuleLog && window.__cbApplyNativeRuleLog({json});");
+        }
+    }
+
+    private void PushSystemPanelEvents()
+    {
+        if (Web.CoreWebView2 is null)
+        {
+            return;
+        }
+        var json = _ruleEngine.DrainSystemPanelEventsJson();
+        if (json is not null)
+        {
+            _ = Web.CoreWebView2.ExecuteScriptAsync(
+                $"window.__cbSystemPanelEvent && window.__cbSystemPanelEvent({json});");
+        }
+    }
+
+    private void RevealLocalFolder()
+    {
+        try
+        {
+            var dir = Path.Combine(Storage.RootDirectory, "LocalFiles");
+            Directory.CreateDirectory(dir);
+            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true });
+        }
+        catch
+        {
+            // Best effort; revealing the folder is non-critical.
+        }
+    }
+
+    // ---- bridge message readers --------------------------------------------
+
+    private static (string groupId, string source) ReadGroupSource(JsonElement root)
+    {
+        if (root.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.Object)
+        {
+            var gid = m.TryGetProperty("groupId", out var g) && g.ValueKind == JsonValueKind.String ? g.GetString() ?? "" : "";
+            var src = m.TryGetProperty("source", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() ?? "" : "";
+            return (gid, src);
+        }
+        return ("", "");
+    }
+
+    private static string ReadMessageString(JsonElement root, string key)
+    {
+        if (root.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.Object &&
+            m.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String)
+        {
+            return v.GetString() ?? "";
+        }
+        return "";
+    }
+
+    private static string? ReadMessageObjectJson(JsonElement root, string key)
+    {
+        if (root.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.Object &&
+            m.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Object)
+        {
+            return v.GetRawText();
+        }
+        return null;
+    }
+
+    private static (string groupId, Dictionary<string, string> data) ReadPanelMessage(JsonElement root)
+    {
+        var data = new Dictionary<string, string>();
+        var groupId = "";
+        if (root.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in m.EnumerateObject())
+            {
+                if (prop.Name == "groupId")
+                {
+                    groupId = prop.Value.ValueKind == JsonValueKind.String ? prop.Value.GetString() ?? "" : prop.Value.ToString();
+                    continue;
+                }
+                data[prop.Name] = prop.Value.ValueKind == JsonValueKind.String
+                    ? prop.Value.GetString() ?? ""
+                    : prop.Value.GetRawText();
+            }
+        }
+        return (groupId, data);
     }
 
     /// Extracts the inner sendMessage payload the chrome-shim wraps as `message`.
@@ -352,9 +707,13 @@ public partial class MainWindow : Window
         _timer?.Stop();
         _monitor?.Dispose();
         _hub.Stop();
-        // Close the HUD too, or the app would keep running (it is a second
-        // top-level window under the default OnLastWindowClose shutdown mode).
+        // Close every auxiliary top-level window too, or the app would keep
+        // running (each is a window under the default OnLastWindowClose mode).
         _overlay?.Close();
         _overlay = null;
+        _toast?.Close();
+        _toast = null;
+        _panel?.Teardown();
+        _panel = null;
     }
 }

@@ -21,6 +21,30 @@ public sealed class AppIdentity
     public string Aumid { get; init; } = "";
 
     public bool IsEmpty => ProcessId == 0 && ExecutablePath.Length == 0 && Aumid.Length == 0;
+
+    // A single stable string a custom rule / log can refer to this app by. Prefers
+    // the AUMID for packaged apps, then the full path, then the bare exe name.
+    public string Canonical =>
+        !string.IsNullOrEmpty(Aumid) ? Aumid :
+        !string.IsNullOrEmpty(ExecutablePath) ? ExecutablePath :
+        ExecutableName;
+
+    // A short human-readable name (exe file name without extension, title-cased
+    // first letter), used as the rule event's appName.
+    public string DisplayName
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(ExecutableName))
+            {
+                return Aumid;
+            }
+            var stem = ExecutableName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                ? ExecutableName[..^4]
+                : ExecutableName;
+            return stem.Length > 0 ? char.ToUpperInvariant(stem[0]) + stem[1..] : stem;
+        }
+    }
 }
 
 public static class ProcessIdentity
