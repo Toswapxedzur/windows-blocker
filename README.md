@@ -158,10 +158,13 @@ needed. `Bridge/ConnectionHub.cs` is a faithful port of `ConnectionHub.swift`:
 
 The native app blocks **whole apps** (window-level), runs the full custom JS rule
 engine, and hosts the web-app bridge. As on macOS, **site/tab/DOM-level** blocking
-is the `customBlocker` browser extension's job: a rule's browser intents
-(`blockSite`, `closeTab`, `closeTabsByPattern`, …) are logged and left to the
-extension, and the rule runtime's `__nativeGetAllTabs` hook returns no tabs (the
-native app does not read browser tabs). Everything else — app shields, custom
+is the `customBlocker` browser extension's job: a rule's web-level intents
+(`blockSite`, `unblockSite`, `closeTab`, `closeTabsByPattern`) are **ignored** by
+the native app (not acted on, not logged) and left entirely to the extension,
+which runs the same rule against its own web events, and the rule runtime's
+`__nativeGetAllTabs` hook returns no tabs (the native app never reads browser
+tabs). The native app touches only **app-level** intents. Everything else — app
+shields, custom
 timers, toast logs, interactive + system panels, local-file rule storage — runs
 natively at parity with macosBlocker.
 
