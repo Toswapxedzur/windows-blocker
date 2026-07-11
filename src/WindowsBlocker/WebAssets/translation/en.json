@@ -2,7 +2,7 @@
   "app.title": "Screen Time Limiter: Custom Application Blocker & Focus Timer",
   "hero.subtitle": "",
   "siteAccess.title": "Limited site access detected",
-  "siteAccess.body": "Chrome is currently restricting this extension's access to web pages. Screen Time Limiter: Custom Website Blocker & Focus Timer needs access to all sites in order to block them.",
+  "siteAccess.body": "Chrome is currently restricting this extension's access to web pages. Adamancia Vault needs access to all sites in order to block them.",
   "siteAccess.grant": "Grant access",
   "siteAccess.dismiss": "Dismiss",
   "siteAccess.grantFailed": "Chrome rejected the access request. You can change site access in chrome://extensions.",

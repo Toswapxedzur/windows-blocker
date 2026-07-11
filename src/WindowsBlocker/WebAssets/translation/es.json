@@ -369,7 +369,7 @@
   "logFeed.empty": "No activity yet. Trigger an event (e.g. press Start Snooze, switch tabs, or click Run) to see logs here.",
   "logFeed.clear": "Claro",
   "siteAccess.title": "Acceso limitado al sitio detectado",
-  "siteAccess.body": "navegador Cromo está restringiendo el acceso de esta extensión a las páginas web. Screen Time Limiter: Custom Website Blocker & Focus Timer necesita acceso a todos los sitios para bloquearlos.",
+  "siteAccess.body": "navegador Cromo está restringiendo el acceso de esta extensión a las páginas web. Adamancia Vault — Website Blocker & Focus Timer necesita acceso a todos los sitios para bloquearlos.",
   "siteAccess.grant": "Conceder acceso",
   "siteAccess.dismiss": "Descartar",
   "siteAccess.grantFailed": "navegador Cromo rechazó la solicitud de acceso. Puedes cambiar el acceso a sitios en chrome://extensions.",
