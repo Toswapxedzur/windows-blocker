@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using WindowsBlocker.Core;
@@ -37,6 +38,7 @@ public sealed class RuleEngine
     public const string SystemGroupId = "__system__";
     private const int MaxLog = 200;
     private const int MaxFileChainDepth = 6;
+    private const int MaxLocalFileBytes = 1024 * 1024;
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase) { ".txt", ".csv", ".json" };
 
     private readonly WebStore _store;
@@ -370,15 +372,39 @@ public sealed class RuleEngine
         }
     }
 
-    private string? ResolveLocalFile(string relativePath)
+    private string? ResolveLocalPath(string relativePath, bool allowDirectory)
     {
-        var cleaned = relativePath.Replace('\\', '/');
-        if (cleaned.Contains(".."))
+        var raw = (relativePath ?? "").Trim().Replace('\\', '/');
+        while (raw.Contains("//", StringComparison.Ordinal)) raw = raw.Replace("//", "/", StringComparison.Ordinal);
+        raw = raw.TrimEnd('/');
+        if (string.IsNullOrEmpty(raw))
+        {
+            return allowDirectory ? LocalFolderBase : null;
+        }
+        if (raw.StartsWith("/", StringComparison.Ordinal)
+            || System.Text.RegularExpressions.Regex.IsMatch(raw, "^[A-Za-z]:/")
+            || System.Text.RegularExpressions.Regex.IsMatch(raw, "^[A-Za-z][A-Za-z0-9+.-]*:"))
         {
             return null;
         }
+
+        var parts = raw.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return null;
+        foreach (var part in parts)
+        {
+            if (part is "." or ".." || part.StartsWith('.', StringComparison.Ordinal)
+                || !System.Text.RegularExpressions.Regex.IsMatch(part, "^[A-Za-z0-9 _.,@()\\-]+$"))
+            {
+                return null;
+            }
+        }
+        if (!allowDirectory && !AllowedExtensions.Contains(Path.GetExtension(parts[^1])))
+        {
+            return null;
+        }
+
         var baseDir = Path.GetFullPath(LocalFolderBase);
-        var resolved = Path.GetFullPath(Path.Combine(baseDir, cleaned));
+        var resolved = Path.GetFullPath(Path.Combine(baseDir, Path.Combine(parts)));
         // Separator-bounded containment so a sibling like "LocalFilesEvil" can
         // never satisfy a bare prefix check.
         var boundary = baseDir.EndsWith(Path.DirectorySeparatorChar)
@@ -403,6 +429,8 @@ public sealed class RuleEngine
         {
             ["requestId"] = intent.RequestId!,
             ["eventName"] = action,
+            ["action"] = action,
+            ["ok"] = "false",
             ["path"] = path
         };
 
@@ -413,69 +441,158 @@ public sealed class RuleEngine
                 case "read":
                 case "readJson":
                 {
-                    var url = ResolveLocalFile(path) ?? throw new InvalidOperationException("Invalid or disallowed file path.");
-                    EnsureAllowed(url);
-                    var text = File.ReadAllText(url);
+                    var url = ResolveLocalPath(path, allowDirectory: false) ?? throw new LocalFileRequestException("invalid-path");
+                    var text = ReadLimitedText(url);
                     data["text"] = text;
-                    if (action == "readJson") data["value"] = text;
+                    if (action == "readJson")
+                    {
+                        ValidateJson(text);
+                        data["valueJSON"] = text;
+                    }
+                    data["eventName"] = "read";
+                    data["bytes"] = Encoding.UTF8.GetByteCount(text).ToString();
                     break;
                 }
                 case "write":
                 case "writeJson":
                 {
-                    var url = ResolveLocalFile(path) ?? throw new InvalidOperationException("Invalid or disallowed file path.");
-                    EnsureAllowed(url);
+                    var url = ResolveLocalPath(path, allowDirectory: false) ?? throw new LocalFileRequestException("invalid-path");
+                    var text = intent.Text ?? "";
+                    if (action == "writeJson") ValidateJson(text);
+                    EnsureLocalFileSize(text);
                     Directory.CreateDirectory(Path.GetDirectoryName(url)!);
-                    File.WriteAllText(url, intent.Text ?? "");
-                    data["eventName"] = action;
+                    File.WriteAllText(url, text, Encoding.UTF8);
+                    data["eventName"] = "write";
+                    data["bytes"] = Encoding.UTF8.GetByteCount(text).ToString();
                     break;
                 }
                 case "append":
                 {
-                    var url = ResolveLocalFile(path) ?? throw new InvalidOperationException("Invalid or disallowed file path.");
-                    EnsureAllowed(url);
+                    var url = ResolveLocalPath(path, allowDirectory: false) ?? throw new LocalFileRequestException("invalid-path");
+                    var text = File.Exists(url) ? ReadLimitedText(url) : "";
+                    text += intent.Text ?? "";
+                    EnsureLocalFileSize(text);
                     Directory.CreateDirectory(Path.GetDirectoryName(url)!);
-                    File.AppendAllText(url, intent.Text ?? "");
+                    File.WriteAllText(url, text, Encoding.UTF8);
+                    data["bytes"] = Encoding.UTF8.GetByteCount(text).ToString();
                     break;
                 }
                 case "list":
                 {
-                    var dir = string.IsNullOrEmpty(path) ? LocalFolderBase : (ResolveLocalFile(path) ?? LocalFolderBase);
-                    if (!dir.StartsWith(LocalFolderBase, StringComparison.OrdinalIgnoreCase))
-                        throw new InvalidOperationException("Invalid or disallowed file path.");
-                    var names = Directory.Exists(dir)
-                        ? Directory.GetFileSystemEntries(dir).Select(Path.GetFileName).ToArray()
-                        : Array.Empty<string?>();
-                    data["entries"] = JsonSerializer.Serialize(names);
-                    data["directoryPath"] = path;
+                    var dir = ResolveLocalPath(path, allowDirectory: true) ?? throw new LocalFileRequestException("invalid-path");
+                    if (!Directory.Exists(dir)) throw new DirectoryNotFoundException();
+                    var normalizedPath = NormalizeDirectoryPath(path);
+                    var entries = new List<Dictionary<string, string>>();
+                    foreach (var entry in Directory.GetFileSystemEntries(dir))
+                    {
+                        var name = Path.GetFileName(entry);
+                        if (string.IsNullOrEmpty(name) || name.StartsWith('.', StringComparison.Ordinal)) continue;
+                        var entryPath = string.IsNullOrEmpty(normalizedPath) ? name : normalizedPath + "/" + name;
+                        if (Directory.Exists(entry))
+                        {
+                            entries.Add(new Dictionary<string, string>
+                            {
+                                ["name"] = name,
+                                ["path"] = entryPath,
+                                ["kind"] = "directory"
+                            });
+                        }
+                        else if (AllowedExtensions.Contains(Path.GetExtension(entry)))
+                        {
+                            entries.Add(new Dictionary<string, string>
+                            {
+                                ["name"] = name,
+                                ["path"] = entryPath,
+                                ["kind"] = "file",
+                                ["extension"] = Path.GetExtension(entry).ToLowerInvariant()
+                            });
+                        }
+                    }
+                    data["entriesJSON"] = JsonSerializer.Serialize(entries
+                        .OrderBy(entry => entry["kind"], StringComparer.Ordinal)
+                        .ThenBy(entry => entry["name"], StringComparer.Ordinal));
+                    data["directoryPath"] = normalizedPath;
                     break;
                 }
                 case "exists":
                 {
-                    var url = ResolveLocalFile(path) ?? throw new InvalidOperationException("Invalid or disallowed file path.");
+                    var url = ResolveLocalPath(path, allowDirectory: false) ?? throw new LocalFileRequestException("invalid-path");
                     data["exists"] = File.Exists(url) ? "true" : "false";
                     break;
                 }
                 default:
-                    data["eventName"] = "error";
-                    data["error"] = $"Unknown action: {action}";
-                    break;
+                    throw new LocalFileRequestException("unsupported-action");
             }
+            data["ok"] = "true";
         }
-        catch (Exception ex)
+        catch (LocalFileRequestException ex)
         {
             data["eventName"] = "error";
-            data["error"] = ex.Message;
+            data["error"] = ex.Code;
+        }
+        catch (FileNotFoundException)
+        {
+            data["eventName"] = "error";
+            data["error"] = "not-found";
+        }
+        catch (DirectoryNotFoundException)
+        {
+            data["eventName"] = "error";
+            data["error"] = "not-found";
+        }
+        catch (Exception)
+        {
+            data["eventName"] = "error";
+            data["error"] = "local-file-error";
         }
 
         return MakeEvent("localFileEvent", group, new AppIdentity(), data, "[]");
     }
 
-    private static void EnsureAllowed(string url)
+    private static void EnsureLocalFileSize(string text)
     {
-        if (!AllowedExtensions.Contains(Path.GetExtension(url)))
+        if (Encoding.UTF8.GetByteCount(text) > MaxLocalFileBytes)
         {
-            throw new InvalidOperationException("Only .txt, .csv, and .json files are supported.");
+            throw new LocalFileRequestException("file-too-large");
+        }
+    }
+
+    private static string ReadLimitedText(string path)
+    {
+        var info = new FileInfo(path);
+        if (!info.Exists) throw new FileNotFoundException();
+        if (info.Length > MaxLocalFileBytes) throw new LocalFileRequestException("file-too-large");
+        var text = File.ReadAllText(path, Encoding.UTF8);
+        EnsureLocalFileSize(text);
+        return text;
+    }
+
+    private static void ValidateJson(string text)
+    {
+        try
+        {
+            using var _ = JsonDocument.Parse(text);
+        }
+        catch (JsonException)
+        {
+            throw new LocalFileRequestException("invalid-json");
+        }
+    }
+
+    private static string NormalizeDirectoryPath(string path)
+    {
+        var raw = (path ?? "").Trim().Replace('\\', '/');
+        while (raw.Contains("//", StringComparison.Ordinal)) raw = raw.Replace("//", "/", StringComparison.Ordinal);
+        return raw.Trim('/');
+    }
+
+    private sealed class LocalFileRequestException : Exception
+    {
+        public string Code { get; }
+
+        public LocalFileRequestException(string code) : base(code)
+        {
+            Code = code;
         }
     }
 

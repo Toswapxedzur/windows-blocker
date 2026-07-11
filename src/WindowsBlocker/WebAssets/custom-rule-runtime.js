@@ -374,30 +374,58 @@ var MacBlockerRuntime = (function () {
   // ------------------------------------------------------------- local folder
 
   var localFolderRequestCounter = 0;
+  var LOCAL_FOLDER_EXTENSIONS = { ".txt": true, ".csv": true, ".json": true };
+
+  function localFolderExtensionOf(path) {
+    var match = String(path || "").toLowerCase().match(/(\.[a-z0-9]+)$/);
+    return match ? match[1] : "";
+  }
+
+  function safeLocalFolderPath(path, allowDirectory) {
+    var raw = String(path == null ? "" : path)
+      .trim()
+      .replace(/\\/g, "/")
+      .replace(/\/+/g, "/")
+      .replace(/\/$/, "");
+    if (!raw && allowDirectory) return "";
+    if (!raw || raw.charAt(0) === "/" || /^[a-z]:\//i.test(raw) || /^[a-z][a-z0-9+.-]*:/i.test(raw)) return null;
+    var parts = raw.split("/").filter(function (part) { return !!part; });
+    if (parts.length === 0) return null;
+    for (var i = 0; i < parts.length; i++) {
+      var part = parts[i];
+      if (part === "." || part === ".." || part.charAt(0) === "." || !/^[A-Za-z0-9 _.,@()\-]+$/.test(part)) return null;
+    }
+    var normalized = parts.join("/");
+    return allowDirectory || LOCAL_FOLDER_EXTENSIONS[localFolderExtensionOf(normalized)] ? normalized : null;
+  }
 
   function localFolderHelper(groupId, pushIntent) {
-    function safePath(p) {
-      var s = String(p || "").trim();
-      if (!s || s.indexOf("..") >= 0) return null;
-      return s;
-    }
     function request(action, path, extra) {
-      var sp = safePath(path);
-      if (!sp && action !== "list") return null;
+      var allowDirectory = action === "list";
+      var sp = safeLocalFolderPath(path || "", allowDirectory);
+      if (sp === null) return "";
       var reqId = "lf-" + groupId + "-" + (++localFolderRequestCounter);
-      var intent = { kind: "localFile", action: action, path: sp || "", groupId: groupId, requestId: reqId };
+      var intent = { kind: "localFile", action: action, path: sp, groupId: groupId, requestId: reqId };
       if (extra) { for (var k in extra) intent[k] = extra[k]; }
       pushIntent(intent);
       return reqId;
     }
     return {
+      isAvailable: function () { return true; },
       requestRead: function (path) { return request("read", path); },
-      requestWrite: function (path, text) { return request("write", path, { text: String(text || "") }); },
-      requestAppend: function (path, text) { return request("append", path, { text: String(text || "") }); },
+      requestWrite: function (path, text) { return typeof text === "string" ? request("write", path, { text: text }) : ""; },
+      requestAppend: function (path, text) { return typeof text === "string" ? request("append", path, { text: text }) : ""; },
       requestList: function (dirPath) { return request("list", dirPath || ""); },
       requestExists: function (path) { return request("exists", path); },
-      requestReadJson: function (path) { return request("readJson", path); },
-      requestWriteJson: function (path, value) { return request("writeJson", path, { text: JSON.stringify(value) }); }
+      requestReadJson: function (path) {
+        return localFolderExtensionOf(path) === ".json" ? request("readJson", path) : "";
+      },
+      requestWriteJson: function (path, value) {
+        if (localFolderExtensionOf(path) !== ".json") return "";
+        var text;
+        try { text = JSON.stringify(value); } catch (e) { return ""; }
+        return typeof text === "string" ? request("writeJson", path, { text: text }) : "";
+      }
     };
   }
 
@@ -1606,6 +1634,30 @@ var MacBlockerRuntime = (function () {
       ev.key = rawEvent.data.key || "";
       ev.code = rawEvent.data.code || "";
       ev.keyInfo = rawEvent.data.keyInfo && typeof rawEvent.data.keyInfo === "object" ? rawEvent.data.keyInfo : null;
+    }
+    if (rawEvent.type === "localFileEvent" && rawEvent.data && typeof rawEvent.data === "object") {
+      var localData = rawEvent.data;
+      ev.eventName = localData.eventName || "";
+      ev.action = localData.action || ev.eventName || "";
+      ev.path = localData.path || "";
+      ev.directoryPath = localData.directoryPath || "";
+      ev.requestId = localData.requestId || "";
+      ev.ok = localData.ok === true || localData.ok === "true";
+      ev.text = typeof localData.text === "string" ? localData.text : "";
+      ev.value = localData.value;
+      if (typeof localData.valueJSON === "string") {
+        try { ev.value = JSON.parse(localData.valueJSON); } catch (e) { ev.value = undefined; }
+      }
+      var entries = localData.entries;
+      if (typeof localData.entriesJSON === "string") {
+        try { entries = JSON.parse(localData.entriesJSON); } catch (e2) { entries = []; }
+      } else if (typeof entries === "string") {
+        try { entries = JSON.parse(entries); } catch (e3) { entries = []; }
+      }
+      ev.entries = Array.isArray(entries) ? entries : [];
+      ev.exists = localData.exists === true || localData.exists === "true";
+      ev.bytes = isFinite(Number(localData.bytes)) ? Number(localData.bytes) : 0;
+      ev.error = typeof localData.error === "string" ? localData.error : "";
     }
     ev.post = function (type, data, options) {
       if (depth >= MAX_POST_DEPTH) return;

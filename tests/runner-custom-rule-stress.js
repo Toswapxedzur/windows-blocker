@@ -116,6 +116,59 @@ const dueTick = dispatch("w-interval", { type: "tickEvent", now: "2027-01-15T12:
 check("W7 interval throttles then fires again", siteIntents(firstTick).length === 1 &&
   siteIntents(earlyTick).length === 0 && siteIntents(dueTick).length === 1);
 
+// W8: Native local-file responses must expose the same normalized shortcut
+// fields as extension rules: parsed JSON, typed entries, booleans and bytes.
+MacBlockerRuntime.load("w-local-file-result", `
+(event) => {
+  event.registerLocalFileEvent("consume", (ev) => {
+    if (ev.ok && ev.eventName === "read" && ev.action === "readJson" &&
+        ev.value && ev.value.enabled === true && ev.entries.length === 1 &&
+        ev.entries[0].kind === "file" && ev.exists === true && ev.bytes === 17) {
+      ev.block("local-file-ok.exe");
+    }
+  });
+}
+`);
+const localFileResult = dispatch("w-local-file-result", {
+  type: "localFileEvent",
+  data: {
+    ok: "true",
+    eventName: "read",
+    action: "readJson",
+    path: "config/focus.json",
+    valueJSON: "{\"enabled\":true}",
+    entriesJSON: "[{\"name\":\"focus.json\",\"kind\":\"file\"}]",
+    exists: "true",
+    bytes: "17"
+  }
+});
+check("W8 local-file result exposes parsed callback fields",
+  appIntents(localFileResult).map((intent) => intent.target).join(",") === "local-file-ok.exe");
+
+// W9: The native helper must only queue safe, supported local-file requests.
+MacBlockerRuntime.load("w-local-file-helper", `
+(event) => {
+  event.registerTickEvent("request", (ev, h) => {
+    const files = h.getLocalFolderHelper();
+    files.requestWrite("notes/focus.txt", "start");
+    files.requestAppend("notes/focus.txt", "+more");
+    files.requestReadJson("config/focus.json");
+    files.requestList();
+    files.requestRead("../private.txt");
+    files.requestWrite("notes/focus.md", "nope");
+  });
+}
+`);
+const localFileRequests = dispatch("w-local-file-helper", { type: "tickEvent" }).intents
+  .filter((intent) => intent.kind === "localFile");
+check("W9 local-file helper rejects unsafe or unsupported requests",
+  JSON.stringify(localFileRequests.map((intent) => [intent.action, intent.path])) === JSON.stringify([
+    ["write", "notes/focus.txt"],
+    ["append", "notes/focus.txt"],
+    ["readJson", "config/focus.json"],
+    ["list", ""]
+  ]));
+
 print("WINDOWS CUSTOM-RULE STRESS TOTAL " + (passed + failed) + " PASS " + passed + " FAIL " + failed);
 if (failed > 0) {
   print("__CB_TEST_RESULT__: FAIL");
