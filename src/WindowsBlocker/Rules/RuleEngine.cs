@@ -392,7 +392,7 @@ public sealed class RuleEngine
         if (parts.Length == 0) return null;
         foreach (var part in parts)
         {
-            if (part is "." or ".." || part.StartsWith('.', StringComparison.Ordinal)
+            if (part is "." or ".." || part.StartsWith(".", StringComparison.Ordinal)
                 || !System.Text.RegularExpressions.Regex.IsMatch(part, "^[A-Za-z0-9 _.,@()\\-]+$"))
             {
                 return null;
@@ -486,7 +486,7 @@ public sealed class RuleEngine
                     foreach (var entry in Directory.GetFileSystemEntries(dir))
                     {
                         var name = Path.GetFileName(entry);
-                        if (string.IsNullOrEmpty(name) || name.StartsWith('.', StringComparison.Ordinal)) continue;
+                        if (string.IsNullOrEmpty(name) || name.StartsWith(".", StringComparison.Ordinal)) continue;
                         var entryPath = string.IsNullOrEmpty(normalizedPath) ? name : normalizedPath + "/" + name;
                         if (Directory.Exists(entry))
                         {
