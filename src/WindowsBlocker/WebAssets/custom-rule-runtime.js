@@ -417,6 +417,7 @@ var MacBlockerRuntime = (function () {
     return {
       isPlatformUrl: function (u) { return hostMatches(hostnameOf(u), PLATFORM_HOSTS[platform] || []); },
       isShortUrl: function (u) {
+        if (!hostMatches(hostnameOf(u), PLATFORM_HOSTS[platform] || [])) return false;
         var p = pathnameOf(u);
         if (platform === "youtube") return p.indexOf("/shorts/") === 0;
         if (platform === "instagram") return p.indexOf("/reels/") === 0 || p.indexOf("/reel/") === 0;
@@ -424,19 +425,23 @@ var MacBlockerRuntime = (function () {
         return false;
       },
       isVideoUrl: function (u) {
+        if (!hostMatches(hostnameOf(u), PLATFORM_HOSTS[platform] || [])) return false;
         var p = pathnameOf(u);
         if (platform === "youtube") return p.indexOf("/watch") === 0 || p.indexOf("/shorts/") === 0;
         return /\/video\//.test(p) || /\/watch/.test(p);
       },
       isPostUrl: function (u) {
+        if (!hostMatches(hostnameOf(u), PLATFORM_HOSTS[platform] || [])) return false;
         var p = pathnameOf(u);
         return /\/p\//.test(p) || /\/post/.test(p) || /\/status\//.test(p);
       },
       isHomePage: function (u) {
+        if (!hostMatches(hostnameOf(u), PLATFORM_HOSTS[platform] || [])) return false;
         var p = pathnameOf(u);
         return p === "/" || p === "";
       },
       extractAuthor: function (u) {
+        if (!hostMatches(hostnameOf(u), PLATFORM_HOSTS[platform] || [])) return null;
         var p = pathnameOf(u);
         var at = p.match(/\/@([^\/?#]+)/);
         if (at) return at[1];
@@ -445,6 +450,7 @@ var MacBlockerRuntime = (function () {
         return null;
       },
       extractVideoId: function (u) {
+        if (!hostMatches(hostnameOf(u), PLATFORM_HOSTS[platform] || [])) return null;
         if (platform === "youtube") {
           var v = queryGet(u, "v");
           if (v) return v;
