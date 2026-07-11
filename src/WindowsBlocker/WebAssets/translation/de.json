@@ -369,7 +369,7 @@
   "logFeed.empty": "No activity yet. Trigger an event (e.g. press Start Snooze, switch tabs, or click Run) to see logs here.",
   "logFeed.clear": "Klar",
   "siteAccess.title": "Eingeschränkter Website-Zugriff erkannt",
-  "siteAccess.body": "Chrom-Browser beschränkt derzeit den Zugriff dieser Erweiterung auf Webseiten. Screen Time Limiter: Custom Website Blocker & Focus Timer benötigt Zugriff auf alle Websites, um sie zu blockieren.",
+  "siteAccess.body": "Chrom-Browser beschränkt derzeit den Zugriff dieser Erweiterung auf Webseiten. Adamancia Vault — Website Blocker & Focus Timer benötigt Zugriff auf alle Websites, um sie zu blockieren.",
   "siteAccess.grant": "Zugriff gewähren",
   "siteAccess.dismiss": "Schließen",
   "siteAccess.grantFailed": "Chrom-Browser hat die Zugriffsanfrage abgelehnt. Du kannst den Website-Zugriff unter chrome://extensions ändern.",

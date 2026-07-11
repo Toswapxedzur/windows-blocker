@@ -196,6 +196,10 @@ var MacBlockerRuntime = (function () {
 
   function eventRegistry(groupId) {
     var api = {
+      // Raw primitives (mirror customBlocker event-sandbox): on/off/emit.
+      on: function (type, id, handler, options) { return register(groupId, type, id, handler, options || {}); },
+      off: function (type, id) { return unregister(groupId, type, id); },
+      emit: function () { /* top-level emit is ignored; use ev.post inside handlers */ },
       register: function (type, id, handler, options) { return register(groupId, type, id, handler, options || {}); },
       unregister: function (type, id) { return unregister(groupId, type, id); },
       unregisterAll: function (type) { return unregisterAll(groupId, type); },
@@ -250,16 +254,42 @@ var MacBlockerRuntime = (function () {
 
   function timerHelper(groupId) {
     var store = timerStore(groupId);
+    function sanitizeOverlayStyle(style) {
+      if (!style || typeof style !== "object") return null;
+      var keys = ["color", "background", "fontSize", "fontWeight", "border", "borderRadius", "padding", "opacity", "icon"];
+      var out = {};
+      for (var i = 0; i < keys.length; i++) {
+        var v = style[keys[i]];
+        if (typeof v === "string" && v) out[keys[i]] = v.slice(0, 120);
+        else if (keys[i] === "opacity" && isFinite(Number(v))) out[keys[i]] = String(Number(v));
+      }
+      var has = false; for (var k in out) { has = true; break; }
+      return has ? out : null;
+    }
+    function clamp(t, ms) {
+      var v = Math.max(0, Math.floor(Number(ms) || 0));
+      if (isFinite(t.maxMs)) v = Math.min(t.maxMs, v);
+      if (isFinite(t.minMs)) v = Math.max(t.minMs, v);
+      return v;
+    }
     function make(init) {
-      return {
+      var t = {
         id: String(init.id),
         displayName: String(init.displayName || init.id),
         direction: init.direction === "forward" ? "forward" : "backward",
         currentMs: Number(init.currentMs) || 0,
         isPaused: false,
         scope: init.scope || null,
-        domain: init.domain || null
+        domain: init.domain || null,
+        accrueWhen: init.accrueWhen || null
       };
+      if (isFinite(Number(init.minMs)) && Number(init.minMs) > 0) t.minMs = Math.floor(Number(init.minMs));
+      if (isFinite(Number(init.maxMs)) && Number(init.maxMs) > 0) t.maxMs = Math.floor(Number(init.maxMs));
+      if (isFinite(Number(init.stepMs)) && Number(init.stepMs) > 0) t.stepMs = Math.floor(Number(init.stepMs));
+      var os = sanitizeOverlayStyle(init.overlayStyle);
+      if (os) t.overlayStyle = os;
+      t.currentMs = clamp(t, t.currentMs);
+      return t;
     }
     return {
       groupId: groupId,
@@ -273,8 +303,24 @@ var MacBlockerRuntime = (function () {
       pause: function (id) { if (store[id]) store[id].isPaused = true; },
       resume: function (id) { if (store[id]) store[id].isPaused = false; },
       setDirection: function (id, dir) { if (store[id]) store[id].direction = dir === "forward" ? "forward" : "backward"; },
-      setCurrentMs: function (id, ms) { if (store[id]) store[id].currentMs = Number(ms) || 0; },
-      addMs: function (id, delta) { if (store[id]) store[id].currentMs += Number(delta) || 0; },
+      setCurrentMs: function (id, ms) { if (store[id]) store[id].currentMs = clamp(store[id], ms); },
+      addMs: function (id, delta) { if (store[id]) store[id].currentMs = clamp(store[id], store[id].currentMs + (Number(delta) || 0)); },
+      subMs: function (id, delta) { if (store[id]) store[id].currentMs = clamp(store[id], store[id].currentMs - (Number(delta) || 0)); },
+      setBounds: function (id, minMs, maxMs) {
+        var t = store[id]; if (!t) return;
+        if (isFinite(Number(minMs)) && Number(minMs) > 0) t.minMs = Math.floor(Number(minMs)); else if (minMs === null) delete t.minMs;
+        if (isFinite(Number(maxMs)) && Number(maxMs) > 0) t.maxMs = Math.floor(Number(maxMs)); else if (maxMs === null) delete t.maxMs;
+        t.currentMs = clamp(t, t.currentMs);
+      },
+      setStep: function (id, stepMs) {
+        var t = store[id]; if (!t) return;
+        if (isFinite(Number(stepMs)) && Number(stepMs) > 0) t.stepMs = Math.floor(Number(stepMs)); else delete t.stepMs;
+      },
+      setOverlayStyle: function (id, style) {
+        var t = store[id]; if (!t) return;
+        var os = sanitizeOverlayStyle(style);
+        if (os) t.overlayStyle = os; else delete t.overlayStyle;
+      },
       setDisplayName: function (id, name) { if (store[id]) store[id].displayName = String(name); },
       getCurrentMs: function (id) { return store[id] ? store[id].currentMs : 0; },
       isExpired: function (id) {
@@ -289,7 +335,12 @@ var MacBlockerRuntime = (function () {
       getState: function (id) {
         var t = store[id];
         if (!t) return null;
-        return { id: t.id, displayName: t.displayName, direction: t.direction, isPaused: t.isPaused, currentMs: t.currentMs, isExpired: t.direction === "backward" ? t.currentMs <= 0 : false };
+        var s = { id: t.id, displayName: t.displayName, direction: t.direction, isPaused: t.isPaused, currentMs: t.currentMs, isExpired: t.direction === "backward" ? t.currentMs <= 0 : false };
+        if (isFinite(t.minMs)) s.minMs = t.minMs;
+        if (isFinite(t.maxMs)) s.maxMs = t.maxMs;
+        if (isFinite(t.stepMs)) s.stepMs = t.stepMs;
+        if (t.overlayStyle) s.overlayStyle = t.overlayStyle;
+        return s;
       },
       list: function () { return Object.keys(store).map(function (k) { return store[k]; }); }
     };
@@ -455,31 +506,42 @@ var MacBlockerRuntime = (function () {
 
   // --------------------------------------------------------------- platform
 
-  var PLATFORM_DOM_METHODS = [
-    "hideShorts", "showShorts", "hideVideos", "showVideos", "hidePosts", "showPosts",
-    "hideReels", "showReels", "hideShortButton", "showShortButton", "hideHomePage",
-    "showHomePage", "hideComments", "showComments", "filterComments", "hideLive",
-    "showLive", "filterLive", "hideClips", "showClips", "hideStreams", "showStreams",
-    "isCurrentChannelSubscribed", "isChannelSubscribed", "isCurrentChannelVerified",
-    "isLiveNow", "isItemLive", "isAlgorithmicRecommendation", "isSponsored",
-    "setShortsTimer", "setVideosTimer", "setPostsTimer", "setReelsTimer",
-    "setClipsTimer", "setStreamsTimer"
-  ];
-
+  // Raw platform API. Feed-level DOM control (hide/allow/show/surface) has no
+  // meaning on native (there is no page DOM), so these are inert no-ops that
+  // log once as unsupported. URL classifiers remain functional. This mirrors
+  // the customBlocker raw API surface: platform(name).hide(slot?,pred,opts)
+  // etc. — there are no named convenience methods anymore.
   function platformApi(name, logUnsupported) {
     var api = urlClassifiers(name);
-    PLATFORM_DOM_METHODS.forEach(function (m) {
-      api[m] = function () { logUnsupported("platform." + name + "." + m); return undefined; };
-    });
+    function noop(method) {
+      return function () { logUnsupported("platform." + name + "." + method); return undefined; };
+    }
+    api.hide = noop("hide");
+    api.allow = noop("allow");
+    api.show = noop("show");
+    api.surface = noop("surface");
+    api.timer = noop("timer");
+    api.snapshot = function () { return null; };
+    api.slots = function () { return []; };
+    api.surfaces = function () { return []; };
+    api.timerSlots = function () { return []; };
     return api;
   }
 
   function platformHelper(logUnsupported) {
-    var helper = { listMethods: function () { return PLATFORM_DOM_METHODS.slice(); }, hasMethod: function (_p, m) { return PLATFORM_DOM_METHODS.indexOf(m) >= 0; } };
+    var helper = {};
     ["youtube", "tiktok", "instagram", "facebook", "twitch"].forEach(function (name) {
       helper[name] = function () { return platformApi(name, logUnsupported); };
     });
     return helper;
+  }
+
+  // Top-level helpers.platform(name?) accessor: with a name returns the raw
+  // platform api directly; without one returns the {youtube(),tiktok(),...}
+  // selector object.
+  function platformAccessor(name, logUnsupported) {
+    if (typeof name === "string" && name) return platformApi(name, logUnsupported);
+    return platformHelper(logUnsupported);
   }
 
   // ------------------------------------------------- tab helper
@@ -597,7 +659,19 @@ var MacBlockerRuntime = (function () {
   var PANEL_WIDTHS = { small:1, medium:1, large:1 };
   var PANEL_LAYOUTS = { vertical:1, compact:1, comfortable:1, spacious:1, inline:1, row:1, wrap:1, twoColumn:1, grid:1, split:1, form:1, toolbar:1, stack:1 };
   var PANEL_ROLES = { region:1, dialog:1, alert:1, status:1, form:1, group:1 };
-  var PANEL_CONTROL_TYPES = { text:1, checkbox:1, select:1, textInput:1, textarea:1, button:1, section:1, timer:1, numberInput:1, range:1, toggle:1, radio:1, date:1, time:1, color:1, pin:1 };
+  var PANEL_CONTROL_TYPES = { text:1, checkbox:1, select:1, textInput:1, textarea:1, button:1, section:1, timer:1, numberInput:1, range:1, toggle:1, radio:1, date:1, time:1, color:1, pin:1, html:1 };
+
+  function sanitizePanelHtml(value) {
+    var html = truncateText(value, 20000);
+    if (!html) return "";
+    html = html.replace(/<\s*script\b[\s\S]*?<\s*\/\s*script\s*>/gi, "");
+    html = html.replace(/<\s*script\b[^>]*>/gi, "");
+    html = html.replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, "");
+    html = html.replace(/\son[a-z]+\s*=\s*'[^']*'/gi, "");
+    html = html.replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, "");
+    html = html.replace(/(href|src)\s*=\s*("|')\s*javascript:[^"']*\2/gi, "$1=$2#$2");
+    return html;
+  }
   var PANEL_CONTROL_ACTIONS = { submit:1, cancel:1, close:1 };
 
   function truncateText(value, max) {
@@ -612,6 +686,7 @@ var MacBlockerRuntime = (function () {
     if (type === "number") return "numberInput";
     if (type === "slider") return "range";
     if (type === "switch") return "toggle";
+    if (type === "raw" || type === "markup") return "html";
     return PANEL_CONTROL_TYPES[type] ? type : "text";
   }
 
@@ -755,6 +830,7 @@ var MacBlockerRuntime = (function () {
       out.value = sanitizePanelValue(type, value, out);
     }
     if (type === "text") out.text = truncateText(control.text || control.label || "", 1000);
+    if (type === "html") out.html = sanitizePanelHtml(control.html || control.text || "");
     if (type === "section") {
       out.text = truncateText(control.text || control.description || "", 1000);
       out.role = PANEL_ROLES[control.role] ? control.role : "group";
@@ -963,7 +1039,7 @@ var MacBlockerRuntime = (function () {
         for (var i = 0; i < (controls || []).length; i++) {
           var c = controls[i];
           if (c.type === "section") { visit(c.controls); continue; }
-          if (c.type === "button" || c.type === "text" || c.type === "timer") continue;
+          if (c.type === "button" || c.type === "text" || c.type === "timer" || c.type === "html") continue;
           out[c.id] = c.value;
         }
       };
@@ -1075,7 +1151,7 @@ var MacBlockerRuntime = (function () {
         var panel = getPanel(panelId);
         if (!panel || typeof controlId !== "string") return false;
         var control = findControl(panel, controlId);
-        if (!control || control.type === "button" || control.type === "text" || control.type === "timer") return false;
+        if (!control || control.type === "button" || control.type === "text" || control.type === "timer" || control.type === "html") return false;
         var next = sanitizePanelValue(control.type, value, control);
         if (JSON.stringify(control.value) === JSON.stringify(next)) return true;
         control.value = next;
@@ -1222,7 +1298,7 @@ var MacBlockerRuntime = (function () {
             for (var i = 0; i < (controls || []).length; i++) {
               var c = controls[i];
               if (c.type === "section") { applyValues(c.controls); continue; }
-              if (c.type === "button" || c.type === "text" || c.type === "timer") continue;
+              if (c.type === "button" || c.type === "text" || c.type === "timer" || c.type === "html") continue;
               if (!values.hasOwnProperty(c.id)) continue;
               var nv = sanitizePanelValue(c.type, values[c.id], c);
               if (JSON.stringify(c.value) !== JSON.stringify(nv)) { c.value = nv; changed = true; }
@@ -1377,6 +1453,7 @@ var MacBlockerRuntime = (function () {
       getWindowHelper: function () { return win; },
       getRedirectionHelper: function () { return unsupportedHelper("getRedirectionHelper", logUnsupported); },
       getPlatformHelper: function () { return platformHelper(logUnsupported); },
+      platform: function (name) { return platformAccessor(name, logUnsupported); },
       getDOMHelper: function () { return unsupportedHelper("getDOMHelper", logUnsupported); },
       getNavigationHelper: function () { return unsupportedHelper("getNavigationHelper", logUnsupported); },
       getTabHelper: function () { return tabHelper(rawEvent, pushIntent); },

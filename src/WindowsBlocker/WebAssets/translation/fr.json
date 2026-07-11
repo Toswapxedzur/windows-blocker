@@ -369,7 +369,7 @@
   "logFeed.empty": "No activity yet. Trigger an event (e.g. press Start Snooze, switch tabs, or click Run) to see logs here.",
   "logFeed.clear": "Clair",
   "siteAccess.title": "Accès limité au site détecté",
-  "siteAccess.body": "navigateur de Google limite actuellement l’accès de cette extension aux pages web. Screen Time Limiter: Custom Website Blocker & Focus Timer a besoin d’accéder à tous les sites pour les bloquer.",
+  "siteAccess.body": "navigateur de Google limite actuellement l’accès de cette extension aux pages web. Adamancia Vault — Website Blocker & Focus Timer a besoin d’accéder à tous les sites pour les bloquer.",
   "siteAccess.grant": "Autoriser l’accès",
   "siteAccess.dismiss": "Ignorer",
   "siteAccess.grantFailed": "navigateur de Google a refusé la demande d’accès. Vous pouvez modifier l’accès aux sites dans chrome://extensions.",

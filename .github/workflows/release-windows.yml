@@ -1,0 +1,66 @@
+name: Release Windows package
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing version tag to package and release
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package-and-release:
+    runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+      PACKAGE_DIRECTORY: dist/WindowsVault-win-x64
+      PACKAGE_ASSET: dist/WindowsVault-${{ inputs.release_tag || github.ref_name }}-win-x64.zip
+    steps:
+      - name: Check out the tagged release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish self-contained Windows package
+        run: >
+          dotnet publish src/WindowsBlocker/WindowsBlocker.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --output $env:PACKAGE_DIRECTORY
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=None
+          -p:DebugSymbols=false
+
+      - name: Archive package and write checksum
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "$env:PACKAGE_DIRECTORY/*" -DestinationPath $env:PACKAGE_ASSET -Force
+          $hash = (Get-FileHash -Algorithm SHA256 $env:PACKAGE_ASSET).Hash.ToLowerInvariant()
+          $assetName = Split-Path -Leaf $env:PACKAGE_ASSET
+          "$hash  $assetName" | Set-Content -NoNewline "$env:PACKAGE_ASSET.sha256"
+
+      - name: Publish GitHub alpha release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = "Windows Vault 0.0.1 alpha. The ZIP is a self-contained win-x64 build; its SHA-256 checksum is attached."
+          if (gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY 2>$null) {
+            gh release upload $env:RELEASE_TAG $env:PACKAGE_ASSET "$env:PACKAGE_ASSET.sha256" --clobber --repo $env:GITHUB_REPOSITORY
+          } else {
+            $arguments = @('release', 'create', $env:RELEASE_TAG, $env:PACKAGE_ASSET, "$env:PACKAGE_ASSET.sha256", '--title', "Windows Vault $env:RELEASE_TAG alpha", '--notes', $notes, '--prerelease')
+            gh @arguments --repo $env:GITHUB_REPOSITORY
+          }

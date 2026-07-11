@@ -12,10 +12,10 @@ public sealed class SelfPreservationGuard
 {
     private bool _warned;
 
-    public string WarningTitle { get; init; } = "WindowsBlocker is still running";
+    public string WarningTitle { get; init; } = "Windows Vault is still running";
 
     public string WarningMessage { get; init; } =
-        "Closing WindowsBlocker will stop blocking your selected apps.\n\n" +
+        "Closing Windows Vault will stop blocking your selected apps.\n\n" +
         "If you really want to quit, close it again.";
 
     /// Returns true if the close should be CANCELLED (i.e. show the warning),
