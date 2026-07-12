@@ -7,9 +7,18 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing version tag to package and release
+        description: Version label used for the package (for example v0.0.2)
         required: true
         type: string
+      release_ref:
+        description: Branch, tag, or commit to build; defaults to release_tag
+        required: false
+        type: string
+      validate_only:
+        description: Build and retain the package without publishing a GitHub Release
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -25,7 +34,7 @@ jobs:
       - name: Check out the tagged release
         uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.release_tag || github.ref }}
+          ref: ${{ inputs.release_ref || inputs.release_tag || github.ref }}
 
       - name: Set up .NET 8
         uses: actions/setup-dotnet@v5
@@ -52,12 +61,22 @@ jobs:
           $assetName = Split-Path -Leaf $env:PACKAGE_ASSET
           "$hash  $assetName" | Set-Content -NoNewline "$env:PACKAGE_ASSET.sha256"
 
+      - name: Retain the verified package from this run
+        uses: actions/upload-artifact@v4
+        with:
+          name: WindowsVault-${{ inputs.release_tag || github.ref_name }}-win-x64
+          path: |
+            ${{ env.PACKAGE_ASSET }}
+            ${{ env.PACKAGE_ASSET }}.sha256
+          if-no-files-found: error
+
       - name: Publish GitHub alpha release
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.validate_only }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $notes = "Windows Vault 0.0.1 alpha. The ZIP is a self-contained win-x64 build; its SHA-256 checksum is attached."
+          $notes = "Windows Vault $env:RELEASE_TAG alpha. The ZIP is a self-contained win-x64 build; its SHA-256 checksum is attached."
           if (gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY 2>$null) {
             gh release upload $env:RELEASE_TAG $env:PACKAGE_ASSET "$env:PACKAGE_ASSET.sha256" --clobber --repo $env:GITHUB_REPOSITORY
           } else {
