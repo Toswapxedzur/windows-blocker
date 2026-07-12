@@ -234,6 +234,7 @@
   "custom.editorCopy": "Custom rules are event-driven. The script registers handlers that run across tabs and navigations until you click Run again, disable the group, or delete it.",
   "custom.defaultRule": "(event, helpers) => {\n  // Register handlers here.\n}",
   "custom.runButton": "Run",
+  "custom.runStatusHalted": "Halted: the rule took too long to load and was force-aborted. Check the Log panel for details.",
   "custom.checkSyntaxButton": "Check syntax",
   "custom.letAiCodeButton": "Let AI Code",
   "custom.aiPromptLabel": "Prompt for AI",

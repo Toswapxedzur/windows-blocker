@@ -4,7 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title data-i18n="app.title">Screen Time Limiter: Custom Application Blocker & Focus Timer</title>
-    <link rel="icon" href="icons/icon-128.png" />
+    <link rel="icon" media="(prefers-color-scheme: light)" href="icons/adamancia-vault-lock-v3-128.png" />
+    <link rel="icon" media="(prefers-color-scheme: dark)" href="icons/adamancia-vault-lock-inverse-dark-128.png?v=20260712b" />
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
@@ -22,7 +23,28 @@
               Instruction Manual
             </button>
             <div class="language-picker">
-              <select id="languageSelect" aria-label="Language" data-i18n-aria-label="language.label"></select>
+              <select id="languageSelect" aria-label="Language" data-i18n-aria-label="language.label" translate="no" class="notranslate">
+                <option value="en">English</option>
+                <option value="zh">简体中文</option>
+                <option value="es">Espanol</option>
+                <option value="hi">हिन्दी</option>
+                <option value="ar">العربية</option>
+                <option value="bn">বাংলা</option>
+                <option value="pt">Portugues</option>
+                <option value="ru">Русский</option>
+                <option value="ja">日本語</option>
+                <option value="pa">ਪੰਜਾਬੀ</option>
+                <option value="de">Deutsch</option>
+                <option value="fr">Francais</option>
+                <option value="ko">한국어</option>
+                <option value="tr">Turkce</option>
+                <option value="vi">Tieng Viet</option>
+                <option value="it">Italiano</option>
+                <option value="th">ไทย</option>
+                <option value="nl">Nederlands</option>
+                <option value="pl">Polski</option>
+                <option value="id">Bahasa Indonesia</option>
+              </select>
             </div>
           </div>
         </div>
@@ -133,7 +155,7 @@
             <select id="blockMode">
               <option value="instant" data-i18n="mode.instant">Block immediately</option>
               <option value="after-minutes" data-i18n="mode.afterMinutes">Block after a number of minutes</option>
-              <option value="timer" data-i18n="mode.timer">Timer (count down, then block)</option>
+              <option value="timer" data-i18n="mode.timer">Timer (count up, no block)</option>
             </select>
           </div>
 
