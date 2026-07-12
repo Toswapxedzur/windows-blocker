@@ -6,6 +6,28 @@ const GROUP_SNOOZE_TOTALS_KEY = "groupSnoozeTotalsMs";
 const GLOBAL_SETTINGS_KEY = "globalSettings";
 const LAYOUT_WIDTH_STORAGE_KEY = "custom-blocker-groups-panel-width";
 const LANGUAGE_STORAGE_KEY = "custom-blocker-language";
+const LANGUAGE_FALLBACKS = Object.freeze({
+  en: { label: "English", nativeLabel: "English" },
+  zh: { label: "Chinese (Simplified)", nativeLabel: "简体中文" },
+  es: { label: "Spanish", nativeLabel: "Espanol" },
+  hi: { label: "Hindi", nativeLabel: "हिन्दी" },
+  ar: { label: "Arabic", nativeLabel: "العربية" },
+  bn: { label: "Bengali", nativeLabel: "বাংলা" },
+  pt: { label: "Portuguese", nativeLabel: "Portugues" },
+  ru: { label: "Russian", nativeLabel: "Русский" },
+  ja: { label: "Japanese", nativeLabel: "日本語" },
+  pa: { label: "Punjabi", nativeLabel: "ਪੰਜਾਬੀ" },
+  de: { label: "German", nativeLabel: "Deutsch" },
+  fr: { label: "French", nativeLabel: "Francais" },
+  ko: { label: "Korean", nativeLabel: "한국어" },
+  tr: { label: "Turkish", nativeLabel: "Turkce" },
+  vi: { label: "Vietnamese", nativeLabel: "Tieng Viet" },
+  it: { label: "Italian", nativeLabel: "Italiano" },
+  th: { label: "Thai", nativeLabel: "ไทย" },
+  nl: { label: "Dutch", nativeLabel: "Nederlands" },
+  pl: { label: "Polish", nativeLabel: "Polski" },
+  id: { label: "Indonesian", nativeLabel: "Bahasa Indonesia" }
+});
 const AI_PROMPT_STORAGE_PREFIX = "custom-blocker-ai-prompt:";
 const GROUP_TRANSFER_PREFIX = "custom-blocker-group:v1:";
 const LOCAL_FOLDER_DB_NAME = "custom-blocker-local-folder";
@@ -495,17 +517,15 @@ function getTranslationsConfig() {
   return window.CUSTOM_BLOCKER_I18N ?? {
     defaultLanguage: "en",
     translationDirectory: "translation",
-    languages: {
-      en: {
-        label: "English",
-        nativeLabel: "English"
-      }
-    }
+    languages: LANGUAGE_FALLBACKS
   };
 }
 
 function getAvailableLanguages() {
-  return getTranslationsConfig().languages;
+  const languages = getTranslationsConfig().languages;
+  return languages && typeof languages === "object" && Object.keys(languages).length
+    ? languages
+    : LANGUAGE_FALLBACKS;
 }
 
 function getDefaultLanguageCode() {
@@ -584,25 +604,16 @@ function loadLanguage() {
 
 async function fetchManualMarkdown(languageCode) {
   const candidates = languageCode === "en" ? ["en"] : [languageCode, "en"];
-
   for (const candidate of candidates) {
-    if (state.manualCache[candidate]) {
-      return state.manualCache[candidate];
-    }
-
+    if (state.manualCache[candidate]) return state.manualCache[candidate];
     try {
       const response = await fetch(chrome.runtime.getURL(`manual/${candidate}.md`));
-
-      if (!response.ok) {
-        continue;
-      }
-
+      if (!response.ok) continue;
       const markdown = await response.text();
       state.manualCache[candidate] = markdown;
       return markdown;
     } catch {}
   }
-
   throw new Error(t("manual.error"));
 }
 
@@ -614,13 +625,8 @@ async function loadManualContent() {
     const markdown = await fetchManualMarkdown(state.language);
     manualStatus.textContent = "";
     let html = renderMarkdownToHtml(markdown);
-    // Non-English manuals are machine-translated. Surface that up-front
-    // so a reader does not mistake an MT artefact for an authoritative
-    // statement. The banner itself is localized via the standard
-    // translation pipeline.
     if (state.language && state.language !== "en") {
-      const bannerText = escapeHtml(t("manual.mtBanner"));
-      html = `<blockquote class="mt-banner">${bannerText}</blockquote>${html}`;
+      html = `<blockquote class="mt-banner">${escapeHtml(t("manual.mtBanner"))}</blockquote>${html}`;
     }
     manualContent.innerHTML = html;
   } catch (error) {
@@ -1641,11 +1647,22 @@ function populateLanguageOptions() {
   for (const [code, language] of Object.entries(languages)) {
     const option = document.createElement("option");
     option.value = code;
+    option.setAttribute("translate", "no");
+    option.classList.add("notranslate");
     option.textContent = language.nativeLabel || language.label || code;
     languageSelect.appendChild(option);
   }
 
-  languageSelect.value = state.language;
+  const selectedLanguage = languages[state.language]
+    ? state.language
+    : getDefaultLanguageCode();
+  languageSelect.value = selectedLanguage;
+
+  // A browser can discard an invalid selected value. Keep a visible option in
+  // that case rather than leaving the language control blank.
+  if (!languageSelect.value) {
+    languageSelect.value = Object.keys(languages)[0] || "en";
+  }
 }
 
 async function setLanguage(languageCode) {
@@ -6766,9 +6783,7 @@ async function runSelectedCustomGroup() {
     ]);
     if (response && response.__timedOut) {
       if (runCustomGroupStatus) {
-        runCustomGroupStatus.textContent =
-          "Halted: the rule took too long to load and was force-aborted. " +
-          "Check the Log panel for details.";
+        runCustomGroupStatus.textContent = t("custom.runStatusHalted");
         runCustomGroupStatus.className = "run-status error";
       }
       setStatus(t("status.customRunHaltedTimeBudget"), true);
@@ -7702,6 +7717,8 @@ async function initializeSiteAccessBanner() {
 async function initializePopupApp() {
   const defaultLanguage = getDefaultLanguageCode();
   state.language = loadLanguage();
+  // The language picker must be usable while translation files are loading.
+  populateLanguageOptions();
 
   await ensureLanguageMessages(defaultLanguage).catch(() => {
     state.translationMessages[defaultLanguage] = {};

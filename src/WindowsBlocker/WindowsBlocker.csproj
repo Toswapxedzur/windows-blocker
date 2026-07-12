@@ -12,6 +12,7 @@
          AssemblyName/namespace stay "WindowsBlocker" as the internal identifier. -->
     <Product>Windows Vault</Product>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets/windows-vault.ico</ApplicationIcon>
     <LangVersion>latest</LangVersion>
     <!-- Source of truth for the Windows app version. Bump only on an official
          release (see the group-level CHANGELOG.md). Version = SemVer shown to
