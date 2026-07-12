@@ -28,12 +28,12 @@ Het applicatieproject richt zich op `net8.0-windows` en maakt gebruik van WPF pl
 
 | Gebied | Bronmap |
 | --- | --- |
-| Groepsmodel en beleidsevaluatie | @@@HOUD0000@@@ |
-| Native handhaving | @@@HOUD0000@@@ |
-| App-inventaris en WebView-bridge | @@@HOUD0000@@@ |
-| Runtime met aangepaste regels | @@@HOUD0000@@@ |
-| Brughub | @@@HOUD0000@@@ |
-| WPF-vensters en overlays | @@@HOUD0000@@@ |
+| Groepsmodel en beleidsevaluatie | `src/WindowsBlocker/Core/` |
+| Native handhaving | `src/WindowsBlocker/Enforcement/` |
+| App-inventaris en WebView-bridge | `src/WindowsBlocker/WebUI/` |
+| Runtime met aangepaste regels | `src/WindowsBlocker/Rules/` |
+| Brughub | `src/WindowsBlocker/Bridge/` |
+| WPF-vensters en overlays | `src/WindowsBlocker/` |
 
 ## Documentatie en vertalingen
 

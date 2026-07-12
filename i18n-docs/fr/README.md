@@ -28,12 +28,12 @@ Le projet d'application cible `net8.0-windows` et utilise WPF plus WebView2. Cr�
 
 | Zone | Répertoire source |
 | --- | --- |
-| Modèle de groupe et évaluation des politiques | @@@GARDER0000@@@ |
-| Application autochtone | @@@GARDER0000@@@ |
-| Inventaire des applications et pont WebView | @@@GARDER0000@@@ |
-| Exécution de règles personnalisées | @@@GARDER0000@@@ |
-| Moyeu du pont | @@@GARDER0000@@@ |
-| Fenêtres et superpositions WPF | @@@GARDER0000@@@ |
+| Modèle de groupe et évaluation des politiques | `src/WindowsBlocker/Core/` |
+| Application autochtone | `src/WindowsBlocker/Enforcement/` |
+| Inventaire des applications et pont WebView | `src/WindowsBlocker/WebUI/` |
+| Exécution de règles personnalisées | `src/WindowsBlocker/Rules/` |
+| Moyeu du pont | `src/WindowsBlocker/Bridge/` |
+| Fenêtres et superpositions WPF | `src/WindowsBlocker/` |
 
 ## Documentation et traductions
 
