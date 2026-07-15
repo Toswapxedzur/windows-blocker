@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.WebSockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -18,8 +19,8 @@ namespace WindowsBlocker.Bridge;
 //
 // The desktop app is the only endpoint that can listen on a socket (a browser
 // extension cannot), so it hosts this server on a fixed loopback port. The
-// customBlocker browser extension connects OUT to it (no pairing step, since the
-// listener is loopback-only). The protocol is byte-for-byte the same one the
+// customBlocker browser extension connects OUT to it and authenticates with a
+// per-install pairing key. The protocol is byte-for-byte the same one the
 // macOS hub speaks, so the unmodified extension client connects on Windows too.
 //
 // Scope: accept loopback WebSocket connections, track connected peers, route
@@ -27,11 +28,14 @@ namespace WindowsBlocker.Bridge;
 // embedded web editor (pushed each second + on demand).
 public sealed class ConnectionHub
 {
-    // Stable local identifier. The verbatim web UI reports itself as "macapp"
-    // when hosted by a native bridge (popup.js detectProgramId), so the hub uses
-    // the same label for "this app" — it is only a local routing key.
-    private const string LocalProgram = "macapp";
+    internal const int ProtocolVersion = 2;
+    internal const string LocalProgram = "windowsapp";
     private const int Port = 8787;
+    private const int MaxMessageBytes = 1_048_576;
+    private static readonly HashSet<string> RemotePrograms = new(StringComparer.Ordinal)
+    {
+        "chrome", "edge", "firefox", "safari", "opera", "browser"
+    };
 
     private sealed class Peer
     {
@@ -77,6 +81,51 @@ public sealed class ConnectionHub
     private HttpListener? _listener;
     private bool _running;
     private string _lastError = "";
+    private readonly string _pairingKey;
+
+    public ConnectionHub()
+    {
+        _pairingKey = LoadOrCreatePairingKey();
+    }
+
+    private static string LoadOrCreatePairingKey()
+    {
+        try
+        {
+            if (File.Exists(Storage.BridgePairingKeyPath))
+            {
+                var existing = File.ReadAllText(Storage.BridgePairingKeyPath).Trim().ToLowerInvariant();
+                if (existing.Length == 64 && existing.All(Uri.IsHexDigit)) return existing;
+            }
+        }
+        catch { }
+        var key = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        try
+        {
+            var tmp = Storage.BridgePairingKeyPath + ".tmp";
+            File.WriteAllText(tmp, key);
+            File.Move(tmp, Storage.BridgePairingKeyPath, overwrite: true);
+        }
+        catch { }
+        return key;
+    }
+
+    private static bool SecureEquals(string supplied, string expected)
+    {
+        var a = Encoding.UTF8.GetBytes(supplied);
+        var b = Encoding.UTF8.GetBytes(expected);
+        return a.Length == b.Length && CryptographicOperations.FixedTimeEquals(a, b);
+    }
+
+    internal static string? HelloRejectionReason(JsonObject obj, string pairingKey)
+    {
+        if (obj["v"]?.GetValueKind() != JsonValueKind.Number || obj["v"]!.GetValue<int>() != ProtocolVersion)
+            return "protocol-mismatch";
+        var program = Str(obj["program"]);
+        if (!RemotePrograms.Contains(program)) return "invalid-program";
+        var supplied = Str(obj["pairingKey"]).Trim().ToLowerInvariant();
+        return SecureEquals(supplied, pairingKey) ? null : "pairing-key-rejected";
+    }
 
     // MARK: Lifecycle ------------------------------------------------------
 
@@ -176,9 +225,18 @@ public sealed class ConnectionHub
 
         var peer = new Peer(socket);
         lock (_lock) _peers[peer.Id] = peer;
+        _ = EnforceHandshakeTimeoutAsync(peer);
         try { await ReceiveLoopAsync(peer); }
         catch { }
         finally { RemovePeer(peer.Id); }
+    }
+
+    private async Task EnforceHandshakeTimeoutAsync(Peer peer)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(5));
+        bool pending;
+        lock (_lock) pending = _peers.ContainsKey(peer.Id) && !peer.Connected;
+        if (pending) await RejectAndCloseAsync(peer, "authentication-timeout");
     }
 
     private async Task ReceiveLoopAsync(Peer peer)
@@ -201,6 +259,15 @@ public sealed class ConnectionHub
                     catch { }
                     return;
                 }
+                if (ms.Length + result.Count > MaxMessageBytes)
+                {
+                    try
+                    {
+                        await peer.Socket.CloseAsync(WebSocketCloseStatus.MessageTooBig, "message-too-big", CancellationToken.None);
+                    }
+                    catch { }
+                    return;
+                }
                 ms.Write(buffer, 0, result.Count);
             } while (!result.EndOfMessage);
 
@@ -213,21 +280,46 @@ public sealed class ConnectionHub
     private async Task HandleIncomingAsync(Peer peer, string text)
     {
         var obj = Parse(text);
-        if (obj is null) return;
+        if (obj is null)
+        {
+            await RejectAndCloseAsync(peer, "invalid-message");
+            return;
+        }
         var kind = Str(obj["kind"]);
+        bool authenticated;
+        lock (_lock) authenticated = peer.Connected;
+        if (kind != "hello" && !authenticated)
+        {
+            await RejectAndCloseAsync(peer, "authentication-required");
+            return;
+        }
+        if (kind == "hello" && authenticated)
+        {
+            await RejectAndCloseAsync(peer, "already-authenticated");
+            return;
+        }
         switch (kind)
         {
             case "hello":
-                // Loopback-only listener, so any local client may attach (no pairing).
-                var program = obj["program"]?.GetValueKind() == JsonValueKind.String
-                    ? obj["program"]!.GetValue<string>()
-                    : "browser";
+                var rejection = HelloRejectionReason(obj, _pairingKey);
+                if (rejection != null)
+                {
+                    await RejectAndCloseAsync(peer, rejection);
+                    return;
+                }
+                var program = Str(obj["program"]);
                 lock (_lock)
                 {
                     peer.Program = program;
                     peer.Connected = true;
                 }
-                await SendTextAsync(peer, new JsonObject { ["kind"] = "welcome", ["peers"] = PeerListJson() }.ToJsonString());
+                await SendTextAsync(peer, new JsonObject
+                {
+                    ["kind"] = "welcome",
+                    ["v"] = ProtocolVersion,
+                    ["hubProgram"] = LocalProgram,
+                    ["peers"] = PeerListJson()
+                }.ToJsonString());
                 BroadcastPeers();
                 await SendClustersSnapshotAsync(peer);
                 break;
@@ -247,6 +339,16 @@ public sealed class ConnectionHub
                 await SendTextAsync(peer, new JsonObject { ["kind"] = "pong", ["t"] = Num(obj["t"]) }.ToJsonString());
                 break;
         }
+    }
+
+    private async Task RejectAndCloseAsync(Peer peer, string reason)
+    {
+        await SendTextAsync(peer, new JsonObject { ["kind"] = "rejected", ["reason"] = reason }.ToJsonString());
+        try
+        {
+            await peer.Socket.CloseAsync(WebSocketCloseStatus.PolicyViolation, reason, CancellationToken.None);
+        }
+        catch { }
     }
 
     private string ProgramOf(Peer peer, JsonObject obj, string fallbackKey)
@@ -359,7 +461,7 @@ public sealed class ConnectionHub
         var arr = new JsonArray();
         lock (_lock)
         {
-            foreach (var p in _peers.Values)
+            foreach (var p in _peers.Values.Where(p => p.Connected))
             {
                 arr.Add(new JsonObject { ["id"] = p.Id.ToString(), ["program"] = p.Program, ["connected"] = p.Connected });
             }
@@ -378,7 +480,7 @@ public sealed class ConnectionHub
         {
             running = _running;
             err = _lastError;
-            foreach (var p in _peers.Values)
+            foreach (var p in _peers.Values.Where(p => p.Connected))
             {
                 peerList.Add(new JsonObject { ["id"] = p.Id.ToString(), ["program"] = p.Program, ["connected"] = p.Connected });
             }
@@ -389,7 +491,9 @@ public sealed class ConnectionHub
             ["state"] = err.Length == 0 ? (running ? "running" : "off") : "error",
             ["address"] = $"ws://127.0.0.1:{Port}",
             ["peers"] = peerList,
-            ["error"] = err
+            ["error"] = err,
+            ["pairingKey"] = _pairingKey,
+            ["hubProgram"] = LocalProgram
         };
         return status.ToJsonString();
     }
@@ -427,7 +531,7 @@ public sealed class ConnectionHub
         }
     }
 
-    // MARK: Cluster registry — bridge entry points (called for "macapp") ----
+    // MARK: Cluster registry — bridge entry points (called for "windowsapp") -
 
     public void AnnounceFromBridge(string json)
     {
@@ -459,7 +563,7 @@ public sealed class ConnectionHub
 
     // MARK: Cluster registry API ------------------------------------------
 
-    /// Records an endpoint's eligible groups. `program` "macapp" is this app.
+    /// Records an endpoint's eligible groups. `program` "windowsapp" is this app.
     ///
     /// A roster announcement is the full current set of bridge-eligible groups for
     /// that program (re-sent after every edit, delete, and reconnect), so it
@@ -941,21 +1045,31 @@ public sealed class ConnectionHub
                 {
                     foreach (var m in members)
                     {
-                        if (m?.GetValueKind() == JsonValueKind.String) cluster.Members.Add(m.GetValue<string>());
+                        if (m?.GetValueKind() == JsonValueKind.String)
+                        {
+                            var program = m.GetValue<string>();
+                            cluster.Members.Add(program == "macapp" ? LocalProgram : program);
+                        }
                     }
                 }
                 if (o["memberGroupIds"] is JsonObject memberGroupIds)
                 {
                     foreach (var (k, v) in memberGroupIds)
                     {
-                        if (v?.GetValueKind() == JsonValueKind.String) cluster.MemberGroupIds[k] = v.GetValue<string>();
+                        if (v?.GetValueKind() == JsonValueKind.String)
+                        {
+                            cluster.MemberGroupIds[k == "macapp" ? LocalProgram : k] = v.GetValue<string>();
+                        }
                     }
                 }
                 if (o["contributions"] is JsonObject contribs)
                 {
                     foreach (var (k, v) in contribs)
                     {
-                        if (v is JsonObject vo) cluster.Contributions[k] = (JsonObject)vo.DeepClone();
+                        if (v is JsonObject vo)
+                        {
+                            cluster.Contributions[k == "macapp" ? LocalProgram : k] = (JsonObject)vo.DeepClone();
+                        }
                     }
                 }
                 if (o["sharedScalars"] is JsonObject scalars) cluster.SharedScalars = (JsonObject)scalars.DeepClone();

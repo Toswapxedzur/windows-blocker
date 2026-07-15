@@ -45,7 +45,8 @@ public sealed class RuleEngine
     private CustomRuleRuntime? _runtime;
 
     private readonly Dictionary<string, string> _loadedRuleSources = new();
-    private readonly HashSet<string> _ruleBlockedIdentities = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, HashSet<string>> _ruleBlockedIdentitiesByGroup = new();
+    private readonly Dictionary<string, string> _quarantinedRuleSources = new();
     private readonly Dictionary<string, List<PanelSnapshot>> _panelsByGroup = new();
     private readonly List<RuleLogEntry> _ruleLog = new();
     private readonly List<Dictionary<string, string>> _systemPanelEvents = new();
@@ -69,7 +70,29 @@ public sealed class RuleEngine
         _store = store;
     }
 
-    public void AttachRuntime(CustomRuleRuntime runtime) => _runtime = runtime;
+    public void AttachRuntime(CustomRuleRuntime runtime)
+    {
+        if (_runtime != null)
+        {
+            _runtime.GroupReset -= OnRuntimeGroupReset;
+        }
+        _runtime = runtime;
+        runtime.GroupReset += OnRuntimeGroupReset;
+    }
+
+    private void OnRuntimeGroupReset(string groupId, string error)
+    {
+        var groups = _store.ImportedGroups()?.Groups ?? new List<BlockGroup>();
+        var group = groups.FirstOrDefault(g => g.Id == groupId);
+        if (group != null)
+        {
+            _quarantinedRuleSources[groupId] = group.CustomRuleSource;
+            AppendLog("error", group.Name, "Rule stopped: execution deadline exceeded.");
+        }
+        _loadedRuleSources.Remove(groupId);
+        _ruleBlockedIdentitiesByGroup.Remove(groupId);
+        _panelsByGroup.Remove(groupId);
+    }
 
     private static string NowIso() => DateTimeOffset.UtcNow.ToString("o");
 
@@ -149,7 +172,7 @@ public sealed class RuleEngine
                     var result = await _runtime.DispatchAsync(ev);
                     if (result == null)
                     {
-                        continue;
+                        break;
                     }
                     await ApplyResultAsync(group, result, foreground, thisTickShield, allowed, output, 0);
                     latest = result;
@@ -181,7 +204,10 @@ public sealed class RuleEngine
 
         thisTickShield.ExceptWith(allowed);
         var blocked = new HashSet<string>(thisTickShield, StringComparer.OrdinalIgnoreCase);
-        blocked.UnionWith(_ruleBlockedIdentities);
+        foreach (var groupBlocks in _ruleBlockedIdentitiesByGroup.Values)
+        {
+            blocked.UnionWith(groupBlocks);
+        }
         _blockedIdentities = blocked;
 
         return output;
@@ -301,11 +327,11 @@ public sealed class RuleEngine
                 }
                 continue;
             }
-            ProcessWindowIntent(intent, fg, output);
+            ProcessWindowIntent(intent, group.Id, fg, output);
         }
     }
 
-    private void ProcessWindowIntent(RuleIntent intent, string foregroundId, RuleTickOutput output)
+    private void ProcessWindowIntent(RuleIntent intent, string groupId, string foregroundId, RuleTickOutput output)
     {
         switch (intent.Action)
         {
@@ -316,14 +342,26 @@ public sealed class RuleEngine
             case "blockApp":
                 if (!string.IsNullOrEmpty(intent.Target))
                 {
-                    _ruleBlockedIdentities.Add(intent.Target!);
+                    if (!_ruleBlockedIdentitiesByGroup.TryGetValue(groupId, out var groupBlocks))
+                    {
+                        groupBlocks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        _ruleBlockedIdentitiesByGroup[groupId] = groupBlocks;
+                    }
+                    groupBlocks.Add(intent.Target!);
                     AppendLog("log", "system", $"App blocked: {intent.Target}");
                 }
                 break;
             case "unblockApp":
                 if (!string.IsNullOrEmpty(intent.Target))
                 {
-                    _ruleBlockedIdentities.Remove(intent.Target!);
+                    if (_ruleBlockedIdentitiesByGroup.TryGetValue(groupId, out var groupBlocks))
+                    {
+                        groupBlocks.Remove(intent.Target!);
+                        if (groupBlocks.Count == 0)
+                        {
+                            _ruleBlockedIdentitiesByGroup.Remove(groupId);
+                        }
+                    }
                     AppendLog("log", "system", $"App unblocked: {intent.Target}");
                 }
                 break;
@@ -607,7 +645,11 @@ public sealed class RuleEngine
         var currentIds = new HashSet<string>(ruleGroups.Select(g => g.Id));
 
         // Unload groups that are gone or disabled.
-        foreach (var id in _loadedRuleSources.Keys.ToList())
+        var trackedIds = _loadedRuleSources.Keys
+            .Concat(_quarantinedRuleSources.Keys)
+            .Distinct()
+            .ToList();
+        foreach (var id in trackedIds)
         {
             if (!currentIds.Contains(id))
             {
@@ -618,6 +660,14 @@ public sealed class RuleEngine
         // Load (or reload on source change) current rule groups.
         foreach (var group in ruleGroups)
         {
+            if (_quarantinedRuleSources.TryGetValue(group.Id, out var quarantined))
+            {
+                if (quarantined == group.CustomRuleSource)
+                {
+                    continue;
+                }
+                _quarantinedRuleSources.Remove(group.Id);
+            }
             if (_loadedRuleSources.TryGetValue(group.Id, out var loaded))
             {
                 if (loaded == group.CustomRuleSource)
@@ -639,7 +689,11 @@ public sealed class RuleEngine
         var load = await _runtime.LoadAsync(group.Id, group.CustomRuleSource);
         if (load == null)
         {
-            AppendLog("error", group.Name, "Rule build failed.");
+            if (_runtime.LastError != "runtime-timeout")
+            {
+                AppendLog("error", group.Name,
+                    $"Rule build failed: {_runtime.LastError ?? "runtime-error"}.");
+            }
             return;
         }
         _loadedRuleSources[group.Id] = group.CustomRuleSource;
@@ -657,12 +711,15 @@ public sealed class RuleEngine
             await _runtime.UnloadAsync(groupId);
         }
         _loadedRuleSources.Remove(groupId);
+        _quarantinedRuleSources.Remove(groupId);
+        _ruleBlockedIdentitiesByGroup.Remove(groupId);
         _panelsByGroup.Remove(groupId);
     }
 
     /// Run = clean + build (the editor's "Run" button → run-custom-group).
     public async Task RunRuleAsync(string groupId, string source)
     {
+        _quarantinedRuleSources.Remove(groupId);
         await CleanRuleAsync(groupId);
         var groups = _store.ImportedGroups()?.Groups ?? new List<BlockGroup>();
         var group = groups.FirstOrDefault(g => g.Id == groupId);
