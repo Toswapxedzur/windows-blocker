@@ -9,6 +9,7 @@ public static class Storage
 {
     public const string WebStoreFileName = "web-store.json";
     public const string ClustersFileName = "clusters.json";
+    public const string BridgePairingKeyFileName = "bridge-pairing-key.txt";
 
     public static string RootDirectory
     {
@@ -26,6 +27,8 @@ public static class Storage
     // Persisted web-app bridge cluster registry (ConnectionHub). Mirrors the
     // macOS hub's UserDefaults-backed registry so links survive a restart.
     public static string ClustersPath => Path.Combine(RootDirectory, ClustersFileName);
+
+    public static string BridgePairingKeyPath => Path.Combine(RootDirectory, BridgePairingKeyFileName);
 
     public static string LocalFilesDirectory
     {

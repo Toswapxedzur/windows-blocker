@@ -1,9 +1,9 @@
 /*
- * macosBlocker custom-rule runtime (iOS-portable subset).
+ * macosBlocker native-app custom-rule runtime.
  *
  * Runs inside JavaScriptCore (no DOM, no Web APIs, no chrome.*). It reimplements
  * the customBlocker custom-rule contract for the parts that make sense when the
- * blocker controls native apps via Screen Time:
+ * blocker controls native applications:
  *
  *   - the full event registry (11 built-in types + typed registrars, priorities,
  *     intervalMs throttling, post(), unregister, counts)
@@ -13,10 +13,8 @@
  *     getPersistenceHelper, getStorageHelper, getPanelHelper,
  *     getLocalFolderHelper, getPlatformHelper (URL classifiers)
  *
- * Browser-only helpers (getDOMHelper, getNavigationHelper) are present but
- * inert: every call is a no-op that emits ONE log decision noting it is
- * unsupported on iOS, so existing rules/templates load and run instead of
- * throwing.
+ * Browser events and browser-control helpers are intentionally unavailable.
+ * Website, DOM, and tab control belong only to the browser extensions.
  *
  * dispatch() returns a JSON array of PolicyDecision objects for Swift.
  */
@@ -50,7 +48,7 @@ var MacBlockerRuntime = (function () {
     SnoozePress: "snoozePress",
     PanelEvent: "panelEvent",
     LocalFileEvent: "localFileEvent",
-    // macOS app lifecycle events (notification-driven)
+    // Native desktop app lifecycle events (notification/snapshot-driven)
     OpenAppEvent: "openAppEvent",
     CloseAppEvent: "closeAppEvent",
     FocusEvent: "focusEvent",
@@ -59,6 +57,14 @@ var MacBlockerRuntime = (function () {
     UnminimizeEvent: "unminimizeEvent",
     SwitchAppEvent: "switchAppEvent",
     AppChangedEvent: "appChangedEvent"
+  };
+  var BROWSER_EVENT_TYPES = {
+    openWebEvent: true,
+    closeWebEvent: true,
+    switchWebEvent: true,
+    switchDomainEvent: true,
+    webChangedEvent: true,
+    pageHeartbeatEvent: true
   };
 
   // ----------------------------------------------------------------- utils
@@ -137,6 +143,7 @@ var MacBlockerRuntime = (function () {
 
   function register(groupId, type, id, handler, options) {
     if (typeof type !== "string" || !type) return false;
+    if (BROWSER_EVENT_TYPES[type]) return false;
     if (typeof id !== "string" || !id) return false;
     if (typeof handler !== "function") return false;
     var list = ensureGroup(groupId);
@@ -578,65 +585,26 @@ var MacBlockerRuntime = (function () {
     return platformHelper(logUnsupported);
   }
 
-  // ------------------------------------------------- tab helper
+  // ------------------------------------------------- dynamic app blocklist (per-group)
 
-  function tabHelper(rawEvent, pushIntent) {
-    return {
-      getAllTabs: function () {
-        if (typeof __nativeGetAllTabs === "function") {
-          try {
-            var json = __nativeGetAllTabs();
-            return typeof json === "string" ? JSON.parse(json) : json;
-          } catch (e) { return []; }
-        }
-        return [];
-      },
-      closeTab: function (tab) {
-        if (!tab) return;
-        pushIntent({
-          kind: "window", action: "closeTab",
-          browserBundleID: tab.browserBundleID || "",
-          windowIndex: Number(tab.windowIndex) || 0,
-          tabIndex: Number(tab.tabIndex) || 0
-        });
-      },
-      closeTabsByPattern: function (pattern) {
-        var p = String(pattern || "").trim().toLowerCase();
-        if (!p) return;
-        pushIntent({ kind: "window", action: "closeTabsByPattern", pattern: p });
-      },
-      currentTab: function () {
-        return {
-          url: rawEvent.url || "",
-          title: rawEvent.data && rawEvent.data.tabTitle || "",
-          browserBundleID: rawEvent.data && rawEvent.data.appId || "",
-          windowIndex: 1,
-          tabIndex: 1
-        };
-      }
-    };
+  var dynamicAppBlocklistByGroup = {};  // groupId -> { bundleId -> true }
+
+  function groupAppBlocklist(groupId) {
+    if (!dynamicAppBlocklistByGroup[groupId]) dynamicAppBlocklistByGroup[groupId] = {};
+    return dynamicAppBlocklistByGroup[groupId];
   }
 
-  // ------------------------------------------------- dynamic site blocklist (per-group)
-
-  var dynamicBlocklistByGroup = {};  // groupId -> { pattern -> true }
-
-  function groupBlocklist(groupId) {
-    if (!dynamicBlocklistByGroup[groupId]) dynamicBlocklistByGroup[groupId] = {};
-    return dynamicBlocklistByGroup[groupId];
-  }
-
-  function windowHelper(rawEvent, pushIntent, logDecisionFn) {
-    var bl = groupBlocklist(rawEvent.groupID);
+  function windowHelper(rawEvent, pushIntent) {
+    var blockedApps = groupAppBlocklist(rawEvent.groupID);
+    var currentAppId = rawEvent.data && rawEvent.data.isBrowser === "true"
+      ? ""
+      : (rawEvent.data && rawEvent.data.appId || "");
     return {
       current: function () {
         return {
-          id: rawEvent.data && rawEvent.data.appId || rawEvent.hostname || "",
+          id: currentAppId,
           name: rawEvent.data && rawEvent.data.appName || "",
-          url: rawEvent.url || "",
-          hostname: rawEvent.hostname || hostnameOf(rawEvent.url || ""),
-          title: rawEvent.data && rawEvent.data.tabTitle || "",
-          isBrowser: rawEvent.data && rawEvent.data.isBrowser === "true"
+          isBrowser: false
         };
       },
       all: function () {
@@ -649,39 +617,22 @@ var MacBlockerRuntime = (function () {
       close: function (target) {
         pushIntent({ kind: "window", action: "close", target: String(target || "") });
       },
-      closeTab: function (tab) {
-        if (tab && tab.browserBundleID && tab.windowIndex && tab.tabIndex) {
-          pushIntent({ kind: "window", action: "closeTab",
-            browserBundleID: tab.browserBundleID,
-            windowIndex: Number(tab.windowIndex), tabIndex: Number(tab.tabIndex) });
-        } else {
-          pushIntent({ kind: "window", action: "closeTab" });
-        }
+      block: function (bundleID) {
+        var id = String(bundleID || "").trim();
+        if (!id) return;
+        blockedApps[id] = true;
+        pushIntent({ kind: "window", action: "blockApp", target: id });
       },
-      block: function (pattern) {
-        var p = String(pattern || "").trim().toLowerCase();
-        if (!p) return;
-        bl[p] = true;
-        pushIntent({ kind: "window", action: "blockSite", pattern: p });
+      unblock: function (bundleID) {
+        var id = String(bundleID || "").trim();
+        delete blockedApps[id];
+        pushIntent({ kind: "window", action: "unblockApp", target: id });
       },
-      unblock: function (pattern) {
-        var p = String(pattern || "").trim().toLowerCase();
-        delete bl[p];
-        pushIntent({ kind: "window", action: "unblockSite", pattern: p });
-      },
-      isBlocked: function (pattern) {
-        var p = String(pattern || "").trim().toLowerCase();
-        if (!p) return false;
-        if (bl[p]) return true;
-        for (var key in bl) {
-          if (p === key) return true;
-          var suffix = "." + key;
-          if (p.length > key.length && p.indexOf(suffix) === p.length - suffix.length) return true;
-        }
-        return false;
+      isBlocked: function (bundleID) {
+        return Boolean(blockedApps[String(bundleID || "").trim()]);
       },
       getBlocked: function () {
-        return Object.keys(bl);
+        return Object.keys(blockedApps);
       }
     };
   }
@@ -1437,7 +1388,7 @@ var MacBlockerRuntime = (function () {
       var key = "unsupported:" + name;
       if (logSeen[key]) return;
       logSeen[key] = true;
-      pushDecision("log", "helpers." + name + " is not available on iOS (browser-only).", "", null, { level: "warn", surface: "popup" }, []);
+      pushDecision("log", "helpers." + name + " is not available in native apps (browser-only).", "", null, { level: "warn", surface: "popup" }, []);
     }
 
     function logDecision(level, surface, args) {
@@ -1463,7 +1414,7 @@ var MacBlockerRuntime = (function () {
     var ms = nowMs(rawEvent);
     var date = new Date(ms);
 
-    var win = windowHelper(rawEvent, pushIntent, logDecision);
+    var win = windowHelper(rawEvent, pushIntent);
 
     var helpers = {
       now: rawEvent.now,
@@ -1490,7 +1441,7 @@ var MacBlockerRuntime = (function () {
       platform: function (name) { return platformAccessor(name, logUnsupported); },
       getDOMHelper: function () { return unsupportedHelper("getDOMHelper", logUnsupported); },
       getNavigationHelper: function () { return unsupportedHelper("getNavigationHelper", logUnsupported); },
-      getTabHelper: function () { return tabHelper(rawEvent, pushIntent); },
+      getTabHelper: function () { return unsupportedHelper("getTabHelper", logUnsupported); },
       getPanelHelper: function () { return panelHelper(groupId, function () { return timersByGroup[groupId] || {}; }); },
       getLocalFolderHelper: function () { return localFolderHelper(groupId, pushIntent); },
       overlay: {
@@ -1511,7 +1462,7 @@ var MacBlockerRuntime = (function () {
       }
     };
     var BROWSER_ONLY_HELPERS = {
-      getDOMHelper: true, getNavigationHelper: true, getRedirectionHelper: true
+      getDOMHelper: true, getNavigationHelper: true, getRedirectionHelper: true, getTabHelper: true
     };
     // Unknown helper getters resolve to inert helpers instead of throwing.
     var helpersProxy = new Proxy(helpers, {
@@ -1580,37 +1531,29 @@ var MacBlockerRuntime = (function () {
     ev.setRedirectLink = function () {};
     ev.getRedirectLink = function () { return null; };
     // Resolve the focused app's identity from event context.
-    var focusedAppId = (rawEvent.data && rawEvent.data.appId) || "";
-    var focusedIsBrowser = (rawEvent.data && rawEvent.data.isBrowser) === "true";
-    var focusedHostname = ev.hostname || "";
-
+    var focusedAppId = rawEvent.data && rawEvent.data.isBrowser === "true"
+      ? ""
+      : (rawEvent.data && rawEvent.data.appId) || "";
     function pushIntent(intent) { ctx.intents.push(intent); }
 
     ev.close = function (id) {
       if (typeof id === "string" && id) {
         pushIntent({ kind: "window", action: "close", target: id });
-        pushIntent({ kind: "window", action: "closeTabsByPattern", pattern: id });
-      } else {
-        if (focusedIsBrowser) {
-          pushIntent({ kind: "window", action: "closeTab" });
-        } else if (focusedAppId) {
-          pushIntent({ kind: "window", action: "close", target: focusedAppId });
-        }
+      } else if (focusedAppId) {
+        pushIntent({ kind: "window", action: "close", target: focusedAppId });
       }
     };
 
     ev.block = function (id) {
-      var pattern = typeof id === "string" && id ? id : (focusedIsBrowser ? focusedHostname : focusedAppId);
-      if (!pattern) return;
-      pushIntent({ kind: "window", action: "blockSite", pattern: pattern });
-      pushIntent({ kind: "window", action: "blockApp", target: pattern });
+      var appId = typeof id === "string" && id ? id : focusedAppId;
+      if (!appId) return;
+      pushIntent({ kind: "window", action: "blockApp", target: appId });
     };
 
     ev.unblock = function (id) {
-      var pattern = typeof id === "string" && id ? id : (focusedIsBrowser ? focusedHostname : focusedAppId);
-      if (!pattern) return;
-      pushIntent({ kind: "window", action: "unblockSite", pattern: pattern });
-      pushIntent({ kind: "window", action: "unblockApp", target: pattern });
+      var appId = typeof id === "string" && id ? id : focusedAppId;
+      if (!appId) return;
+      pushIntent({ kind: "window", action: "unblockApp", target: appId });
     };
 
     ev.open = function (id) {
@@ -1735,7 +1678,7 @@ var MacBlockerRuntime = (function () {
       delete panelChangedByGroup[groupId];
       delete panelCreationByGroup[groupId];
       delete previouslyExpired[groupId];
-      delete dynamicBlocklistByGroup[groupId];
+      delete dynamicAppBlocklistByGroup[groupId];
       delete logSeenByGroup[groupId];
       delete activeDecisionsByGroup[groupId];
       delete activeIntentsByGroup[groupId];
@@ -1847,10 +1790,10 @@ var MacBlockerRuntime = (function () {
     },
     handlerCount: function (groupId) { return countHandlers(groupId); },
     getDynamicBlocklist: function (groupId) {
-      if (groupId) return Object.keys(dynamicBlocklistByGroup[groupId] || {});
+      if (groupId) return Object.keys(dynamicAppBlocklistByGroup[groupId] || {});
       var all = {};
-      for (var gid in dynamicBlocklistByGroup) {
-        var bl = dynamicBlocklistByGroup[gid];
+      for (var gid in dynamicAppBlocklistByGroup) {
+        var bl = dynamicAppBlocklistByGroup[gid];
         for (var p in bl) all[p] = true;
       }
       return Object.keys(all);

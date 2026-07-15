@@ -76,6 +76,8 @@ public partial class MainWindow : Window
     private async System.Threading.Tasks.Task InitWebViewAsync()
     {
         var assets = Path.Combine(AppContext.BaseDirectory, "WebAssets");
+        await InitRuleWebViewAsync(assets);
+
         Web.CreationProperties = new CoreWebView2CreationProperties
         {
             UserDataFolder = Path.Combine(Storage.RootDirectory, "WebView2")
@@ -99,20 +101,6 @@ public partial class MainWindow : Window
             await core.AddScriptToExecuteOnDocumentCreatedAsync(SeedScript(seed));
         }
 
-        // 3) Inject the verbatim custom-rule runtime (MacBlockerRuntime) so custom
-        //    JavaScript rules run inside this page exactly as they do in macOS's
-        //    JavaScriptCore. A __nativeGetAllTabs stub returns no tabs (browser
-        //    tab reading is the extension's job on Windows).
-        var runtimeJs = TryReadAsset(assets, "custom-rule-runtime.js");
-        if (runtimeJs is not null)
-        {
-            await core.AddScriptToExecuteOnDocumentCreatedAsync(
-                "window.__nativeGetAllTabs = function(){ return \"[]\"; };");
-            await core.AddScriptToExecuteOnDocumentCreatedAsync(runtimeJs);
-            _runtime = new CustomRuleRuntime(core);
-            _ruleEngine.AttachRuntime(_runtime);
-        }
-
         core.WebMessageReceived += OnWebMessage;
         core.AddWebResourceRequestedFilter("*app-inventory.json", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += OnWebResourceRequested;
@@ -120,6 +108,50 @@ public partial class MainWindow : Window
         core.NavigationCompleted += OnNavigationCompleted;
 
         core.Navigate($"https://{VirtualHost}/popup.html");
+    }
+
+    private async Task InitRuleWebViewAsync(string assets)
+    {
+        try
+        {
+            RuleWeb.CreationProperties = new CoreWebView2CreationProperties
+            {
+                // A separate profile prevents rule code from sharing the
+                // editor's localStorage, cookies, cache, or service workers.
+                UserDataFolder = Path.Combine(Storage.RootDirectory, "RuleWebView2")
+            };
+            await RuleWeb.EnsureCoreWebView2Async();
+            var core = RuleWeb.CoreWebView2!;
+            core.SetVirtualHostNameToFolderMapping(VirtualHost, assets, CoreWebView2HostResourceAccessKind.Allow);
+            core.Settings.AreDefaultContextMenusEnabled = false;
+            core.Settings.AreDevToolsEnabled = false;
+            core.Settings.IsStatusBarEnabled = false;
+            core.NewWindowRequested += (_, args) => args.Handled = true;
+
+            var navigation = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            void Completed(object? _, CoreWebView2NavigationCompletedEventArgs args)
+                => navigation.TrySetResult(args.IsSuccess);
+            core.NavigationCompleted += Completed;
+            core.Navigate($"https://{VirtualHost}/rule-host.html");
+            var completed = await Task.WhenAny(navigation.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+            core.NavigationCompleted -= Completed;
+            if (completed != navigation.Task || !await navigation.Task)
+            {
+                return;
+            }
+
+            var runtime = new CustomRuleRuntime(core);
+            if (await runtime.IsReadyAsync())
+            {
+                _runtime = runtime;
+                _ruleEngine.AttachRuntime(runtime);
+            }
+        }
+        catch
+        {
+            // Native blocking remains available if the optional custom-rule
+            // worker host cannot start.
+        }
     }
 
     private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
@@ -161,19 +193,6 @@ public partial class MainWindow : Window
         catch
         {
             // A failure to enumerate apps must not break editor load.
-        }
-    }
-
-    private static string? TryReadAsset(string assetsDir, string fileName)
-    {
-        try
-        {
-            var path = Path.Combine(assetsDir, fileName);
-            return File.Exists(path) ? File.ReadAllText(path) : null;
-        }
-        catch
-        {
-            return null;
         }
     }
 
@@ -242,9 +261,9 @@ public partial class MainWindow : Window
                     PushClusters();
                     break;
 
-                // Custom-rule surface: the editor drives the WebView2-hosted
-                // MacBlockerRuntime through these, exactly as macOS's BlockerWebView
-                // drives MacEnforcementBridge.
+                // Custom-rule surface: the editor asks the native rule engine to
+                // drive the isolated worker host. No rule source is evaluated in
+                // this privileged editor WebView.
                 case "run-custom-group":
                 {
                     var (gid, src) = ReadGroupSource(root);
