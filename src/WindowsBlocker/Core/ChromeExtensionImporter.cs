@@ -11,7 +11,6 @@ namespace WindowsBlocker.Core;
 public sealed class ChromeExtensionImportResult
 {
     public List<BlockGroup> Groups { get; init; } = new();
-    public List<string> Warnings { get; init; } = new();
 }
 
 public static class ChromeExtensionImporter
@@ -37,16 +36,15 @@ public static class ChromeExtensionImporter
             throw new FormatException("Unsupported store shape");
         }
 
-        var warnings = new List<string>();
         var groups = new List<BlockGroup>();
         foreach (var element in source.EnumerateArray())
         {
-            groups.Add(ImportGroup(element, warnings));
+            groups.Add(ImportGroup(element));
         }
-        return new ChromeExtensionImportResult { Groups = groups, Warnings = warnings };
+        return new ChromeExtensionImportResult { Groups = groups };
     }
 
-    private static BlockGroup ImportGroup(JsonElement obj, List<string> warnings)
+    private static BlockGroup ImportGroup(JsonElement obj)
     {
         var groupType = ParseGroupType(Str(obj, "groupType") ?? "site");
         var id = Str(obj, "id") ?? Guid.NewGuid().ToString();
@@ -88,6 +86,8 @@ public static class ChromeExtensionImporter
             .Select(t => t!)
             .ToList();
 
+        // Legacy extension features that have no native equivalent; kept on the
+        // group model (the import-result warning list that echoed them was unread).
         var unsupported = new List<string>();
         if (groupType != BlockGroupType.Site && groupType != BlockGroupType.Custom)
         {
@@ -102,8 +102,6 @@ public static class ChromeExtensionImporter
         {
             unsupported.Add("fallbackUrl is replaced by shield/status messaging.");
         }
-        var label = Str(obj, "name") ?? id;
-        warnings.AddRange(unsupported.Select(u => $"{label}: {u}"));
 
         var targets = new List<BlockTarget>();
         targets.AddRange(sites);
