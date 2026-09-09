@@ -10,9 +10,7 @@ namespace WindowsBlocker.Enforcement;
 
 public sealed class EnforcementStatus
 {
-    public List<string> BlockedGroupNames { get; init; } = new();
     public List<TimerDisplayItem> Timers { get; init; } = new();
-    public int WindowsClosedThisTick { get; init; }
 }
 
 // The Windows analog of the native half of MacEnforcementBridge: on each tick it
@@ -75,7 +73,6 @@ public sealed class EnforcementEngine
         ReconcileResets(groups, timers, now, usageUpdates, resetUpdates);
 
         var blockedIdentities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var blockedGroupNames = new List<string>();
         var timerItems = new List<TimerDisplayItem>();
         var timedGroupsToMaybeAccrue = new List<BlockGroup>();
 
@@ -102,7 +99,6 @@ public sealed class EnforcementEngine
                     if (appTargets.Count > 0)
                     {
                         foreach (var id in appTargets) blockedIdentities.Add(id);
-                        blockedGroupNames.Add(group.Name);
                     }
                     break;
                 case BlockingMode.AfterMinutes:
@@ -113,7 +109,6 @@ public sealed class EnforcementEngine
                     if (remainingSeconds <= 0)
                     {
                         foreach (var id in appTargets) blockedIdentities.Add(id);
-                        blockedGroupNames.Add(group.Name);
                     }
                     else
                     {
@@ -147,7 +142,6 @@ public sealed class EnforcementEngine
         // Single enumeration pass: close any currently-open blocked windows (the
         // tick backstop). Blocking applies to every window of a blocked app,
         // regardless of focus.
-        var closed = 0;
         NativeMethods.EnumWindows((hwnd, _) =>
         {
             if (hwnd == _selfWindow || !IsCloseableTopLevel(hwnd))
@@ -158,7 +152,6 @@ public sealed class EnforcementEngine
             if (!identity.IsEmpty && _registry.IsBlocked(identity))
             {
                 WindowCloser.CloseWindow(hwnd);
-                closed++;
             }
             return true;
         }, IntPtr.Zero);
@@ -226,12 +219,7 @@ public sealed class EnforcementEngine
             _store.WriteUsage(usageUpdates, resetUpdates);
         }
 
-        return new EnforcementStatus
-        {
-            BlockedGroupNames = blockedGroupNames,
-            Timers = timerItems,
-            WindowsClosedThisTick = closed
-        };
+        return new EnforcementStatus { Timers = timerItems };
     }
 
     /// Called by the WinEvent monitor: close immediately if blocked.
