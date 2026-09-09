@@ -36,28 +36,3 @@ public sealed class SnoozeState
         return SnoozePhase.None;
     }
 }
-
-public sealed class UsageSnapshot
-{
-    public Dictionary<string, double> UsageByGroupSeconds { get; init; } = new();
-    public Dictionary<string, DateTimeOffset> ResetAtByGroup { get; init; } = new();
-    public Dictionary<string, SnoozeState> SnoozesByGroup { get; init; } = new();
-    public Dictionary<string, double> TotalSnoozedSecondsByGroup { get; init; } = new();
-}
-
-public enum RuntimePlatform
-{
-    IOS,
-    IPadOS,
-    MacOS,
-    Windows
-}
-
-public sealed class ActivityContext
-{
-    public DateTimeOffset Now { get; init; } = DateTimeOffset.Now;
-    public BlockTarget? Target { get; init; }
-    public HashSet<string> ActiveTargetIds { get; init; } = new();
-    public Dictionary<string, double> UsageByTargetSeconds { get; init; } = new();
-    public RuntimePlatform Platform { get; init; } = RuntimePlatform.Windows;
-}
