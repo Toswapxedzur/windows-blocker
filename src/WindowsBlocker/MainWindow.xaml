@@ -8,10 +8,12 @@
         WindowStartupLocation="CenterScreen">
     <Grid>
         <!-- Dedicated, non-interactive rule host. User scripts execute only in
-             its disposable workers, never in the editor's privileged page. -->
+             its disposable workers, never in the editor's privileged page.
+             Kept 1x1 px behind the editor (ZIndex 0) instead of faded: current
+             WebView2 builds reject Opacity from markup (MC3065). -->
         <wv2:WebView2 x:Name="RuleWeb" Width="1" Height="1"
                       HorizontalAlignment="Left" VerticalAlignment="Top"
-                      Opacity="0.01" IsHitTestVisible="False" Panel.ZIndex="0" />
+                      IsHitTestVisible="False" Panel.ZIndex="0" />
         <wv2:WebView2 x:Name="Web" Panel.ZIndex="1" />
     </Grid>
 </Window>
