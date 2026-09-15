@@ -86,23 +86,6 @@ public static class ChromeExtensionImporter
             .Select(t => t!)
             .ToList();
 
-        // Legacy extension features that have no native equivalent; kept on the
-        // group model (the import-result warning list that echoed them was unread).
-        var unsupported = new List<string>();
-        if (groupType != BlockGroupType.Site && groupType != BlockGroupType.Custom)
-        {
-            unsupported.Add("Platform DOM/feed controls are imported as target metadata only.");
-        }
-        if (Bool(obj, "skipToNextOnBlock") == true)
-        {
-            unsupported.Add("skipToNextOnBlock is not available natively.");
-        }
-        var fallbackUrl = Str(obj, "fallbackUrl");
-        if (!string.IsNullOrEmpty(fallbackUrl))
-        {
-            unsupported.Add("fallbackUrl is replaced by shield/status messaging.");
-        }
-
         var targets = new List<BlockTarget>();
         targets.AddRange(sites);
         targets.AddRange(apps);
@@ -130,8 +113,7 @@ public static class ChromeExtensionImporter
             ParentalPasswordSalt = Str(obj, "parentalPasswordSalt"),
             FallbackMessage = "",
             CustomRuleSource = Str(obj, "blockingRulesText") ?? "",
-            Targets = targets,
-            UnsupportedLegacyFeatures = unsupported
+            Targets = targets
         };
     }
 

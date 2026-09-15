@@ -32,7 +32,6 @@ public sealed class CustomRuleRuntime
     };
 
     public string? LastError { get; private set; }
-    public int Generation { get; private set; }
 
     /// Fired after a group's worker is terminated for exceeding its deadline.
     public event Action<string, string>? GroupReset;
@@ -96,7 +95,6 @@ public sealed class CustomRuleRuntime
             if (!string.IsNullOrEmpty(groupId))
             {
                 ResetGroup(groupId);
-                Generation++;
                 GroupReset?.Invoke(groupId, LastError);
             }
             return null;
