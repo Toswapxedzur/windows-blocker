@@ -91,5 +91,4 @@ public sealed class BlockGroup
     // the WebView2-hosted MacBlockerRuntime, exactly as macOS runs it in JSCore.
     public string CustomRuleSource { get; init; } = "";
     public List<BlockTarget> Targets { get; init; } = new();
-    public List<string> UnsupportedLegacyFeatures { get; init; } = new();
 }

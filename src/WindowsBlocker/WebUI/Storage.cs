@@ -29,14 +29,4 @@ public static class Storage
     public static string ClustersPath => Path.Combine(RootDirectory, ClustersFileName);
 
     public static string BridgePairingKeyPath => Path.Combine(RootDirectory, BridgePairingKeyFileName);
-
-    public static string LocalFilesDirectory
-    {
-        get
-        {
-            var dir = Path.Combine(RootDirectory, "LocalFiles");
-            Directory.CreateDirectory(dir);
-            return dir;
-        }
-    }
 }
