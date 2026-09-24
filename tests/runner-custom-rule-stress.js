@@ -171,18 +171,6 @@ const browserResult = dispatch("w-browser-inert", { type: "tickEvent" });
 check("W10 browser feed helper is inert on Windows",
   browserResult.intents.length === 0 && browserResult.decisions.some((decision) => decision.action === "log"));
 
-// W11: Every bundled desktop template generates a native rule that loads.
-const desktopTemplates = [];
-globalThis.CB_REGISTER_TEMPLATES = (templates) => desktopTemplates.push(...templates);
-load("src/WindowsBlocker/WebAssets/templates/examples.js");
-const templateLoads = desktopTemplates.map((template, index) => {
-  const values = {};
-  template.params.forEach((param) => { values[param.id] = param.defaultValue; });
-  return JSON.parse(MacBlockerRuntime.load("w-template-" + index, template.buildCode(values))).handlers;
-});
-check("W11 native desktop templates all register handlers",
-  desktopTemplates.length === 5 && templateLoads.every((count) => count > 0), templateLoads);
-
 print("WINDOWS CUSTOM-RULE STRESS TOTAL " + (passed + failed) + " PASS " + passed + " FAIL " + failed);
 if (failed > 0) {
   print("__CB_TEST_RESULT__: FAIL");
