@@ -696,7 +696,8 @@ public partial class MainWindow : Window
         var payload = JsonSerializer.Serialize(new
         {
             usageTimersMs = timers.TimersMs,
-            usageResetAtMs = timers.ResetAtMs
+            usageResetAtMs = timers.ResetAtMs,
+            usageBucketsMs = timers.BucketsMs.ToDictionary(g => g.Key, g => WebStore.BucketJson(g.Value))
         });
         _ = Web.CoreWebView2.ExecuteScriptAsync(
             $"window.__cbApplyNativeUsage && window.__cbApplyNativeUsage({payload});");

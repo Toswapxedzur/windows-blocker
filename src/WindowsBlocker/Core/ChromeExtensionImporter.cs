@@ -97,8 +97,10 @@ public static class ChromeExtensionImporter
             Name = Str(obj, "name") ?? DefaultName(groupType),
             Enabled = Bool(obj, "enabled") ?? true,
             Mode = ParseMode(Str(obj, "mode")),
-            AllowedMinutes = Int(obj, "allowedMinutes") ?? 15,
-            ResetIntervalHours = Int(obj, "resetIntervalHours") ?? 24,
+            AllowedMinutes = Number(obj, "allowedMinutes") ?? 15,
+            ResetIntervalHours = Number(obj, "resetIntervalHours") ?? 24,
+            ResetAtMidnight = Bool(obj, "resetAtMidnight") ?? false,
+            RollingLimit = Bool(obj, "rollingLimit") ?? false,
             AllowSnooze = Bool(obj, "allowSnooze") ?? true,
             SnoozeMinutes = Int(obj, "snoozeMinutes") ?? 30,
             SnoozeActivationDelayMinutes = Int(obj, "snoozeActivationDelayMinutes") ?? 0,
@@ -226,6 +228,16 @@ public static class ChromeExtensionImporter
             JsonValueKind.False => false,
             _ => null
         };
+    }
+
+    private static double? Number(JsonElement obj, string key)
+    {
+        if (obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(key, out var v) &&
+            v.ValueKind == JsonValueKind.Number && v.TryGetDouble(out var d) && double.IsFinite(d))
+        {
+            return d;
+        }
+        return null;
     }
 
     private static int? Int(JsonElement obj, string key)
