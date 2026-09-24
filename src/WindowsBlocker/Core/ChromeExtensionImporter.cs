@@ -53,7 +53,20 @@ public static class ChromeExtensionImporter
         // The extension scopes an entry to a path when it carries one
         // ("youtube.com/shorts"). This app blocks whole hosts, so such an
         // entry is skipped rather than widened to its host.
+        // A stored group carries its website list as a "site" scope line
+        // ({surface: "site", sites, sitesExcept}) since 2026-09-24, and may
+        // name platforms besides; older stores and flat exports carry `sites`
+        // at the top level. Read both.
+        var scopeSites = (Array(obj, "scopes") ?? Enumerable.Empty<JsonElement>())
+            .Where(line => line.ValueKind == JsonValueKind.Object
+                && line.TryGetProperty("surface", out var surface)
+                && surface.ValueKind == JsonValueKind.String
+                && surface.GetString() == "site"
+                && line.TryGetProperty("sites", out var lineSites)
+                && lineSites.ValueKind == JsonValueKind.Array)
+            .SelectMany(line => line.GetProperty("sites").EnumerateArray());
         var sites = (Array(obj, "sites") ?? Enumerable.Empty<JsonElement>())
+            .Concat(scopeSites)
             .Select(AsString)
             .Where(v => v is not null && !IsPathScopedSite(v))
             .Select(NormalizeHost)
