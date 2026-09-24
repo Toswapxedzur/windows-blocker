@@ -50,8 +50,13 @@ public static class ChromeExtensionImporter
         var id = Str(obj, "id") ?? Guid.NewGuid().ToString();
         var scheduleText = Str(obj, "timeWindowsText") ?? "";
 
+        // The extension scopes an entry to a path when it carries one
+        // ("youtube.com/shorts"). This app blocks whole hosts, so such an
+        // entry is skipped rather than widened to its host.
         var sites = (Array(obj, "sites") ?? Enumerable.Empty<JsonElement>())
-            .Select(e => NormalizeHost(AsString(e)))
+            .Select(AsString)
+            .Where(v => v is not null && !IsPathScopedSite(v))
+            .Select(NormalizeHost)
             .Where(h => h is not null)
             .Select(h => new BlockTarget
             {
@@ -183,6 +188,23 @@ public static class ChromeExtensionImporter
             .Select(d => d!.Value)
             .ToHashSet();
         return days.Count == 0 ? new HashSet<Weekday>(Weekdays.All) : days;
+    }
+
+    // True when a site entry names a path under its host ("youtube.com/shorts"):
+    // the extension scopes such entries to that path, which a host-level
+    // blocker cannot express.
+    private static bool IsPathScopedSite(string value)
+    {
+        var text = value.Trim();
+        if (!text.Contains("://"))
+        {
+            text = "https://" + text;
+        }
+        if (!Uri.TryCreate(text, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+        return uri.AbsolutePath.Trim('/').Length > 0;
     }
 
     private static string? NormalizeHost(string? value)
