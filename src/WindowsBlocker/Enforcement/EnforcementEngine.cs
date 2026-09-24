@@ -65,12 +65,13 @@ public sealed class EnforcementEngine
 
         var usageUpdates = new Dictionary<string, double>();
         var resetUpdates = new Dictionary<string, double>();
+        var bucketUpdates = new Dictionary<string, Dictionary<double, double>>();
 
         // Reset-interval rollover (macOS reconcileUsage parity): zero a timed
         // group's used time once its reset window elapses. This runs for every
         // enabled timed group, independent of whether it is currently active or
         // snoozed, so a budget that expired mid-window is restored on schedule.
-        ReconcileResets(groups, timers, now, usageUpdates, resetUpdates);
+        ReconcileResets(groups, timers, now, usageUpdates, resetUpdates, bucketUpdates);
 
         var blockedIdentities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var timerItems = new List<TimerDisplayItem>();
@@ -166,6 +167,12 @@ public sealed class EnforcementEngine
         {
             var focused = GroupTargetsForeground(group, fg);
 
+            if (group.RollingLimit)
+            {
+                AccrueRolling(group, focused, now, timers, usageUpdates, bucketUpdates);
+                continue;
+            }
+
             var current = timers.TimersMs.GetValueOrDefault(group.Id, 0);
             var addedMs = 0.0;
             if (focused)
@@ -214,9 +221,9 @@ public sealed class EnforcementEngine
                 _clusterSeeded.Remove(group.Id);
             }
         }
-        if (usageUpdates.Count > 0 || resetUpdates.Count > 0)
+        if (usageUpdates.Count > 0 || resetUpdates.Count > 0 || bucketUpdates.Count > 0)
         {
-            _store.WriteUsage(usageUpdates, resetUpdates);
+            _store.WriteUsage(usageUpdates, resetUpdates, bucketUpdates);
         }
 
         return new EnforcementStatus { Timers = timerItems };
@@ -285,17 +292,76 @@ public sealed class EnforcementEngine
         return closed;
     }
 
-    // Reset-interval rollover, ported from MacEnforcementBridge.reconcileUsage.
-    // Ensures each enabled timed group has a reset anchor and zeroes its used
-    // time once a full reset interval has elapsed (advancing the anchor by whole
-    // intervals so it stays phase-aligned). Mutates `timers` in place and records
-    // the changes for persistence.
+    // Rolling limit: this tick's focused time goes into the current minute; a
+    // linked group reports that minute (or seeds its history once) and adopts
+    // the hub's shared minutes. The timer holds the in-window total so the block
+    // decision + display stay as they are. Ported from MacEnforcementBridge.
+    private void AccrueRolling(
+        BlockGroup group,
+        bool focused,
+        DateTimeOffset now,
+        WebStore.UsageTimers timers,
+        Dictionary<string, double> usageUpdates,
+        Dictionary<string, Dictionary<double, double>> bucketUpdates)
+    {
+        double nowMs = now.ToUnixTimeMilliseconds();
+        var gid = group.Id;
+        var stored = timers.BucketsMs.GetValueOrDefault(gid) ?? new Dictionary<double, double>();
+        var buckets = new Dictionary<double, double>(stored);
+        var minute = UsageBudget.BucketStartMs(nowMs);
+        var addedMs = focused ? _tickSeconds * 1000.0 : 0;
+        if (addedMs > 0)
+        {
+            buckets[minute] = buckets.GetValueOrDefault(minute, 0) + addedMs;
+        }
+        if (_hub != null && _hub.SharedUsage(group.Name) != null)
+        {
+            if (_clusterSeeded.Contains(gid))
+            {
+                if (addedMs > 0)
+                {
+                    _hub.ReportLocalUsage(group.Name, 0, 0,
+                        bucketDeltas: new Dictionary<double, double> { [minute] = addedMs });
+                }
+            }
+            else
+            {
+                _hub.ReportLocalUsage(group.Name, 0, 0, seedBuckets: buckets);
+                _clusterSeeded.Add(gid);
+            }
+            buckets = _hub.SharedUsage(group.Name)?.Buckets ?? buckets;
+        }
+        else
+        {
+            _clusterSeeded.Remove(gid);
+        }
+        buckets = UsageBudget.PruneBuckets(buckets, group, nowMs);
+        if (!UsageBudget.SameBuckets(buckets, stored))
+        {
+            timers.BucketsMs[gid] = buckets;
+            bucketUpdates[gid] = buckets;
+        }
+        var used = UsageBudget.UsedMs(buckets);
+        if (Math.Abs(timers.TimersMs.GetValueOrDefault(gid, -1) - used) > 0.5)
+        {
+            timers.TimersMs[gid] = used;
+            usageUpdates[gid] = used;
+        }
+    }
+
+    // Budget rollover, ported from MacEnforcementBridge.reconcileUsage. Fixed
+    // budgets get an anchor and are zeroed when a new period starts (every
+    // ResetIntervalHours from the anchor, or on the midnight-aligned grid with
+    // ResetAtMidnight). Rolling groups drop minutes that aged out of the window
+    // and their timer becomes the in-window total. Mutates `timers` in place and
+    // records the changes for persistence.
     private static void ReconcileResets(
         List<BlockGroup> groups,
         WebStore.UsageTimers timers,
         DateTimeOffset now,
         Dictionary<string, double> usageUpdates,
-        Dictionary<string, double> resetUpdates)
+        Dictionary<string, double> resetUpdates,
+        Dictionary<string, Dictionary<double, double>> bucketUpdates)
     {
         double nowMs = now.ToUnixTimeMilliseconds();
         foreach (var group in groups)
@@ -310,6 +376,24 @@ public sealed class EnforcementEngine
             }
             var gid = group.Id;
 
+            if (group.RollingLimit)
+            {
+                var stored = timers.BucketsMs.GetValueOrDefault(gid) ?? new Dictionary<double, double>();
+                var pruned = UsageBudget.PruneBuckets(stored, group, nowMs);
+                if (!UsageBudget.SameBuckets(pruned, stored))
+                {
+                    timers.BucketsMs[gid] = pruned;
+                    bucketUpdates[gid] = pruned;
+                }
+                var used = UsageBudget.UsedMs(pruned);
+                if (Math.Abs(timers.TimersMs.GetValueOrDefault(gid, -1) - used) > 0.5)
+                {
+                    timers.TimersMs[gid] = used;
+                    usageUpdates[gid] = used;
+                }
+                continue;
+            }
+
             if (!timers.ResetAtMs.TryGetValue(gid, out var anchor) || anchor <= 0)
             {
                 anchor = nowMs;
@@ -317,16 +401,9 @@ public sealed class EnforcementEngine
                 resetUpdates[gid] = anchor;
             }
 
-            var intervalMs = Math.Max(0, group.ResetIntervalHours) * 3_600_000.0;
-            if (intervalMs <= 0)
+            var newStart = UsageBudget.PeriodStartMs(anchor, group, nowMs);
+            if (newStart != anchor)
             {
-                continue;
-            }
-            var sinceReset = nowMs - anchor;
-            if (sinceReset >= intervalMs)
-            {
-                var elapsedIntervals = Math.Floor(sinceReset / intervalMs);
-                var newStart = anchor + elapsedIntervals * intervalMs;
                 timers.TimersMs[gid] = 0;
                 timers.ResetAtMs[gid] = newStart;
                 usageUpdates[gid] = 0;

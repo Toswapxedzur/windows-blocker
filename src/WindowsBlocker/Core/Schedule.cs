@@ -75,9 +75,16 @@ public readonly struct TimeWindow
         End = end;
     }
 
+    /// An end before the start runs past midnight (2300-0100).
+    public bool CrossesMidnight => End.MinutesSinceMidnight < Start.MinutesSinceMidnight;
+
     public bool Contains(DateTimeOffset date)
     {
         var current = new TimeOfDay(date.Hour, date.Minute).MinutesSinceMidnight;
+        if (CrossesMidnight)
+        {
+            return current >= Start.MinutesSinceMidnight || current < End.MinutesSinceMidnight;
+        }
         return current >= Start.MinutesSinceMidnight && current < End.MinutesSinceMidnight;
     }
 }
@@ -108,7 +115,7 @@ public static class ScheduleParser
         }
         var start = ParseTime(parts[0]);
         var end = ParseTime(parts[1]);
-        if (start is null || end is null || start.Value.CompareTo(end.Value) >= 0)
+        if (start is null || end is null || start.Value.CompareTo(end.Value) == 0)
         {
             return null;
         }
@@ -142,14 +149,25 @@ public static class BlockGroupScheduling
         {
             return false;
         }
-        if (!group.ActiveDays.Contains(Weekdays.From(date)))
-        {
-            return false;
-        }
+        var todayActive = group.ActiveDays.Contains(Weekdays.From(date));
         if (group.TimeWindows.Count == 0)
         {
-            return true;
+            return todayActive;
         }
-        return group.TimeWindows.Any(w => w.Contains(date));
+        // The part of a window after midnight belongs to the day the window
+        // starts: Monday's 2300-0100 still runs at 00:30 on Tuesday even when
+        // Tuesday is not an active day, and needs Monday to be active.
+        var yesterdayActive = group.ActiveDays.Contains(Weekdays.From(date.AddDays(-1)));
+        var current = date.Hour * 60 + date.Minute;
+        return group.TimeWindows.Any(w =>
+        {
+            var start = w.Start.MinutesSinceMidnight;
+            var end = w.End.MinutesSinceMidnight;
+            if (w.CrossesMidnight)
+            {
+                return (todayActive && current >= start) || (yesterdayActive && current < end);
+            }
+            return todayActive && current >= start && current < end;
+        });
     }
 }
