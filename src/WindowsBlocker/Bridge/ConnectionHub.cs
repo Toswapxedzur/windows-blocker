@@ -67,6 +67,11 @@ public sealed class ConnectionHub
         public double SharedUsageMs;
         public double SharedUsageResetAtMs;
         public bool UsageSeeded;
+        // Rolling-limit groups share per-minute usage (minute-start ms -> ms)
+        // instead of one total: a sliding window needs to know WHEN time was
+        // used so old minutes can age out. Deltas only, like SharedUsageMs.
+        public Dictionary<double, double> SharedBuckets = new();
+        public bool BucketsSeeded;
         public JsonObject SharedSnooze = new();
         public double SharedSnoozeTs;
         public double SharedSnoozeTotalMs;
@@ -769,6 +774,7 @@ public sealed class ConnectionHub
                 var seed = seedNode.GetValue<double>();
                 if (seed > cluster.SharedUsageMs) cluster.SharedUsageMs = seed;
             }
+            ApplyBucketContributionLocked(cluster, contribution);
 
             // Active snooze: newest start wins.
             if (contribution["snoozeTs"] is JsonNode snoozeTsNode && snoozeTsNode.GetValueKind() == JsonValueKind.Number)
@@ -798,24 +804,94 @@ public sealed class ConnectionHub
     /// Called by the in-process Windows enforcer when it accrues (or rolls over)
     /// usage for one of its groups. A no-op unless that group is actually
     /// clustered (ApplySync ignores unknown clusters).
-    public void ReportLocalUsage(string groupName, double deltaMs, double resetAtMs, double? seedMs = null)
+    public void ReportLocalUsage(
+        string groupName,
+        double deltaMs,
+        double resetAtMs,
+        double? seedMs = null,
+        IReadOnlyDictionary<double, double>? bucketDeltas = null,
+        IReadOnlyDictionary<double, double>? seedBuckets = null)
     {
         var contribution = new JsonObject { ["usageResetAtMs"] = resetAtMs };
         if (deltaMs != 0) contribution["usageDeltaMs"] = deltaMs;
         if (seedMs.HasValue) contribution["usageMs"] = seedMs.Value;
+        if (bucketDeltas is { Count: > 0 }) contribution["usageBuckets"] = BucketNode(bucketDeltas);
+        if (seedBuckets != null) contribution["usageBucketsSeed"] = BucketNode(seedBuckets);
         ApplySync(LocalProgram, groupName, "site", contribution, 0);
+    }
+
+    /// Folds a member's rolling usage into the cluster: usageBuckets are
+    /// per-minute increments; usageBucketsSeed is a member's absolute history,
+    /// used (max per minute) only until the first real increment arrives so a
+    /// group that already had rolling usage keeps it when it links. Minutes older
+    /// than any window the group can use (its interval, at least a day) are pruned.
+    private static void ApplyBucketContributionLocked(ClusterState cluster, JsonObject contribution)
+    {
+        var deltas = ParseBuckets(contribution["usageBuckets"]);
+        if (deltas is { Count: > 0 })
+        {
+            foreach (var (minute, delta) in deltas)
+            {
+                var next = cluster.SharedBuckets.GetValueOrDefault(minute, 0) + delta;
+                if (next > 0) cluster.SharedBuckets[minute] = next;
+                else cluster.SharedBuckets.Remove(minute);
+            }
+            cluster.BucketsSeeded = true;
+        }
+        else if (!cluster.BucketsSeeded && ParseBuckets(contribution["usageBucketsSeed"]) is { } seed)
+        {
+            foreach (var (minute, used) in seed)
+            {
+                if (used > cluster.SharedBuckets.GetValueOrDefault(minute, 0)) cluster.SharedBuckets[minute] = used;
+            }
+        }
+        if (cluster.SharedBuckets.Count == 0) return;
+        var intervalHours = cluster.SharedScalars["resetIntervalHours"] is JsonNode hoursNode
+            && hoursNode.GetValueKind() == JsonValueKind.Number ? hoursNode.GetValue<double>() : 24;
+        var cutoff = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - (Math.Max(intervalHours, 24) * 3_600_000 + 60_000);
+        foreach (var minute in cluster.SharedBuckets.Keys.Where(m => m <= cutoff).ToList())
+        {
+            cluster.SharedBuckets.Remove(minute);
+        }
+    }
+
+    private static Dictionary<double, double>? ParseBuckets(JsonNode? node)
+    {
+        if (node is not JsonObject obj) return null;
+        var buckets = new Dictionary<double, double>();
+        foreach (var (key, raw) in obj)
+        {
+            if (raw is JsonNode value && value.GetValueKind() == JsonValueKind.Number
+                && double.TryParse(key, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var minute)
+                && double.IsFinite(minute))
+            {
+                buckets[minute] = value.GetValue<double>();
+            }
+        }
+        return buckets;
+    }
+
+    private static JsonObject BucketNode(IReadOnlyDictionary<double, double> buckets)
+    {
+        var obj = new JsonObject();
+        foreach (var (minute, ms) in buckets)
+        {
+            obj[((long)minute).ToString(System.Globalization.CultureInfo.InvariantCulture)] = ms;
+        }
+        return obj;
     }
 
     /// The hub-authoritative shared usage budget for a clustered group involving
     /// this app, or null when the group isn't in any cluster.
-    public (double Ms, double ResetAtMs)? SharedUsage(string groupName)
+    public (double Ms, double ResetAtMs, Dictionary<double, double> Buckets)? SharedUsage(string groupName)
     {
         if (string.IsNullOrEmpty(groupName)) return null;
         lock (_lock)
         {
             var cluster = _clusters.Values.FirstOrDefault(c => c.GroupName == groupName && c.Members.Contains(LocalProgram));
             if (cluster is null) return null;
-            return (cluster.SharedUsageMs, cluster.SharedUsageResetAtMs);
+            return (cluster.SharedUsageMs, cluster.SharedUsageResetAtMs, new Dictionary<double, double>(cluster.SharedBuckets));
         }
     }
 
@@ -966,6 +1042,7 @@ public sealed class ConnectionHub
         };
 
         if (hasShared || sites.Count > 0 || appsArray.Count > 0 || cluster.SharedUsageMs > 0
+            || cluster.SharedBuckets.Count > 0
             || cluster.SharedSnoozeTs > 0 || cluster.SharedSnoozeTotalMs > 0)
         {
             var sitesArray = new JsonArray();
@@ -978,6 +1055,7 @@ public sealed class ConnectionHub
                 ["apps"] = appsArray,
                 ["usageMs"] = cluster.SharedUsageMs,
                 ["usageResetAtMs"] = cluster.SharedUsageResetAtMs,
+                ["usageBuckets"] = BucketNode(cluster.SharedBuckets),
                 ["snooze"] = cluster.SharedSnooze.DeepClone(),
                 ["snoozeTs"] = cluster.SharedSnoozeTs,
                 ["snoozeTotalMs"] = cluster.SharedSnoozeTotalMs

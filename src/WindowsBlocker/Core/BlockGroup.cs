@@ -71,8 +71,12 @@ public sealed class BlockGroup
     public string Name { get; init; } = "Block Group";
     public bool Enabled { get; init; } = true;
     public BlockingMode Mode { get; init; } = BlockingMode.Instant;
-    public int AllowedMinutes { get; init; } = 15;
-    public int ResetIntervalHours { get; init; } = 24;
+    public double AllowedMinutes { get; init; } = 15;
+    public double ResetIntervalHours { get; init; } = 24;
+    // Restart the reset cycle at local midnight every day (see UsageBudget).
+    public bool ResetAtMidnight { get; init; }
+    // Sliding window of ResetIntervalHours: used time comes back as it ages out.
+    public bool RollingLimit { get; init; }
     public bool AllowSnooze { get; init; } = true;
     public int SnoozeMinutes { get; init; } = 30;
     public int SnoozeActivationDelayMinutes { get; init; }

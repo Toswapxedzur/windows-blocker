@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using WindowsBlocker.Core;
@@ -76,6 +77,8 @@ public sealed class WebStore
     {
         public Dictionary<string, double> TimersMs { get; init; } = new();
         public Dictionary<string, double> ResetAtMs { get; init; } = new();
+        // Rolling-limit groups: minute-start ms -> ms used in that minute.
+        public Dictionary<string, Dictionary<double, double>> BucketsMs { get; init; } = new();
     }
 
     public UsageTimers LoadUsageTimers()
@@ -88,15 +91,43 @@ public sealed class WebStore
         return new UsageTimers
         {
             TimersMs = DoubleMap(root["usageTimersMs"]),
-            ResetAtMs = DoubleMap(root["usageResetAtMs"])
+            ResetAtMs = DoubleMap(root["usageResetAtMs"]),
+            BucketsMs = BucketMaps(root["usageBucketsMs"])
         };
     }
 
+    private static Dictionary<string, Dictionary<double, double>> BucketMaps(JsonNode? node)
+    {
+        var result = new Dictionary<string, Dictionary<double, double>>();
+        if (node is not JsonObject groups) return result;
+        foreach (var (groupId, value) in groups)
+        {
+            var buckets = new Dictionary<double, double>();
+            foreach (var (minute, ms) in DoubleMap(value))
+            {
+                if (double.TryParse(minute, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var start) && ms > 0)
+                {
+                    buckets[start] = ms;
+                }
+            }
+            result[groupId] = buckets;
+        }
+        return result;
+    }
+
+    public static Dictionary<string, double> BucketJson(IReadOnlyDictionary<double, double> buckets) =>
+        buckets.ToDictionary(b => ((long)b.Key).ToString(System.Globalization.CultureInfo.InvariantCulture), b => b.Value);
+
     /// Merges the given per-group usage entries into the stored snapshot,
     /// preserving every other key. No-op when both maps are empty.
-    public void WriteUsage(Dictionary<string, double> timersMs, Dictionary<string, double> resetAtMs)
+    public void WriteUsage(
+        Dictionary<string, double> timersMs,
+        Dictionary<string, double> resetAtMs,
+        Dictionary<string, Dictionary<double, double>>? bucketsMs = null)
     {
-        if (timersMs.Count == 0 && resetAtMs.Count == 0)
+        bucketsMs ??= new();
+        if (timersMs.Count == 0 && resetAtMs.Count == 0 && bucketsMs.Count == 0)
         {
             return;
         }
@@ -114,6 +145,17 @@ public sealed class WebStore
             if (resetAtMs.Count > 0)
             {
                 root["usageResetAtMs"] = MergeInto(root["usageResetAtMs"], resetAtMs);
+            }
+            if (bucketsMs.Count > 0)
+            {
+                var all = root["usageBucketsMs"] as JsonObject ?? new JsonObject();
+                root["usageBucketsMs"] = all;
+                foreach (var (groupId, buckets) in bucketsMs)
+                {
+                    var obj = new JsonObject();
+                    foreach (var (minute, ms) in BucketJson(buckets)) obj[minute] = ms;
+                    all[groupId] = obj;
+                }
             }
             var tmp = FilePath + ".tmp";
             File.WriteAllText(tmp, root.ToJsonString());
