@@ -25,14 +25,13 @@ public enum BlockGroupType
 public enum BlockingMode
 {
     Instant,
-    AfterMinutes,
-    Timer
+    AfterMinutes
 }
 
 public static class BlockingModeExtensions
 {
     public static bool IsTimed(this BlockingMode mode) =>
-        mode == BlockingMode.AfterMinutes || mode == BlockingMode.Timer;
+        mode == BlockingMode.AfterMinutes;
 }
 
 public enum FreezeMode
