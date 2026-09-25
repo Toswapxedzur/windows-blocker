@@ -158,7 +158,9 @@ public static class ChromeExtensionImporter
     {
         "instant" => BlockingMode.Instant,
         "after-minutes" => BlockingMode.AfterMinutes,
-        "timer" => BlockingMode.Timer,
+        // Crash guard: the count-up "timer" mode was removed 2026-09-25; such a
+        // group carries on as a normal timed group.
+        "timer" => BlockingMode.AfterMinutes,
         _ => BlockingMode.Instant
     };
 

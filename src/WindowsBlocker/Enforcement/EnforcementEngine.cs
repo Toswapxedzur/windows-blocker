@@ -103,7 +103,6 @@ public sealed class EnforcementEngine
                     }
                     break;
                 case BlockingMode.AfterMinutes:
-                case BlockingMode.Timer:
                     var usedMs = timers.TimersMs.GetValueOrDefault(group.Id, 0);
                     var allowedMs = Math.Max(0, group.AllowedMinutes) * 60_000.0;
                     var remainingSeconds = Math.Max(0, (allowedMs - usedMs) / 1000.0);
@@ -370,7 +369,7 @@ public sealed class EnforcementEngine
             {
                 continue;
             }
-            if (group.Mode != BlockingMode.Timer && group.Mode != BlockingMode.AfterMinutes)
+            if (group.Mode != BlockingMode.AfterMinutes)
             {
                 continue;
             }
