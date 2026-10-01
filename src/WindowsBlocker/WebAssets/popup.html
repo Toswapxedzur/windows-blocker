@@ -7,6 +7,7 @@
     <link rel="icon" media="(prefers-color-scheme: light)" href="icons/adamancia-vault-lock-v3-128.png" />
     <link rel="icon" media="(prefers-color-scheme: dark)" href="icons/adamancia-vault-lock-inverse-dark-128.png?v=20260712b" />
     <link rel="stylesheet" href="popup.css" />
+    <link rel="stylesheet" href="vault-info.css" />
   </head>
   <body>
     <main class="popup">
@@ -83,7 +84,7 @@
           <div class="panel-header">
             <div>
               <h2 data-i18n="groups.title">Blocking groups</h2>
-              <p class="panel-copy" data-i18n="groups.copy">
+              <p class="panel-copy" data-i18n="groups.copy" data-info="groups.copy">
                 Drag groups to reorder them. Each group has its own rules and toggle.
               </p>
             </div>
@@ -117,10 +118,10 @@
           <div class="panel-header editor-header">
             <div>
               <h2 id="editorTitle" data-i18n="editor.title">Group settings</h2>
-              <p id="editorCopy" class="panel-copy" data-i18n="editor.copy">
+              <p id="editorCopy" class="panel-copy" data-i18n="editor.copy" data-info="editor.copy">
                 Choose the apps you want this group to block.
               </p>
-              <p id="groupTypeSummary" class="panel-copy"></p>
+              <p id="groupTypeSummary" class="panel-copy" data-info></p>
             </div>
             <div class="editor-actions">
               <button id="exportGroupButton" type="button" class="secondary" data-i18n="editor.exportGroupButton">
@@ -165,7 +166,7 @@
 
           <section id="siteSettingsSection">
             <label class="label" data-i18n="apps.label">Blocked apps</label>
-            <p class="field-help" data-i18n="apps.help">
+            <p class="field-help" data-i18n="apps.help" data-info="apps.help">
               Add the apps you want this group to block. Use the plus button to search installed apps.
             </p>
 
@@ -190,7 +191,7 @@
               <label class="label" id="bridgeMirrorLabel" data-i18n="connectionGroup.mirrorSites">
                 Blocked websites
               </label>
-              <p class="field-help" id="bridgeMirrorHint" data-i18n="connectionGroup.mirrorSitesHint">
+              <p class="field-help" id="bridgeMirrorHint" data-i18n="connectionGroup.mirrorSitesHint" data-info="connectionGroup.mirrorSitesHint">
                 Managed on the linked app. Shown here read-only.
               </p>
               <div id="bridgeMirrorList" class="bridge-mirror-list" role="list"></div>
@@ -284,7 +285,7 @@
                 </button>
                 <span id="aiPromptStatus" class="run-status"></span>
               </div>
-              <p class="field-help" data-i18n="custom.aiPromptHelp">
+              <p class="field-help" data-i18n="custom.aiPromptHelp" data-info="custom.aiPromptHelp">
                 This copies a bundled prompt with your request, the current rule, and the custom-rule API reference. Paste it into your AI tool, then paste the generated code back here.
               </p>
             </div>
@@ -296,7 +297,7 @@
               </summary>
               <div class="log-feed-toolbar">
                 <button id="logFeedDownload" type="button" class="weird" title="Download logs" aria-label="Download logs">⬇</button>
-                <span class="log-feed-hint" data-i18n="logFeed.hint">Live feed of helpers.getLogHelper() output from every event dispatch.</span>
+                <span class="log-feed-hint" data-i18n="logFeed.hint" data-info="logFeed.hint">Live feed of helpers.getLogHelper() output from every event dispatch.</span>
                 <button id="logFeedClear" type="button" class="weird" data-i18n="logFeed.clear">Clear</button>
               </div>
               <div id="logFeedList" class="log-feed-list" aria-live="polite"></div>
@@ -311,7 +312,7 @@
             <div class="section-header">
               <div>
                 <h3 id="platformRulesTitle"></h3>
-                <p id="platformRulesCopy" class="section-copy"></p>
+                <p id="platformRulesCopy" class="section-copy" data-info></p>
               </div>
             </div>
 
@@ -342,7 +343,7 @@
                 data-i18n-placeholder="filter.platformAuthorsPlaceholder"
                 spellcheck="false"
               ></textarea>
-              <p id="platformVideoHelp" class="field-help"></p>
+              <p id="platformVideoHelp" class="field-help" data-info></p>
 
               <label class="checkbox-row compact" for="platformBlockHomePage">
                 <input id="platformBlockHomePage" type="checkbox" />
@@ -374,7 +375,7 @@
                 data-i18n-placeholder="reddit.subredditsPlaceholder"
                 spellcheck="false"
               ></textarea>
-              <p class="field-help" data-i18n="reddit.help">
+              <p class="field-help" data-i18n="reddit.help" data-info="reddit.help">
                 Use one subreddit per line. Plain names like `productivity` and paths like `r/productivity` are both accepted.
               </p>
 
@@ -382,7 +383,7 @@
                 <input id="redditBlockHomePage" type="checkbox" />
                 <span data-i18n="filter.blockHomePage">Block home/feed pages</span>
               </label>
-              <p class="field-help" data-i18n="filter.blockHomePageRedditHelp">
+              <p class="field-help" data-i18n="filter.blockHomePageRedditHelp" data-info="filter.blockHomePageRedditHelp">
                 Blocks the Reddit home feed, r/popular, and r/all when enabled.
               </p>
             </div>
@@ -404,7 +405,7 @@
                 data-i18n-placeholder="discord.targetsPlaceholder"
                 spellcheck="false"
               ></textarea>
-              <p id="discordTargetsHelp" class="field-help" data-i18n="discord.targetsHelp">
+              <p id="discordTargetsHelp" class="field-help" data-i18n="discord.targetsHelp" data-info="discord.targetsHelp">
                 Use one Discord server ID or channel ID per line. Both kinds may be mixed in the same list. Plain snowflake IDs and links of the form <code>discord.com/channels/&lt;serverId&gt;</code> or <code>discord.com/channels/&lt;serverId&gt;/&lt;channelId&gt;</code> are accepted; channel links keep the channel ID as the entry.
               </p>
 
@@ -412,7 +413,7 @@
                 <input id="discordBlockHomePage" type="checkbox" />
                 <span data-i18n="filter.blockHomePage">Block home/feed pages</span>
               </label>
-              <p class="field-help" data-i18n="filter.blockHomePageDiscordHelp">
+              <p class="field-help" data-i18n="filter.blockHomePageDiscordHelp" data-info="filter.blockHomePageDiscordHelp">
                 Blocks the Discord DMs home screen (/channels/@me) when enabled.
               </p>
             </div>
@@ -420,7 +421,7 @@
             <!-- Hide elements (surface hides): chrome + content-type toggles -->
             <div id="surfaceHidesSection" class="platform-fields hidden">
               <label class="label" data-i18n="surfaceHide.title">Hide elements</label>
-              <p class="field-help" data-i18n="surfaceHide.help">
+              <p class="field-help" data-i18n="surfaceHide.help" data-info="surfaceHide.help">
                 Hide specific buttons or content surfaces on this platform, independent of blocking.
               </p>
               <div id="surfaceHidesList" class="surface-hides-list"></div>
@@ -431,7 +432,7 @@
             <div class="section-header">
               <div>
                 <h3 data-i18n="schedule.title">Schedule</h3>
-                <p class="section-copy" data-i18n="schedule.copy">
+                <p class="section-copy" data-i18n="schedule.copy" data-info="schedule.copy">
                   Limit this group to certain days or time windows.
                 </p>
               </div>
@@ -456,7 +457,7 @@
               data-i18n-placeholder="schedule.windowsPlaceholder"
               spellcheck="false"
             ></textarea>
-            <p class="field-help" data-i18n="schedule.help">
+            <p class="field-help" data-i18n="schedule.help" data-info="schedule.help">
               Leave blank to apply all day. Use one range per line in `HHMM-HHMM` format.
             </p>
           </section>
@@ -532,7 +533,7 @@
               <span data-i18n="snooze.allow">Allow snooze for this group</span>
             </label>
 
-            <p id="snoozeCustomCopy" class="field-help hidden" data-i18n="snooze.customCopy">
+            <p id="snoozeCustomCopy" class="field-help hidden" data-i18n="snooze.customCopy" data-info="snooze.customCopy">
               Custom rules don't snooze. Pressing the button fires a snoozePress event so rules can react (e.g. log, redirect, fire other events), but there's no programmatic snooze API.
             </p>
 
@@ -598,7 +599,7 @@
             <div class="section-header">
               <div>
                 <h3 data-i18n="connectionGroup.title">Web-app Bridge</h3>
-                <p class="section-copy" data-i18n="connectionGroup.copy">
+                <p class="section-copy" data-i18n="connectionGroup.copy" data-info="connectionGroup.copy">
                   Link this group with a same-named group on another connected program. Linked groups form one shared cluster.
                 </p>
               </div>
@@ -681,7 +682,7 @@
         <div class="manual-modal-header">
           <div>
             <h3 data-i18n="settings.title">Global Settings</h3>
-            <p class="modal-copy" data-i18n="settings.copy">
+            <p class="modal-copy" data-i18n="settings.copy" data-info="settings.copy">
               These preferences apply across all block groups.
             </p>
           </div>
@@ -705,7 +706,7 @@
               placeholder="400"
               data-i18n-placeholder="settings.autosaveDebouncePlaceholder"
             />
-            <p class="field-help" data-i18n="settings.autosaveDebounceHelp">
+            <p class="field-help" data-i18n="settings.autosaveDebounceHelp" data-info="settings.autosaveDebounceHelp">
               How long the popup waits after the last keystroke before persisting your edits.
             </p>
           </div>
@@ -722,7 +723,7 @@
               placeholder="30"
               data-i18n-placeholder="settings.defaultSnoozeMinutesPlaceholder"
             />
-            <p class="field-help" data-i18n="settings.defaultSnoozeMinutesHelp">
+            <p class="field-help" data-i18n="settings.defaultSnoozeMinutesHelp" data-info="settings.defaultSnoozeMinutesHelp">
               Snooze length used when creating new non-custom groups.
             </p>
           </div>
@@ -732,7 +733,7 @@
           <input id="settingsDebugMode" type="checkbox" />
           <span data-i18n="settings.debugMode">Debug mode</span>
         </label>
-        <p class="field-help" data-i18n="settings.debugModeHelp">
+        <p class="field-help" data-i18n="settings.debugModeHelp" data-info="settings.debugModeHelp">
           When on, emits verbose [CustomBlocker] / [CustomBlocker:trace] console output. Your own helpers.log() calls always work regardless.
         </p>
 
@@ -740,7 +741,7 @@
           <div class="section-header">
             <div>
               <h3 data-i18n="connection.title">Web-app bridge</h3>
-              <p class="section-copy" data-i18n="connection.copy">
+              <p class="section-copy" data-i18n="connection.copy" data-info="connection.copy">
                 Link Default and Custom groups between a browser extension and Mac Vault or Windows Vault.
               </p>
             </div>
@@ -760,7 +761,7 @@
               <input id="connectionServerToggle" type="checkbox" />
               <span data-i18n="connection.serverToggle">Run local server (hub)</span>
             </label>
-            <p class="field-help" data-i18n="connection.serverToggleHelp">
+            <p class="field-help" data-i18n="connection.serverToggleHelp" data-info="connection.serverToggleHelp">
               Browser extensions on this computer can connect after you copy the pairing key.
             </p>
             <p class="field-help">
@@ -771,7 +772,7 @@
           </div>
 
           <div id="connectionClientControls" class="hidden">
-            <p class="field-help" data-i18n="connection.clientHelp">
+            <p class="field-help" data-i18n="connection.clientHelp" data-info="connection.clientHelp">
               Use the pairing key shown by Mac Vault or Windows Vault to connect this browser.
             </p>
             <div class="field-actions">
@@ -789,7 +790,7 @@
           <div class="section-header">
             <div>
               <h3 data-i18n="settings.localFolderTitle">Local File Folder</h3>
-              <p class="section-copy" data-i18n="settings.localFolderCopy">
+              <p class="section-copy" data-i18n="settings.localFolderCopy" data-info="settings.localFolderCopy">
                 Grant a folder for custom rules to read and write .txt, .csv, and .json files. Paths stay inside this folder.
               </p>
             </div>
@@ -840,7 +841,7 @@
         <div class="manual-modal-header">
           <div>
             <h3 data-i18n="apps.pickerTitle">Add an app</h3>
-            <p class="modal-copy" data-i18n="apps.pickerCopy">
+            <p class="modal-copy" data-i18n="apps.pickerCopy" data-info="apps.pickerCopy">
               Choose an installed app for this group.
             </p>
           </div>
@@ -874,6 +875,7 @@
     <script src="platform-profiles.js"></script>
     <script src="translations.js"></script>
     <script src="popup-markdown.js"></script>
+    <script src="vault-info.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>
