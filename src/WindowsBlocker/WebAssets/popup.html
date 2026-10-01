@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title data-i18n="app.title">Screen Time Limiter: Custom Application Blocker & Focus Timer</title>
+    <title data-i18n="app.title">Windows Vault</title>
     <link rel="icon" media="(prefers-color-scheme: light)" href="icons/adamancia-vault-lock-v3-128.png" />
     <link rel="icon" media="(prefers-color-scheme: dark)" href="icons/adamancia-vault-lock-inverse-dark-128.png?v=20260712b" />
     <link rel="stylesheet" href="popup.css" />
@@ -13,7 +13,7 @@
       <header class="hero">
         <div class="hero-topbar">
           <div>
-            <h1 data-i18n="app.shortTitle">Custom Application Blocker</h1>
+            <h1 data-i18n="app.shortTitle">Windows Vault</h1>
           </div>
           <div class="hero-actions">
             <button id="settingsButton" type="button" class="secondary" data-i18n="settings.button">
@@ -60,8 +60,7 @@
         <div class="site-access-banner-text">
           <strong data-i18n="siteAccess.title">Limited site access detected</strong>
           <span data-i18n="siteAccess.body">
-            Chrome is currently restricting this extension's access to web pages.
-            Adamancia Vault needs access to all sites in order to block them.
+            Your browser is restricting Vault's access to web pages. Allow access to all websites so Vault can block them.
           </span>
         </div>
         <div class="site-access-banner-actions">
@@ -83,14 +82,14 @@
         <aside class="groups-panel">
           <div class="panel-header">
             <div>
-              <h2 data-i18n="groups.title">Block Groups</h2>
+              <h2 data-i18n="groups.title">Blocking groups</h2>
               <p class="panel-copy" data-i18n="groups.copy">
                 Drag groups to reorder them. Each group has its own rules and toggle.
               </p>
             </div>
             <div class="add-group-controls">
               <select id="addGroupType" aria-label="Block group type to add" data-i18n-aria-label="groups.addTypeAria">
-                <option value="site" data-i18n="groupType.site">Default</option>
+                <option value="site" data-i18n="groupType.site">Apps</option>
                 <option value="custom" data-i18n="groupType.custom">Custom</option>
               </select>
               <div class="add-group-buttons">
@@ -101,7 +100,7 @@
           </div>
           <p id="bulkActionNotice" class="field-help"></p>
 
-          <div id="groupList" class="group-list" aria-label="Block groups" data-i18n-aria-label="groups.listAria"></div>
+          <div id="groupList" class="group-list" aria-label="Blocking groups" data-i18n-aria-label="groups.listAria"></div>
         </aside>
 
         <div
@@ -109,7 +108,7 @@
           class="layout-resizer"
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize block groups panel"
+          aria-label="Resize blocking groups panel"
           data-i18n-aria-label="layout.resizerAriaLabel"
           tabindex="0"
         ></div>
@@ -117,9 +116,9 @@
         <section class="editor-panel">
           <div class="panel-header editor-header">
             <div>
-              <h2 id="editorTitle" data-i18n="editor.title">Edit Group</h2>
+              <h2 id="editorTitle" data-i18n="editor.title">Group settings</h2>
               <p id="editorCopy" class="panel-copy" data-i18n="editor.copy">
-                Add the applications you want this group to block.
+                Choose the apps you want this group to block.
               </p>
               <p id="groupTypeSummary" class="panel-copy"></p>
             </div>
@@ -131,7 +130,7 @@
                 Import
               </button>
               <button id="deleteGroupButton" type="button" class="secondary danger" data-i18n="editor.deleteGroupButton">
-                Delete Group
+                Delete group
               </button>
             </div>
           </div>
@@ -147,7 +146,7 @@
 
           <label class="checkbox-row" for="groupEnabled">
             <input id="groupEnabled" type="checkbox" />
-            <span data-i18n="editor.enableGroup">Enable this block group</span>
+            <span data-i18n="editor.enableGroup">Enable this group</span>
           </label>
 
           <div id="blockModeSection">
@@ -165,9 +164,9 @@
           <input id="fallbackUrl" type="hidden" value="" />
 
           <section id="siteSettingsSection">
-            <label class="label" data-i18n="apps.label">Blocked applications</label>
+            <label class="label" data-i18n="apps.label">Blocked apps</label>
             <p class="field-help" data-i18n="apps.help">
-              Add the applications you want this group to block. Click the plus tile to search your installed apps.
+              Add the apps you want this group to block. Use the plus button to search installed apps.
             </p>
 
             <!-- Hidden backing store: newline-free JSON array of { id, name }.
@@ -267,7 +266,7 @@
                 Run
               </button>
               <button id="checkSyntaxButton" type="button" class="secondary weird" data-i18n="custom.letAiCodeButton">
-                Let AI Code
+                Write with AI
               </button>
               <span id="runCustomGroupStatus" class="run-status"></span>
             </div>
@@ -281,7 +280,7 @@
               ></textarea>
               <div class="field-actions">
                 <button id="aiPromptCopyButton" type="button" class="weird" data-i18n="custom.aiPromptCopyButton">
-                  Prompt for AI
+                  Copy AI prompt
                 </button>
                 <span id="aiPromptStatus" class="run-status"></span>
               </div>
@@ -360,14 +359,14 @@
 
             <!-- Reddit (subreddit) fields -->
             <div id="redditFields" class="platform-fields hidden">
-              <label class="label" for="redditMode" data-i18n="reddit.mode">Subreddit filter</label>
+              <label class="label" for="redditMode" data-i18n="reddit.mode">Community filter</label>
               <select id="redditMode">
                 <option value="all" data-i18n="reddit.modeAll">Apply to all Reddit pages</option>
                 <option value="include" data-i18n="reddit.modeInclude">Apply to certain subreddits</option>
                 <option value="exclude" data-i18n="reddit.modeExclude">Apply to all except certain subreddits</option>
               </select>
 
-              <label class="label" for="redditSubreddits" data-i18n="reddit.subreddits">Subreddits</label>
+              <label class="label" for="redditSubreddits" data-i18n="reddit.subreddits">Communities</label>
               <textarea
                 id="redditSubreddits"
                 rows="6"
@@ -484,7 +483,7 @@
                   <select id="freezeMode">
                     <option value="frozen" data-i18n="freeze.frozenOption">Frozen</option>
                     <option value="strict" data-i18n="freeze.strictOption">Strict frozen</option>
-                    <option value="parental" data-i18n="freeze.parentalOption">Parental frozen</option>
+                    <option value="parental" data-i18n="freeze.parentalOption">PIN-protected freeze</option>
                   </select>
                 </div>
 
@@ -509,7 +508,7 @@
                   type="button"
                   class="secondary hidden parental-settings-button"
                   data-i18n-title="freeze.parentalSettings"
-                  title="Guardian password settings"
+                  title="PIN settings"
                   aria-label="Guardian password settings"
                 >&#9881;</button>
                 <button id="applyFreezeButton" type="button" data-i18n="freeze.applyButton">Freeze Group</button>
@@ -576,7 +575,7 @@
                 />
               </div>
               <div>
-                <label class="label" for="snoozeConfirmations" data-i18n="snooze.confirmations">Times of confirmation</label>
+                <label class="label" for="snoozeConfirmations" data-i18n="snooze.confirmations">Required confirmations</label>
                 <input
                   id="snoozeConfirmations"
                   type="number"
@@ -840,9 +839,9 @@
       <div class="modal-card app-picker-card">
         <div class="manual-modal-header">
           <div>
-            <h3 data-i18n="apps.pickerTitle">Add an application</h3>
+            <h3 data-i18n="apps.pickerTitle">Add an app</h3>
             <p class="modal-copy" data-i18n="apps.pickerCopy">
-              Search your installed applications and choose one to block.
+              Choose an installed app for this group.
             </p>
           </div>
           <button id="appPickerCloseButton" type="button" class="secondary" data-i18n="manual.close">
@@ -855,11 +854,11 @@
           autocomplete="off"
           spellcheck="false"
           data-i18n-placeholder="apps.searchPlaceholder"
-          placeholder="Type an app name..."
+          placeholder="Search apps…"
         />
         <div id="appPickerResults" class="app-picker-results" role="listbox"></div>
         <p id="appPickerEmpty" class="field-help hidden" data-i18n="apps.noResults">
-          No matching applications found.
+          No matching apps.
         </p>
       </div>
     </div>

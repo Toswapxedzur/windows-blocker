@@ -1,4 +1,4 @@
-# Vault desktop-app functional reference
+# Windows Vault functional reference
 
 ## Purpose and boundary
 
@@ -77,7 +77,7 @@ Several groups can match the same application. Vault evaluates group policy in s
 | Targets | One or more application identities selected from the picker. |
 | Behaviour | Immediate block or block after an allowance. |
 | Schedule | Selected weekdays and optional local time windows. |
-| Freeze | None, Frozen, Strict frozen, or Parental frozen. |
+| Freeze | None, Frozen, Strict frozen, or PIN-protected frozen. |
 | Snooze | Per-group temporary-exception policy. |
 | Fallback/status message | Message the native host can show when it applies a shield/status response. |
 
@@ -88,7 +88,7 @@ An empty Default group has no selected application target and therefore does not
 | Behaviour | Result |
 | --- | --- |
 | Block immediately | A matching active target produces an immediate native block/shield decision. |
-| Block after a number of minutes | Matching use accrues against the group allowance. When the allowance is exhausted, the group produces a native block/shield decision until its usage period resets or another state makes the group inactive. |
+| Block when the time allowance is used | Matching use accrues against the group allowance. When the allowance is exhausted, the group produces a native block/shield decision until its usage period resets or another state makes the group inactive. |
 
 New groups use a 15-minute allowance and a 24-hour reset interval unless changed. Timed usage belongs to the group, so all matching targets share that group policy. The exact response to a block is implemented by the native host and is constrained by the operating-system permissions and supported enforcement mechanism.
 
@@ -140,7 +140,7 @@ Freeze is a deliberate modification barrier.
 | --- | --- |
 | Frozen | Ordinary edits and ordinary state changes remain locked until the product's unfreeze confirmation flow succeeds. |
 | Strict frozen | The group cannot be unfrozen before its strict-freeze duration ends. The duration is positive and limited to 72 hours. |
-| Parental frozen | Guardian-password management is required for freeze/unfreeze actions. |
+| PIN-protected frozen | PIN management is required for freeze/unfreeze actions. |
 
 Choosing a mode in the editor does not freeze the group by itself; use the freeze action to apply it. A bridge-linked group may also lock coordinated freeze controls while a required member is offline.
 
