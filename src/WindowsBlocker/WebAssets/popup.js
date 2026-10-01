@@ -105,7 +105,14 @@ const cbDialog = (function () {
         input.className = "cbdlg-input";
         input.type = "text";
         input.value = opts.defaultValue != null ? String(opts.defaultValue) : "";
-        card.appendChild(input);
+        const inputRow = document.createElement("div");
+        inputRow.className = "vui-info-field";
+        if (opts.kind === "prompt") {
+          inputRow.dataset.infoKey = "dialog-value";
+          inputRow.dataset.infoLabel = opts.title || "Value";
+          inputRow.dataset.infoCopy = opts.message || "Enter the value requested by this dialog, then confirm to apply it.";
+        }
+        inputRow.appendChild(input); card.appendChild(inputRow);
       }
 
       const actions = document.createElement("div");
@@ -2490,6 +2497,9 @@ function renderSurfaceHides(group, draft, editable) {
 
     const text = document.createElement("span");
     text.textContent = t(entry.labelKey);
+    text.dataset.infoKey = "surface-hide:" + entry.id;
+    text.dataset.infoCopy = "Hide " + t(entry.labelKey).toLowerCase() +
+      (surfaceHideEntryScope(entry) === "entry" ? " on pages matching this group’s creator filter." : " on this platform’s supported pages.");
 
     row.appendChild(input);
     row.appendChild(text);

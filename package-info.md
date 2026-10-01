@@ -10,3 +10,5 @@
 - **English preparation (2026-10-01):** English UI terminology is aligned without importing the newer Mac/browser runtime. Apps and Windows Vault name the native target and product; PIN-protected freeze retains the existing Windows behavior.
 
 - **Info explanations (2026-10-01):** English-only help uses the shared standalone vault-info component, without importing newer browser dropdown/runtime behavior.
+
+- **Field Info (2026-10-02):** 14px blue-gray icons retain a 24px invisible hit area. English field explanations are explicit; built-in settings, names, switches, searches and picker fields use the shared component. Other locales retain inline help.
