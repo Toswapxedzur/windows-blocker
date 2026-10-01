@@ -23,7 +23,7 @@
             <button id="manualButton" type="button" class="secondary" data-i18n="manual.button">
               Instruction Manual
             </button>
-            <div class="language-picker">
+            <div class="language-picker vui-info-field" data-info-key="languageSelect" data-info-label="Language" data-info-copy="Choose the app’s interface language. Stored groups and names stay the same.">
               <select id="languageSelect" aria-label="Language" data-i18n-aria-label="language.label" translate="no" class="notranslate">
                 <option value="en">English</option>
                 <option value="zh">简体中文</option>
@@ -89,10 +89,10 @@
               </p>
             </div>
             <div class="add-group-controls">
-              <select id="addGroupType" aria-label="Block group type to add" data-i18n-aria-label="groups.addTypeAria">
+              <span class="vui-info-field" data-info-key="addGroupType" data-info-label="Group type" data-info-copy="Choose the kind of blocking group to create, then click Add."><select id="addGroupType" aria-label="Block group type to add" data-i18n-aria-label="groups.addTypeAria">
                 <option value="site" data-i18n="groupType.site">Apps</option>
                 <option value="custom" data-i18n="groupType.custom">Custom</option>
-              </select>
+              </select></span>
               <div class="add-group-buttons">
                 <button id="addGroupButton" type="button" data-i18n="groups.addButton">Add</button>
                 <button id="deleteAllGroupsButton" type="button" class="secondary danger" data-i18n="groups.deleteAllButton">Clear</button>
@@ -136,7 +136,7 @@
             </div>
           </div>
 
-          <label class="label" for="groupName" data-i18n="editor.groupName">Group name</label>
+          <label class="label" for="groupName" data-i18n="editor.groupName" data-info-key="editor.groupName" data-info-copy="The name shown for this blocking group. Renaming it does not change its rules.">Group name</label>
           <input
             id="groupName"
             type="text"
@@ -147,11 +147,11 @@
 
           <label class="checkbox-row" for="groupEnabled">
             <input id="groupEnabled" type="checkbox" />
-            <span data-i18n="editor.enableGroup">Enable this group</span>
+            <span data-i18n="editor.enableGroup" data-info-key="editor.enableGroup" data-info-copy="Turn this group’s blocking rules on or off. Frozen groups cannot be changed.">Enable this group</span>
           </label>
 
           <div id="blockModeSection">
-            <label class="label" for="blockMode" data-i18n="editor.blockMode">Blocking behavior</label>
+            <label class="label" for="blockMode" data-i18n="editor.blockMode" data-info-key="editor.blockMode" data-info-copy="Block immediately, or let the group’s targets use a time allowance before blocking.">Blocking behavior</label>
             <select id="blockMode">
               <option value="instant" data-i18n="mode.instant">Block immediately</option>
               <option value="after-minutes" data-i18n="mode.afterMinutes">Block after a number of minutes</option>
@@ -165,7 +165,7 @@
           <input id="fallbackUrl" type="hidden" value="" />
 
           <section id="siteSettingsSection">
-            <label class="label" data-i18n="apps.label">Blocked apps</label>
+            <label class="label" data-i18n="apps.label" data-info-key="apps.label" data-info-copy="Choose the installed apps that this group applies to. Use the plus button to find an app.">Blocked apps</label>
             <p class="field-help" data-i18n="apps.help" data-info="apps.help">
               Add the apps you want this group to block. Use the plus button to search installed apps.
             </p>
@@ -188,7 +188,7 @@
                  Default groups; styled translucent because it is not editable
                  from this side. -->
             <div id="bridgeMirrorSection" class="bridge-mirror-section hidden">
-              <label class="label" id="bridgeMirrorLabel" data-i18n="connectionGroup.mirrorSites">
+              <label class="label" id="bridgeMirrorLabel" data-i18n="connectionGroup.mirrorSites" data-info-key="connectionGroup.mirrorSites" data-info-copy="The website rules mirrored from the browser side of this connected group.">
                 Blocked websites
               </label>
               <p class="field-help" id="bridgeMirrorHint" data-i18n="connectionGroup.mirrorSitesHint" data-info="connectionGroup.mirrorSitesHint">
@@ -201,7 +201,7 @@
           <div id="timedSettings" class="timed-settings">
             <div class="settings-grid">
               <div id="allowedMinutesRow">
-                <label class="label" for="allowedMinutes" data-i18n="timed.allowedMinutes">Allowed minutes before block</label>
+                <label class="label" for="allowedMinutes" data-i18n="timed.allowedMinutes" data-info-key="timed.allowedMinutes" data-info-copy="The usage time this group allows before blocking. Enter minutes; fractions are accepted.">Allowed minutes before block</label>
                 <input
                   id="allowedMinutes"
                   type="number"
@@ -214,7 +214,7 @@
               </div>
 
               <div>
-                <label class="label" for="resetIntervalHours" data-i18n="timed.resetHours">Timer reset interval (hours)</label>
+                <label class="label" for="resetIntervalHours" data-i18n="timed.resetHours" data-info-key="timed.resetHours" data-info-copy="How often a fixed time allowance starts again. The rolling-limit setting uses this interval as its lookback window.">Timer reset interval (hours)</label>
                 <input
                   id="resetIntervalHours"
                   type="number"
@@ -229,12 +229,12 @@
 
             <label class="checkbox-row compact" for="resetAtMidnight">
               <input id="resetAtMidnight" type="checkbox" />
-              <span data-i18n="timed.resetAtMidnight">Also restart the reset cycle at midnight</span>
+              <span data-i18n="timed.resetAtMidnight" data-info-key="timed.resetAtMidnight" data-info-copy="Also restart the allowance cycle at local midnight. With a rolling limit, usage before midnight no longer counts.">Also restart the reset cycle at midnight</span>
             </label>
 
             <label class="checkbox-row compact" for="rollingLimit">
               <input id="rollingLimit" type="checkbox" />
-              <span data-i18n="timed.rollingLimit">Rolling limit: used time comes back once it is older than the reset interval</span>
+              <span data-i18n="timed.rollingLimit" data-info-key="timed.rollingLimit" data-info-copy="Count usage within the latest reset interval rather than a fixed allowance period. Older usage gradually leaves that window.">Rolling limit: used time comes back once it is older than the reset interval</span>
             </label>
 
             <div class="usage-row">
@@ -245,7 +245,7 @@
           <section id="customSettingsCard" class="section-card hidden">
             <div class="section-header">
               <div>
-                <h3 data-i18n="custom.title">Blocking Rules</h3>
+                <h3 data-i18n="custom.title" data-info-key="custom-code" data-info-copy="Write a custom rule using the API documented by this app. Running the rule activates its code for this group.">Blocking Rules</h3>
               </div>
             </div>
 
@@ -272,7 +272,7 @@
               <span id="runCustomGroupStatus" class="run-status"></span>
             </div>
             <div id="aiPromptPanel" class="ai-prompt-panel hidden">
-              <label class="label" for="aiPromptInput" data-i18n="custom.aiPromptLabel">Prompt for AI</label>
+              <label class="label" for="aiPromptInput" data-i18n="custom.aiPromptLabel" data-info-key="custom.aiPromptLabel" data-info-copy="Describe the rule you want. Copy prompt for AI includes your request, current code, and the rule API reference.">Prompt for AI</label>
               <textarea
                 id="aiPromptInput"
                 rows="4"
@@ -319,7 +319,7 @@
             <!-- Creator / account fields (video platforms + Twitter/X) -->
             <div id="platformVideoFields" class="platform-fields hidden">
               <div id="platformVideoModeRow">
-                <label id="platformVideoModeLabel" class="label" for="platformVideoMode"></label>
+                <label id="platformVideoModeLabel" class="label" for="platformVideoMode" data-info-key="platformVideoModeLabel" data-info-copy="Choose which supported content formats this group applies to, such as short videos, long videos, or posts."></label>
                 <select id="platformVideoMode">
                   <option value="all"></option>
                   <option value="short"></option>
@@ -328,14 +328,14 @@
                 </select>
               </div>
 
-              <label id="platformAuthorModeLabel" class="label" for="platformAuthorMode"></label>
+              <label id="platformAuthorModeLabel" class="label" for="platformAuthorMode" data-info-key="platformAuthorModeLabel" data-info-copy="Choose how the listed content sources are matched. The selected mode determines whether the list is blocked or exempted."></label>
               <select id="platformAuthorMode">
                 <option value="none"></option>
                 <option value="include"></option>
                 <option value="exclude"></option>
               </select>
 
-              <label id="platformAuthorsLabel" class="label" for="platformAuthors"></label>
+              <label id="platformAuthorsLabel" class="label" for="platformAuthors" data-info-key="platformAuthorsLabel" data-info-copy="Enter supported content-source identifiers or links, one per line. The selected source-filter mode determines how the list is used."></label>
               <textarea
                 id="platformAuthors"
                 rows="5"
@@ -347,7 +347,7 @@
 
               <label class="checkbox-row compact" for="platformBlockHomePage">
                 <input id="platformBlockHomePage" type="checkbox" />
-                <span data-i18n="filter.blockHomePage">Block home/feed pages</span>
+                <span data-i18n="filter.blockHomePage" data-info-key="filter.blockHomePage" data-info-copy="Also block the platform’s supported home or feed pages.">Block home/feed pages</span>
               </label>
 
               <!-- Redirection removed on macOS: "skip to next" was a
@@ -360,14 +360,14 @@
 
             <!-- Reddit (subreddit) fields -->
             <div id="redditFields" class="platform-fields hidden">
-              <label class="label" for="redditMode" data-i18n="reddit.mode">Community filter</label>
+              <label class="label" for="redditMode" data-i18n="reddit.mode" data-info-key="reddit.mode" data-info-copy="Choose whether the listed Reddit communities are blocked or allowed.">Community filter</label>
               <select id="redditMode">
                 <option value="all" data-i18n="reddit.modeAll">Apply to all Reddit pages</option>
                 <option value="include" data-i18n="reddit.modeInclude">Apply to certain subreddits</option>
                 <option value="exclude" data-i18n="reddit.modeExclude">Apply to all except certain subreddits</option>
               </select>
 
-              <label class="label" for="redditSubreddits" data-i18n="reddit.subreddits">Communities</label>
+              <label class="label" for="redditSubreddits" data-i18n="reddit.subreddits" data-info-key="reddit.subreddits" data-info-copy="Add Reddit community names or links, one per line.">Communities</label>
               <textarea
                 id="redditSubreddits"
                 rows="6"
@@ -381,7 +381,7 @@
 
               <label class="checkbox-row compact" for="redditBlockHomePage">
                 <input id="redditBlockHomePage" type="checkbox" />
-                <span data-i18n="filter.blockHomePage">Block home/feed pages</span>
+                <span data-i18n="filter.blockHomePage" data-info-key="filter.blockHomePage" data-info-copy="Also block the platform’s supported home or feed pages.">Block home/feed pages</span>
               </label>
               <p class="field-help" data-i18n="filter.blockHomePageRedditHelp" data-info="filter.blockHomePageRedditHelp">
                 Blocks the Reddit home feed, r/popular, and r/all when enabled.
@@ -390,14 +390,14 @@
 
             <!-- Discord (server/channel) fields -->
             <div id="discordFields" class="platform-fields hidden">
-              <label class="label" for="discordMode" data-i18n="discord.mode">Target filter</label>
+              <label class="label" for="discordMode" data-i18n="discord.mode" data-info-key="discord.mode" data-info-copy="Choose whether the listed Discord servers and channels are blocked or allowed.">Target filter</label>
               <select id="discordMode">
                 <option value="all" data-i18n="discord.modeAll">Apply to all Discord pages</option>
                 <option value="include" data-i18n="discord.modeInclude">Apply to certain servers/channels</option>
                 <option value="exclude" data-i18n="discord.modeExclude">Apply to all except certain servers/channels</option>
               </select>
 
-              <label id="discordTargetsLabel" class="label" for="discordTargets" data-i18n="discord.targets">Servers &amp; channels</label>
+              <label id="discordTargetsLabel" class="label" for="discordTargets" data-i18n="discord.targets" data-info-key="discord.targets" data-info-copy="Add a server or channel ID, or a Discord channel link. Use one entry per line.">Servers &amp; channels</label>
               <textarea
                 id="discordTargets"
                 rows="6"
@@ -411,7 +411,7 @@
 
               <label class="checkbox-row compact" for="discordBlockHomePage">
                 <input id="discordBlockHomePage" type="checkbox" />
-                <span data-i18n="filter.blockHomePage">Block home/feed pages</span>
+                <span data-i18n="filter.blockHomePage" data-info-key="filter.blockHomePage" data-info-copy="Also block the platform’s supported home or feed pages.">Block home/feed pages</span>
               </label>
               <p class="field-help" data-i18n="filter.blockHomePageDiscordHelp" data-info="filter.blockHomePageDiscordHelp">
                 Blocks the Discord DMs home screen (/channels/@me) when enabled.
@@ -438,7 +438,7 @@
               </div>
             </div>
 
-            <label class="label" data-i18n="schedule.days">Days to block</label>
+            <label class="label" data-i18n="schedule.days" data-info-key="schedule.days" data-info-copy="Select the weekdays on which the group’s blocking rules apply.">Days to block</label>
             <div id="daysGrid" class="days-grid">
               <label class="day-pill"><input type="checkbox" value="monday" /> <span data-i18n="day.mon">Mon</span></label>
               <label class="day-pill"><input type="checkbox" value="tuesday" /> <span data-i18n="day.tue">Tue</span></label>
@@ -449,7 +449,7 @@
               <label class="day-pill"><input type="checkbox" value="sunday" /> <span data-i18n="day.sun">Sun</span></label>
             </div>
 
-            <label class="label" for="scheduleWindows" data-i18n="schedule.windows">Time windows</label>
+            <label class="label" for="scheduleWindows" data-i18n="schedule.windows" data-info-key="schedule.windows" data-info-copy="Limit blocking to these daily time ranges. Leave blank for all day; use one range per line, such as 09:00-10:00.">Time windows</label>
             <textarea
               id="scheduleWindows"
               rows="4"
@@ -480,7 +480,7 @@
             <div id="freezeSetup" class="freeze-setup">
               <div class="settings-grid">
                 <div>
-                  <label class="label" for="freezeMode" data-i18n="freeze.mode">Freeze mode</label>
+                  <label class="label" for="freezeMode" data-i18n="freeze.mode" data-info-key="freeze.mode" data-info-copy="Choose whether unfreezing requires a PIN, a wait, or the strict time-based mode supported by this app.">Freeze mode</label>
                   <select id="freezeMode">
                     <option value="frozen" data-i18n="freeze.frozenOption">Frozen</option>
                     <option value="strict" data-i18n="freeze.strictOption">Strict frozen</option>
@@ -489,7 +489,7 @@
                 </div>
 
                 <div id="strictFreezeSettings" class="hidden">
-                  <label class="label" for="strictFreezeHours" data-i18n="freeze.unlockAfter">Unlock after (hours)</label>
+                  <label class="label" for="strictFreezeHours" data-i18n="freeze.unlockAfter" data-info-key="freeze.unlockAfter" data-info-copy="How long this app’s strict freeze lasts before unfreezing is allowed.">Unlock after (hours)</label>
                   <input
                     id="strictFreezeHours"
                     type="number"
@@ -530,7 +530,7 @@
 
             <label class="checkbox-row compact" for="allowSnooze">
               <input id="allowSnooze" type="checkbox" />
-              <span data-i18n="snooze.allow">Allow snooze for this group</span>
+              <span data-i18n="snooze.allow" data-info-key="snooze.allow" data-info-copy="Allow temporary relief from this group’s blocking policy through Snooze.">Allow snooze for this group</span>
             </label>
 
             <p id="snoozeCustomCopy" class="field-help hidden" data-i18n="snooze.customCopy" data-info="snooze.customCopy">
@@ -539,7 +539,7 @@
 
             <div id="snoozeNumericFields" class="settings-grid">
               <div>
-                <label class="label" for="snoozeMinutes" data-i18n="snooze.minutes">Snooze for (minutes)</label>
+                <label class="label" for="snoozeMinutes" data-i18n="snooze.minutes" data-info-key="snooze.minutes" data-info-copy="The size of a snooze: a pause duration, or extra usage allowance when that effect is selected.">Snooze for (minutes)</label>
                 <input
                   id="snoozeMinutes"
                   type="number"
@@ -551,7 +551,7 @@
                 />
               </div>
               <div>
-                <label class="label" for="snoozeActivationDelay" data-i18n="snooze.activationDelay">Activation delay (minutes)</label>
+                <label class="label" for="snoozeActivationDelay" data-i18n="snooze.activationDelay" data-info-key="snooze.activationDelay" data-info-copy="How long to wait after requesting a snooze before it starts. Zero starts it immediately.">Activation delay (minutes)</label>
                 <input
                   id="snoozeActivationDelay"
                   type="number"
@@ -563,7 +563,7 @@
                 />
               </div>
               <div>
-                <label class="label" for="snoozeCooldown" data-i18n="snooze.cooldown">Cooldown after snooze (minutes)</label>
+                <label class="label" for="snoozeCooldown" data-i18n="snooze.cooldown" data-info-key="snooze.cooldown" data-info-copy="How long to wait after a snooze ends before another can be requested. Zero removes this wait.">Cooldown after snooze (minutes)</label>
                 <input
                   id="snoozeCooldown"
                   type="number"
@@ -576,7 +576,7 @@
                 />
               </div>
               <div>
-                <label class="label" for="snoozeConfirmations" data-i18n="snooze.confirmations">Required confirmations</label>
+                <label class="label" for="snoozeConfirmations" data-i18n="snooze.confirmations" data-info-key="snooze.confirmations" data-info-copy="How many confirmation steps are required before a requested snooze starts. Zero requires no extra confirmations.">Required confirmations</label>
                 <input
                   id="snoozeConfirmations"
                   type="number"
@@ -610,7 +610,7 @@
             <div id="connectionGroupDisconnected" class="connection-group-connect hidden">
               <div class="settings-grid">
                 <div>
-                  <label class="label" for="connectionGroupProgram" data-i18n="connectionGroup.programLabel">Designated program</label>
+                  <label class="label" for="connectionGroupProgram" data-i18n="connectionGroup.programLabel" data-info-key="connectionGroup.programLabel" data-info-copy="Choose the program used for this connected group.">Designated program</label>
                   <select id="connectionGroupProgram"></select>
                 </div>
               </div>
@@ -693,7 +693,7 @@
 
         <div class="settings-grid">
           <div>
-            <label class="label" for="settingsAutosaveDebounce" data-i18n="settings.autosaveDebounce">
+            <label class="label" for="settingsAutosaveDebounce" data-i18n="settings.autosaveDebounce" data-info-key="settings.autosaveDebounce" data-info-copy="How many milliseconds to wait after the last edit before saving it.">
               Autosave debounce (ms)
             </label>
             <input
@@ -711,7 +711,7 @@
             </p>
           </div>
           <div>
-            <label class="label" for="settingsDefaultSnoozeMinutes" data-i18n="settings.defaultSnoozeMinutes">
+            <label class="label" for="settingsDefaultSnoozeMinutes" data-i18n="settings.defaultSnoozeMinutes" data-info-key="settings.defaultSnoozeMinutes" data-info-copy="The initial snooze duration used for newly created groups. Existing groups keep their own duration.">
               Default snooze duration (minutes)
             </label>
             <input
@@ -731,7 +731,7 @@
 
         <label class="checkbox-row compact" for="settingsDebugMode">
           <input id="settingsDebugMode" type="checkbox" />
-          <span data-i18n="settings.debugMode">Debug mode</span>
+          <span data-i18n="settings.debugMode" data-info-key="settings.debugMode" data-info-copy="Enable extra diagnostic console output. Explicit custom-rule log calls are unaffected.">Debug mode</span>
         </label>
         <p class="field-help" data-i18n="settings.debugModeHelp" data-info="settings.debugModeHelp">
           When on, emits verbose [CustomBlocker] / [CustomBlocker:trace] console output. Your own helpers.log() calls always work regardless.
@@ -759,7 +759,7 @@
           <div id="connectionServerControls" class="hidden">
             <label class="checkbox-row compact" for="connectionServerToggle">
               <input id="connectionServerToggle" type="checkbox" />
-              <span data-i18n="connection.serverToggle">Run local server (hub)</span>
+              <span data-i18n="connection.serverToggle" data-info-key="connection.serverToggle" data-info-copy="Allow local browser extensions to connect to this app using its pairing key.">Run local server (hub)</span>
             </label>
             <p class="field-help" data-i18n="connection.serverToggleHelp" data-info="connection.serverToggleHelp">
               Browser extensions on this computer can connect after you copy the pairing key.
@@ -849,14 +849,14 @@
             Close
           </button>
         </div>
-        <input
+        <div class="vui-info-field" data-info-key="appPickerSearch" data-info-label="Search apps" data-info-copy="Filter installed apps by name or identifier. Select a result to add it to this group."><input
           id="appPickerSearch"
           type="text"
           autocomplete="off"
           spellcheck="false"
           data-i18n-placeholder="apps.searchPlaceholder"
           placeholder="Search apps…"
-        />
+        /></div>
         <div id="appPickerResults" class="app-picker-results" role="listbox"></div>
         <p id="appPickerEmpty" class="field-help hidden" data-i18n="apps.noResults">
           No matching apps.
