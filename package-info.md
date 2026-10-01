@@ -8,3 +8,5 @@
 - **Folders:** `src/WindowsBlocker/` (`Core`, `Enforcement`, `Rules`, `Bridge`, `SelfPreservation`, `WebUI`, `WebAssets` incl. 20-language `manual/`, `Assets/` official Windows icon), `tests/`, `i18n-docs/`.
 
 - **English preparation (2026-10-01):** English UI terminology is aligned without importing the newer Mac/browser runtime. Apps and Windows Vault name the native target and product; PIN-protected freeze retains the existing Windows behavior.
+
+- **Info explanations (2026-10-01):** English-only help uses the shared standalone vault-info component, without importing newer browser dropdown/runtime behavior.
