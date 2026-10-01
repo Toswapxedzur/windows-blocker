@@ -6,3 +6,5 @@
 - **Own git repo:** `Toswapxedzur/windows-blocker`, branch `main`; releases `v0.0.1`, `v0.0.2`, `v0.0.3` alpha. Version source of truth = `<Version>` in `src/WindowsBlocker/WindowsBlocker.csproj`.
 - **Build/test:** needs Windows + .NET 8 SDK (`WindowsBlocker.sln`). Real-Windows testing: the QEMU Windows 11 VM on mini1 (`~/winvm`, recipe in `~/Desktop/autome/memory/mini1-windows-test-vm.md`; `guest-build.ps1` builds + launches, `gui.sh` drives the desktop). On the Mac, a C#-only cross-compile catches most errors. JS contracts in `tests/` run here: `runner-custom-rule-stress.js` via macOS `jsc`, the other two via `node`.
 - **Folders:** `src/WindowsBlocker/` (`Core`, `Enforcement`, `Rules`, `Bridge`, `SelfPreservation`, `WebUI`, `WebAssets` incl. 20-language `manual/`, `Assets/` official Windows icon), `tests/`, `i18n-docs/`.
+
+- **English preparation (2026-10-01):** English UI terminology is aligned without importing the newer Mac/browser runtime. Apps and Windows Vault name the native target and product; PIN-protected freeze retains the existing Windows behavior.
