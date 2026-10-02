@@ -13,6 +13,7 @@ The code is the product contract. The maintained in-app manual is [src/WindowsBl
 - Canonical `(on, v) => { ... }` Custom rules with isolated disposable workers, per-group state/logs, native panels and selected-folder access.
 - Shared Swift Classifier and Activity services with the same scenes and behavior as Mac Vault.
 - Native MCP tools with the same editing gates as the editor.
+- Native AI connection controls for the nine Mac client connectors, using current-user Windows configuration locations and a bundled stdio helper.
 - Protocol-4 authenticated loopback hub with explicit group-ID links, versioned locks, shared budgets and snoozes.
 - Native timer, toast, and panel overlay windows.
 
@@ -25,6 +26,8 @@ dotnet build WindowsBlocker.sln
 ```
 
 The application project targets `net8.0-windows` and uses WPF plus WebView2. Build and run it on Windows with the required .NET SDK, bundled Classifier worker, and WebView2 runtime available. All product tests run on mini1; Windows presentation uses its VM. Windows 10 and Windows 11 are the intended OS targets. Do not infer a verified OS or CPU architecture from a cross-build.
+
+The [release scripts](scripts/release/README.md) create a self-contained x64 package with the verified Classifier worker. Installation is per user, preserves the separate data directory, registers the browser helper and adds a Start menu shortcut. End users need the WebView2 Runtime; the installer obtains Microsoft's signed bootstrapper when it is absent. They do not need the development SDKs or Node.
 
 ## Project map
 
