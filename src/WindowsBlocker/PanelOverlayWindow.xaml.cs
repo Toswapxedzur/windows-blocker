@@ -273,7 +273,8 @@ internal sealed class PanelCard
         switch (c.Type)
         {
             case "text":
-                return new TextBlock { Text = c.Text ?? c.Label ?? "", FontSize = 13, Foreground = fg, Opacity = 0.85, TextWrapping = TextWrapping.Wrap };
+            case "html":
+                return new TextBlock { Text = c.Text ?? (c.Html != null ? System.Net.WebUtility.HtmlDecode(System.Text.RegularExpressions.Regex.Replace(c.Html,"<[^>]*>","")) : null) ?? c.Label ?? "", FontSize = 13, Foreground = fg, Opacity = 0.85, TextWrapping = TextWrapping.Wrap };
 
             case "button":
             {
@@ -359,20 +360,6 @@ internal sealed class PanelCard
                 return Labeled(c.Label, tb, fg);
             }
 
-            case "timer":
-            {
-                var ms = c.Timer?.CurrentMs ?? 0;
-                var name = c.Timer?.DisplayName ?? c.Label ?? c.Id;
-                var row = new DockPanel { LastChildFill = false };
-                var nameBlock = new TextBlock { Text = name, FontSize = 13, FontWeight = FontWeights.Medium, Foreground = fg };
-                var timeBlock = new TextBlock { Text = FormatTimerMs(ms, c.Format ?? "mm:ss"), FontSize = 13, FontFamily = new FontFamily("Consolas"), Foreground = ms <= 0 ? Brushes.OrangeRed : fg };
-                DockPanel.SetDock(nameBlock, Dock.Left);
-                DockPanel.SetDock(timeBlock, Dock.Right);
-                row.Children.Add(nameBlock);
-                row.Children.Add(timeBlock);
-                return row;
-            }
-
             case "section":
             {
                 var panel = new StackPanel { Margin = new Thickness(4, 0, 0, 0) };
@@ -450,7 +437,7 @@ internal sealed class PanelCard
                     case "section": Visit(c.Controls); break;
                     case "button":
                     case "text":
-                    case "timer": break;
+                    case "html": break;
                     default:
                         if (c.Value.HasValue) values[c.Id] = c.ValueString;
                         break;
@@ -469,21 +456,6 @@ internal sealed class PanelCard
         _ when !string.IsNullOrEmpty(width) && double.TryParse(width!.Replace("px", ""), NumberStyles.Any, CultureInfo.InvariantCulture, out var n) => Math.Max(180, Math.Min(520, n)),
         _ => 300
     };
-
-    private static string FormatTimerMs(double ms, string format)
-    {
-        var totalMs = Math.Max(0, (int)ms);
-        var totalSec = totalMs / 1000;
-        switch (format)
-        {
-            case "ms": return totalMs.ToString();
-            case "ss": return totalSec.ToString();
-            case "hh:mm:ss":
-                return $"{totalSec / 3600}:{(totalSec % 3600) / 60:D2}:{totalSec % 60:D2}";
-            default:
-                return $"{totalSec / 60}:{totalSec % 60:D2}";
-        }
-    }
 
     // Accepts #rrggbb or #aarrggbb; falls back to the given default on failure.
     private static SolidColorBrush Brush(string? hex, string fallback)

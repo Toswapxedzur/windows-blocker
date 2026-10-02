@@ -19,6 +19,21 @@ namespace WindowsBlocker.WebUI;
 public static class AppInventory
 {
     private static volatile string _cachedJson = "[]";
+    private static readonly Dictionary<string,InstalledAppCatalog.AppEntry> _activityApps=new(StringComparer.OrdinalIgnoreCase);
+    public static (string Name,string? Icon) DescribeActivity(AppIdentity identity)
+    {
+        if(identity.IsEmpty) return ("Unknown",null);
+        var key=identity.Canonical;
+        lock(_activityApps)
+        {
+            if(_activityApps.TryGetValue(key,out var cached)) return (cached.Name,cached.Icon);
+            var entry=(JsonNode.Parse(_cachedJson) as JsonArray)?.OfType<JsonObject>().FirstOrDefault(a=>a["id"]?.GetValue<string>().Equals(key,StringComparison.OrdinalIgnoreCase)==true);
+            var name=entry?["name"]?.GetValue<string>() ?? identity.DisplayName; var icon=entry?["icon"]?.GetValue<string>();
+            if(icon==null && identity.ExecutablePath.Length>0) { var described=InstalledAppCatalog.DescribeExecutable(identity.ExecutablePath,name); if(described.HasValue) { name=described.Value.Name;icon=described.Value.Icon; } }
+            if(_activityApps.Count>=500) _activityApps.Clear();
+            _activityApps[key]=new(key,name,icon ?? ""); return (name,icon);
+        }
+    }
 
     /// The most recently built inventory JSON (or "[]"). Non-blocking; used as a
     /// fallback for the WebResourceRequested handler.
@@ -64,7 +79,7 @@ public static class AppInventory
         {
             try
             {
-                if (process.MainWindowHandle == IntPtr.Zero || string.IsNullOrWhiteSpace(process.MainWindowTitle))
+                if (process.MainWindowHandle == IntPtr.Zero || !NativeMethods.IsWindowVisible(process.MainWindowHandle))
                 {
                     continue;
                 }

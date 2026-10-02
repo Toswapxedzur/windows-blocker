@@ -16,6 +16,8 @@ internal static class NativeMethods
     public const long WS_EX_TOOLWINDOW = 0x00000080L;
 
     public const uint GA_ROOT = 2;
+    public const uint GW_OWNER = 4;
+    [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hwnd,uint command);
 
     public const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
     public const uint EVENT_OBJECT_SHOW = 0x8002;

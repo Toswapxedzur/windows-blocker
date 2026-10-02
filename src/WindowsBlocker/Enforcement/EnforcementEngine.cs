@@ -26,6 +26,8 @@ public sealed class EnforcementEngine
     private readonly ConnectionHub? _hub;
     private readonly double _tickSeconds;
     private IntPtr _selfWindow;
+    private long? _lastTick;
+    private double _elapsed;
     private readonly QuitRequestScheduler _quits = new();
     // Groups whose local total has already been seeded into the shared cluster
     // budget, so subsequent reports send only this tick's increment.
@@ -56,6 +58,7 @@ public sealed class EnforcementEngine
     /// drive the same WM_CLOSE sweep + re-close path.
     public EnforcementStatus Tick(AppIdentity? foreground = null, IReadOnlySet<string>? ruleBlockedIdentities = null)
     {
+        var sample=System.Diagnostics.Stopwatch.GetTimestamp(); _elapsed=_lastTick.HasValue ? Math.Clamp((sample-_lastTick.Value)/(double)System.Diagnostics.Stopwatch.Frequency,0,_tickSeconds*4) : 0; _lastTick=sample;
         var fg = foreground ?? ProcessIdentity.ForWindow(NativeMethods.GetForegroundWindow());
 
         var now = DateTimeOffset.Now;
@@ -67,15 +70,9 @@ public sealed class EnforcementEngine
         var usageUpdates = new Dictionary<string, double>();
         var resetUpdates = new Dictionary<string, double>();
         var bucketUpdates = new Dictionary<string, Dictionary<double, double>>();
+        var snoozeGiven = new Dictionary<string,double>();
 
-        if (_hub != null) foreach (var group in groups)
-        {
-            var shared = _hub.SharedUsage(group.Id);
-            if (!shared.HasValue) continue;
-            timers.TimersMs[group.Id] = shared.Value.Ms;
-            timers.ResetAtMs[group.Id] = shared.Value.ResetAtMs;
-            timers.BucketsMs[group.Id] = shared.Value.Buckets;
-        }
+        if (_hub != null) AdoptLinkedUsage(_hub,groups,timers,_clusterSeeded,now,usageUpdates,resetUpdates,bucketUpdates);
 
         // Reset-interval rollover (macOS reconcileUsage parity): zero a timed
         // group's used time once its reset window elapses. This runs for every
@@ -168,7 +165,10 @@ public sealed class EnforcementEngine
             return true;
         }, IntPtr.Zero);
 
-        _quits.Reconcile(SnapshotRunningIdentities().Select(p => p.ProcessInstance).ToHashSet());
+        var instances = new HashSet<string>();
+        foreach (var process in System.Diagnostics.Process.GetProcesses())
+        { using (process) instances.Add(ProcessIdentity.ForProcess((uint)process.Id).ProcessInstance); }
+        _quits.Reconcile(instances);
 
         // Accrue time for timed groups whose target app is currently FOCUSED. For
         // a clustered group (linked over the web-app bridge) the cluster owns ONE
@@ -178,11 +178,13 @@ public sealed class EnforcementEngine
         // member (e.g. browser website time) — exactly like the macOS app.
         foreach (var group in timedGroupsToMaybeAccrue)
         {
-            var focused = GroupTargetsForeground(group, fg);
+            // A save prompt may leave a blocked app in front. That blocked
+            // time counts toward no other group's allowance, as on Mac.
+            var focused = !_registry.IsBlocked(fg) && GroupTargetsForeground(group, fg);
 
             if (group.RollingLimit)
             {
-                AccrueRolling(group, focused, now, timers, usageUpdates, bucketUpdates);
+                AccrueRolling(group, focused, now, timers, usageUpdates, bucketUpdates,snoozes.GetValueOrDefault(group.Id),snoozeGiven);
                 continue;
             }
 
@@ -190,7 +192,8 @@ public sealed class EnforcementEngine
             var addedMs = 0.0;
             if (focused)
             {
-                addedMs = _tickSeconds * 1000.0;
+                addedMs = Math.Min(_elapsed * 1000.0,Math.Max(0,group.AllowedMinutes*60_000+(snoozes.GetValueOrDefault(group.Id)?.Extra(now) ?? 0)-current));
+                if((snoozes.GetValueOrDefault(group.Id)?.Extra(now) ?? 0)>0) snoozeGiven[group.Id]=Math.Max(0,current+addedMs-Math.Max(current,group.AllowedMinutes*60_000));
                 current += addedMs;
                 usageUpdates[group.Id] = current;
             }
@@ -236,10 +239,36 @@ public sealed class EnforcementEngine
         }
         if (usageUpdates.Count > 0 || resetUpdates.Count > 0 || bucketUpdates.Count > 0)
         {
-            _store.WriteUsage(usageUpdates, resetUpdates, bucketUpdates);
+            _store.WriteUsage(usageUpdates, resetUpdates, bucketUpdates,snoozeGiven);
         }
 
         return new EnforcementStatus { Timers = timerItems };
+    }
+
+    // Seed from the local store before adopting the shared budget. This also
+    // runs for inactive/exhausted groups: joining a link must preserve prior
+    // usage even when there is no foreground app to count.
+    internal static void AdoptLinkedUsage(ConnectionHub hub,IEnumerable<BlockGroup> groups,WebStore.UsageTimers timers,HashSet<string> seeded,DateTimeOffset now,Dictionary<string,double> usage,Dictionary<string,double> resets,Dictionary<string,Dictionary<double,double>> buckets)
+    {
+        foreach(var group in groups.Where(g=>g.Enabled && g.Mode==BlockingMode.AfterMinutes))
+        {
+            var id=group.Id; var shared=hub.SharedUsage(id);
+            if(!shared.HasValue) { seeded.Remove(id); continue; }
+            var before=timers.TimersMs.GetValueOrDefault(id,0);
+            var previousBuckets=timers.BucketsMs.GetValueOrDefault(id) ?? new();
+            if(seeded.Add(id))
+            {
+                if(group.RollingLimit) hub.ReportLocalUsage(id,0,0,seedBuckets:UsageBudget.PruneBuckets(previousBuckets,group,now.ToUnixTimeMilliseconds()));
+                else hub.ReportLocalUsage(id,0,timers.ResetAtMs.GetValueOrDefault(id,now.ToUnixTimeMilliseconds()),seedMs:before);
+                shared=hub.SharedUsage(id);
+            }
+            if(!shared.HasValue) continue;
+            var adopted=group.RollingLimit ? UsageBudget.PruneBuckets(shared.Value.Buckets,group,now.ToUnixTimeMilliseconds()) : shared.Value.Buckets;
+            var total=group.RollingLimit ? UsageBudget.UsedMs(adopted) : shared.Value.Ms;
+            timers.TimersMs[id]=total; if(Math.Abs(before-total)>0.5) usage[id]=total;
+            if(shared.Value.ResetAtMs>0 && timers.ResetAtMs.GetValueOrDefault(id)!=shared.Value.ResetAtMs) { timers.ResetAtMs[id]=shared.Value.ResetAtMs; resets[id]=shared.Value.ResetAtMs; }
+            timers.BucketsMs[id]=adopted; if(!UsageBudget.SameBuckets(adopted,previousBuckets)) buckets[id]=adopted;
+        }
     }
 
     /// Called by the WinEvent monitor: close immediately if blocked.
@@ -334,14 +363,16 @@ public sealed class EnforcementEngine
         DateTimeOffset now,
         WebStore.UsageTimers timers,
         Dictionary<string, double> usageUpdates,
-        Dictionary<string, Dictionary<double, double>> bucketUpdates)
+        Dictionary<string, Dictionary<double, double>> bucketUpdates, SnoozeState? snooze,Dictionary<string,double> snoozeGiven)
     {
         double nowMs = now.ToUnixTimeMilliseconds();
         var gid = group.Id;
         var stored = timers.BucketsMs.GetValueOrDefault(gid) ?? new Dictionary<double, double>();
         var buckets = new Dictionary<double, double>(stored);
         var minute = UsageBudget.BucketStartMs(nowMs);
-        var addedMs = focused ? _tickSeconds * 1000.0 : 0;
+        var before=timers.TimersMs.GetValueOrDefault(gid,0);
+        var addedMs = focused ? Math.Min(_elapsed * 1000.0,Math.Max(0,group.AllowedMinutes*60_000+(snooze?.Extra(now) ?? 0)-before)) : 0;
+        if((snooze?.Extra(now) ?? 0)>0) snoozeGiven[gid]=Math.Max(0,before+addedMs-Math.Max(before,group.AllowedMinutes*60_000));
         if (addedMs > 0)
         {
             buckets[minute] = buckets.GetValueOrDefault(minute, 0) + addedMs;
@@ -462,7 +493,7 @@ public sealed class EnforcementEngine
     // identity's path/name/AUMID are already lowercased.
     internal static bool TargetMatchesIdentity(string normalizedValue, AppIdentity identity)
     {
-        var value = normalizedValue.Trim().ToLowerInvariant();
+        var value = WindowsAppId.Normalize(normalizedValue)?.ToLowerInvariant() ?? "";
         if (value.Length == 0)
         {
             return false;
@@ -475,8 +506,7 @@ public sealed class EnforcementEngine
         {
             return (!string.IsNullOrEmpty(identity.ExecutablePath) && value == identity.ExecutablePath);
         }
-        var exe = value.EndsWith(".exe") ? value : value + ".exe";
-        return !string.IsNullOrEmpty(identity.ExecutableName) && exe == identity.ExecutableName;
+        return false;
     }
 
     private static bool IsCloseableTopLevel(IntPtr hwnd)

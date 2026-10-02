@@ -14,7 +14,7 @@ public static class WindowCloser
         // opened afterwards is left alone until an explicit retry is due.
         NativeMethods.EnumWindows((hwnd, _) =>
         {
-            if (hwnd == selfWindow || !IsCloseableTopLevel(hwnd)) return true;
+            if (hwnd == selfWindow || NativeMethods.GetWindow(hwnd,NativeMethods.GW_OWNER) != IntPtr.Zero || !IsCloseableTopLevel(hwnd)) return true;
             if (ProcessIdentity.ForWindow(hwnd).ProcessId == processId) CloseWindow(hwnd);
             return true;
         }, IntPtr.Zero);

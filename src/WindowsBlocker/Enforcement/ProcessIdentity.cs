@@ -170,7 +170,7 @@ public static class ProcessIdentity
         }
         try
         {
-            var capacity = 1024u;
+            var capacity = 32768u;
             var sb = new StringBuilder((int)capacity);
             if (NativeMethods.QueryFullProcessImageName(handle, 0, sb, ref capacity))
             {

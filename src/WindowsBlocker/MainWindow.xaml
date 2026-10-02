@@ -3,10 +3,12 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="Windows Vault"
-        Width="460" Height="720"
-        MinWidth="380" MinHeight="520"
+        Width="1100" Height="760"
+        MinWidth="720" MinHeight="560"
         WindowStartupLocation="CenterScreen">
-    <Grid>
+    <DockPanel>
+        <Menu DockPanel.Dock="Top"><MenuItem Header="AI connections…" AutomationProperties.AutomationId="McpConnectionsMenu" Click="OpenMcpConnections" /></Menu>
+        <Grid>
         <!-- Dedicated, non-interactive rule host. User scripts execute only in
              its disposable workers, never in the editor's privileged page.
              Kept 1x1 px behind the editor (ZIndex 0) instead of faded: current
@@ -15,5 +17,6 @@
                       HorizontalAlignment="Left" VerticalAlignment="Top"
                       IsHitTestVisible="False" Panel.ZIndex="0" />
         <wv2:WebView2 x:Name="Web" Panel.ZIndex="1" />
-    </Grid>
+        </Grid>
+    </DockPanel>
 </Window>

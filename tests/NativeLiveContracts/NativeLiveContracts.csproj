@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+<PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0-windows</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+<ItemGroup><Compile Include="../../src/WindowsBlocker/Enforcement/NativeMethods.cs;../../src/WindowsBlocker/Enforcement/ProcessIdentity.cs;../../src/WindowsBlocker/Enforcement/WindowCloser.cs;../../src/WindowsBlocker/Enforcement/QuitRequestScheduler.cs" /></ItemGroup>
+</Project>

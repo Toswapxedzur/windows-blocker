@@ -24,23 +24,11 @@ public static class BlockingModeExtensions
         mode == BlockingMode.AfterMinutes;
 }
 
-public enum FreezeMode
-{
-    None,
-    Normal,
-    Strict,
-    Parental
-}
-
 public sealed class BlockTarget
 {
     public enum TargetKind
     {
-        Application,
-        Category,
-        WebDomain,
-        UrlPattern,
-        LegacyPlatform
+Application
     }
 
     public string Id { get; init; } = Guid.NewGuid().ToString();
@@ -48,7 +36,7 @@ public sealed class BlockTarget
     public string DisplayName { get; init; } = "";
 
     // On macOS this held a bundle identifier; on Windows it holds the
-    // executable path (lowercased) or process name supplied by the app picker.
+    // full executable path or AUMID supplied by the app picker.
     public string NormalizedValue { get; init; } = "";
     public HashSet<string> Tags { get; init; } = new();
 }
@@ -73,9 +61,6 @@ public sealed class BlockGroup
     public int SnoozeConfirmations { get; init; }
     public HashSet<Weekday> ActiveDays { get; init; } = new(Weekdays.All);
     public List<TimeWindow> TimeWindows { get; init; } = new();
-    public FreezeMode FreezeMode { get; init; } = FreezeMode.None;
-    public int StrictFreezeHours { get; init; } = 24;
-    public DateTimeOffset? FrozenAt { get; init; }
     public string? ParentalPasswordHash { get; init; }
     public string? ParentalPasswordSalt { get; init; }
     public string FallbackMessage { get; init; } = "";

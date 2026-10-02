@@ -356,7 +356,7 @@
     "inputSchema" : {
       "properties" : {
         "browser" : {
-          "description" : "Which connected browser, by program name (chrome, edge); needed only when more than one browser is connected.",
+          "description" : "Which connected browser, by program name (chrome, edge, safari); needed only when more than one browser is connected.",
           "type" : "string"
         }
       },
@@ -369,7 +369,7 @@
     "inputSchema" : {
       "properties" : {
         "browser" : {
-          "description" : "Which connected browser, by program name (chrome, edge); needed only when more than one browser is connected.",
+          "description" : "Which connected browser, by program name (chrome, edge, safari); needed only when more than one browser is connected.",
           "type" : "string"
         },
         "groupType" : {
@@ -393,7 +393,7 @@
     "inputSchema" : {
       "properties" : {
         "browser" : {
-          "description" : "Which connected browser, by program name (chrome, edge); needed only when more than one browser is connected.",
+          "description" : "Which connected browser, by program name (chrome, edge, safari); needed only when more than one browser is connected.",
           "type" : "string"
         },
         "id" : {
@@ -418,7 +418,7 @@
     "inputSchema" : {
       "properties" : {
         "browser" : {
-          "description" : "Which connected browser, by program name (chrome, edge); needed only when more than one browser is connected.",
+          "description" : "Which connected browser, by program name (chrome, edge, safari); needed only when more than one browser is connected.",
           "type" : "string"
         },
         "id" : {
@@ -438,7 +438,7 @@
     "inputSchema" : {
       "properties" : {
         "browser" : {
-          "description" : "Which connected browser, by program name (chrome, edge); needed only when more than one browser is connected.",
+          "description" : "Which connected browser, by program name (chrome, edge, safari); needed only when more than one browser is connected.",
           "type" : "string"
         },
         "id" : {
@@ -464,7 +464,7 @@
     "inputSchema" : {
       "properties" : {
         "browser" : {
-          "description" : "Which connected browser, by program name (chrome, edge); needed only when more than one browser is connected.",
+          "description" : "Which connected browser, by program name (chrome, edge, safari); needed only when more than one browser is connected.",
           "type" : "string"
         },
         "clearPin" : {
@@ -493,7 +493,7 @@
     "inputSchema" : {
       "properties" : {
         "browser" : {
-          "description" : "Which connected browser, by program name (chrome, edge); needed only when more than one browser is connected.",
+          "description" : "Which connected browser, by program name (chrome, edge, safari); needed only when more than one browser is connected.",
           "type" : "string"
         },
         "confirm" : {
@@ -515,7 +515,7 @@
     "inputSchema" : {
       "properties" : {
         "browser" : {
-          "description" : "Which connected browser, by program name (chrome, edge); needed only when more than one browser is connected.",
+          "description" : "Which connected browser, by program name (chrome, edge, safari); needed only when more than one browser is connected.",
           "type" : "string"
         },
         "confirm" : {
@@ -541,7 +541,7 @@
     "inputSchema" : {
       "properties" : {
         "browser" : {
-          "description" : "Which connected browser, by program name (chrome, edge); needed only when more than one browser is connected.",
+          "description" : "Which connected browser, by program name (chrome, edge, safari); needed only when more than one browser is connected.",
           "type" : "string"
         },
         "confirm" : {
@@ -563,7 +563,7 @@
     "inputSchema" : {
       "properties" : {
         "browser" : {
-          "description" : "Which connected browser, by program name (chrome, edge); needed only when more than one browser is connected.",
+          "description" : "Which connected browser, by program name (chrome, edge, safari); needed only when more than one browser is connected.",
           "type" : "string"
         },
         "id" : {
@@ -586,7 +586,7 @@
     "inputSchema" : {
       "properties" : {
         "browser" : {
-          "description" : "Which connected browser, by program name (chrome, edge); needed only when more than one browser is connected.",
+          "description" : "Which connected browser, by program name (chrome, edge, safari); needed only when more than one browser is connected.",
           "type" : "string"
         },
         "id" : {
@@ -605,7 +605,7 @@
     "inputSchema" : {
       "properties" : {
         "browser" : {
-          "description" : "Which connected browser, by program name (chrome, edge); needed only when more than one browser is connected.",
+          "description" : "Which connected browser, by program name (chrome, edge, safari); needed only when more than one browser is connected.",
           "type" : "string"
         },
         "id" : {
@@ -629,7 +629,7 @@
     "inputSchema" : {
       "properties" : {
         "browser" : {
-          "description" : "Which connected browser, by program name (chrome, edge); needed only when more than one browser is connected.",
+          "description" : "Which connected browser, by program name (chrome, edge, safari); needed only when more than one browser is connected.",
           "type" : "string"
         },
         "patch" : {

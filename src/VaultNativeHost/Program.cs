@@ -2,6 +2,12 @@ using System.Buffers.Binary;
 using System.Text.Json.Nodes;
 using WindowsBlocker.Bridge;
 
+if (args.Length == 2 && args[0] == "--mcp-proxy" && args[1] is "development" or "production")
+{
+    Environment.SetEnvironmentVariable("VAULT_ENVIRONMENT", args[1]);
+    await VaultNativeHost.NativeMcpProxy.RunAsync();
+    return;
+}
 if ((Path.GetFileNameWithoutExtension(Environment.ProcessPath) ?? "").EndsWith("-development", StringComparison.OrdinalIgnoreCase)) Environment.SetEnvironmentVariable("VAULT_ENVIRONMENT", "development");
 var development = WindowsBlocker.WebUI.Storage.Development;
 var allowedIds = development ? new[] { "fjichnkbaoilbfbjcjkggllmbicmeegk" } : new[] { "mcbmcmephdaapjepopobikobjmfdeamm" };

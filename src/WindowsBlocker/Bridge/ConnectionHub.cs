@@ -1,4 +1,6 @@
 using System.Net;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -21,10 +23,10 @@ public sealed class ConnectionHub
     private readonly Dictionary<string, string> _seenDefinitions = new();
     private readonly Dictionary<string, PendingBrowserRequest> _browserRequests = new();
     private readonly HashSet<string> _unlinkedLocal = new();
-    private HttpListener? _listener;
+    private WebApplication? _listener;
     private string _error = "";
     private JsonObject? _rejection;
-    public Func<string, JsonObject, Task<JsonObject>>? ClassifierRequest { get; set; }
+    public Func<string, string, string, JsonObject, Task<JsonObject>>? ClassifierRequest { get; set; }
 
     private sealed class Peer(WebSocket socket)
     {
@@ -38,6 +40,7 @@ public sealed class ConnectionHub
     private sealed record PendingBrowserRequest(Guid PeerId, string Operation, TaskCompletionSource<JsonObject> Reply);
     private sealed class Cluster
     {
+        public Cluster() { }
         public string Id { get; set; } = Guid.NewGuid().ToString();
         public string Name { get; set; } = "";
         public string Initiator { get; set; } = "";
@@ -66,33 +69,24 @@ public sealed class ConnectionHub
         {
             _ = LocalHubAuthentication.Secret();
             Restore();
-            var listener = new HttpListener();
-            listener.Prefixes.Add($"http://127.0.0.1:{Storage.HubPort}/");
-            listener.Start(); _listener = listener; _error = "";
-            _ = AcceptAsync(listener);
+            _listener=LoopbackServer.Start(Storage.HubPort,AcceptAsync,true); _error="";
         }
         catch (Exception ex) { _error = ex.Message; }
     }
-    public void Stop()
+    public void Stop() => StopAsync().GetAwaiter().GetResult();
+    public async Task StopAsync()
     {
-        _listener?.Stop(); _listener?.Close(); _listener = null;
+        var listener=_listener; _listener=null;
         List<Peer> peers; lock (_gate) peers = _peers.Values.ToList();
         foreach (var peer in peers) Remove(peer);
+        await LoopbackServer.StopAsync(listener);
     }
-    private async Task AcceptAsync(HttpListener listener)
+    private async Task AcceptAsync(HttpContext context)
     {
-        while (listener.IsListening)
-        {
-            try
-            {
-                var context = await listener.GetContextAsync();
-                if (!context.Request.IsWebSocketRequest || !IPAddress.IsLoopback(context.Request.RemoteEndPoint.Address)) { context.Response.StatusCode = 403; context.Response.Close(); continue; }
-                var socket = (await context.AcceptWebSocketAsync(null)).WebSocket;
-                var peer = new Peer(socket); lock (_gate) _peers[peer.Id] = peer;
-                _ = ReceiveAsync(peer);
-            }
-            catch { if (!listener.IsListening) return; }
-        }
+        if(!context.WebSockets.IsWebSocketRequest) { context.Response.StatusCode=403; return; }
+        using var socket=await context.WebSockets.AcceptWebSocketAsync();
+        var peer=new Peer(socket); lock(_gate) _peers[peer.Id]=peer;
+        await ReceiveAsync(peer);
     }
     internal static string? HelloRejectionReason(JsonObject message, string challenge, byte[] secret)
     {
@@ -128,7 +122,7 @@ public sealed class ConnectionHub
                     if (reason != null) { await Reject(peer, reason); return; }
                     peer.Program = Text(message["program"]); peer.Connected = true;
                     await SendAsync(peer, new() { ["kind"] = "welcome", ["v"] = ProtocolVersion, ["hubProgram"] = LocalProgram, ["peers"] = PeerList() });
-                    await SendAsync(peer, new() { ["kind"] = "clusters", ["clusters"] = JsonNode.Parse(ClustersJson()) });
+                    await SendAsync(peer, new() { ["kind"] = "clusters", ["clusters"] = JsonNode.Parse(ClustersJson())?["clusters"]?.DeepClone(), ["rosters"] = JsonNode.Parse(ClustersJson())?["rosters"]?.DeepClone() });
                     Broadcast(new() { ["kind"] = "peers", ["peers"] = PeerList() }); continue;
                 }
                 switch (kind)
@@ -148,14 +142,16 @@ public sealed class ConnectionHub
         catch { }
         finally { Remove(peer); }
     }
+    internal static readonly HashSet<string> ClassifierOperations = new() { "bridge-info","collection-info","diagnostic","collect","video-tags","video-tags-batch","classifier-taxonomy","submit-correction","dev-log","activity-record","activity-settings" };
+    internal static bool ValidClassifierRequest(string requestId,string operation,JsonNode? body) => requestId.Length is >0 and <=128 && requestId.All(c=>c is >= '!' and <= '~') && ClassifierOperations.Contains(operation) && body is JsonObject && Encoding.UTF8.GetByteCount(body.ToJsonString())<=88_000;
     private async Task RouteClassifierAsync(Peer peer, JsonObject message)
     {
         var requestId = Text(message["requestID"]); var operation = Text(message["operation"]);
         var reply = new JsonObject { ["kind"] = "classifier-response", ["requestID"] = requestId, ["operation"] = operation };
         try
         {
-            if (requestId.Length is 0 or > 128 || operation.Length is 0 or > 128 || message["body"] is not JsonObject body) throw new InvalidDataException("invalid-classifier-request");
-            reply["body"] = ClassifierRequest != null ? await ClassifierRequest(operation, body).WaitAsync(TimeSpan.FromSeconds(20)) : throw new InvalidOperationException("classifier-unavailable");
+            if (!ValidClassifierRequest(requestId,operation,message["body"])) throw new InvalidDataException("invalid-classifier-request");
+            reply["body"] = ClassifierRequest != null ? await ClassifierRequest(peer.Program, requestId, operation, (JsonObject)message["body"]!).WaitAsync(TimeSpan.FromSeconds(20)) : throw new InvalidOperationException("classifier-unavailable");
         }
         catch (Exception ex) { reply["error"] = ex is TimeoutException ? "classifier-timeout" : ex.Message; }
         await SendAsync(peer, reply);
@@ -210,8 +206,8 @@ public sealed class ConnectionHub
     }
     private void Broadcast(JsonObject frame) { List<Peer> peers; lock (_gate) peers = _peers.Values.Where(p => p.Connected).ToList(); foreach (var p in peers) _ = SendAsync(p, frame); }
     private JsonArray PeerList() { lock (_gate) return new(_peers.Values.Where(p => p.Connected).Select(p => (JsonNode)new JsonObject { ["id"] = p.Id.ToString(), ["program"] = p.Program, ["connected"] = true }).ToArray()); }
-    public string CurrentStatusJson() => new JsonObject { ["running"] = _listener?.IsListening == true, ["state"] = _error.Length > 0 ? "error" : _listener?.IsListening == true ? "running" : "off", ["address"] = $"ws://127.0.0.1:{Storage.HubPort}", ["peers"] = PeerList(), ["error"] = _error, ["hubProgram"] = LocalProgram }.ToJsonString();
-    public void BroadcastClassifier(JsonObject evt) => Broadcast(new JsonObject { ["kind"] = "classifier-broadcast", ["operation"] = evt["operation"]?.DeepClone(), ["body"] = evt["body"]?.DeepClone() });
+    public string CurrentStatusJson() => new JsonObject { ["running"] = _listener != null, ["state"] = _error.Length > 0 ? "error" : _listener != null ? "running" : "off", ["address"] = $"ws://127.0.0.1:{Storage.HubPort}", ["peers"] = PeerList(), ["error"] = _error, ["hubProgram"] = LocalProgram }.ToJsonString();
+    public void BroadcastClassifier(JsonObject evt) { if(Text(evt["operation"]) is not ("video-tags-updated" or "classifier-state-updated") || evt["body"] is not JsonObject body || Encoding.UTF8.GetByteCount(body.ToJsonString())>88_000) return; Broadcast(new JsonObject { ["kind"] = "classifier-broadcast", ["operation"] = evt["operation"]?.DeepClone(), ["body"] = body.DeepClone() }); }
     public int ActiveClusterCount() { lock (_gate) return _clusters.Count; }
     public string? TakeLocalRejectionJson() { var r = _rejection?.ToJsonString(); _rejection = null; return r; }
     public void AnnounceFromBridge(string json) { if (JsonNode.Parse(json) is JsonObject m) SetRoster(LocalProgram, m["groups"] as JsonArray ?? new()); }
@@ -292,22 +288,39 @@ public sealed class ConnectionHub
             if (frame.ContainsKey("scalars") || frame.ContainsKey("scopes")) c.Contributed.Add(program);
             if (c.Anchor <= 0 && Number(frame["usageResetAtMs"]) > 0) c.Anchor = Number(frame["usageResetAtMs"]);
             Roll(c);
+            var now = DateTimeOffset.Now.ToUnixTimeMilliseconds();
             var delta = Number(frame["usageDeltaMs"]);
-            if (delta != 0 && (!frame.ContainsKey("usageDeltaAnchorMs") || Number(frame["usageDeltaAnchorMs"]) == c.Anchor)) { c.Usage = Math.Max(0, c.Usage + delta); c.UsageSeeded = true; }
+            if (delta != 0 && (!frame.ContainsKey("usageDeltaAnchorMs") || Number(frame["usageDeltaAnchorMs"]) == c.Anchor)) { if(c.Scalars["rollingLimit"]?.GetValueKind()!=JsonValueKind.True) CountBudgetSnooze(c,c.Usage,delta,now); c.Usage = Math.Max(0, c.Usage + delta); c.UsageSeeded = true; }
             else if (!c.UsageSeeded) c.Usage = Math.Max(c.Usage, Number(frame["usageMs"]));
-            if (frame["usageBuckets"] is JsonObject buckets) { foreach (var (k, v) in buckets) c.Buckets[k] = Math.Max(0, Number(c.Buckets[k]) + Number(v)); c.BucketsSeeded = true; }
+            var rollingPolicy=new BlockGroup { ResetIntervalHours=Number(c.Scalars["resetIntervalHours"])>0 ? Number(c.Scalars["resetIntervalHours"]) : 24,ResetAtMidnight=c.Scalars["resetAtMidnight"]?.GetValueKind()==JsonValueKind.True };
+            var rollingBefore=UsageBudget.UsedMs(UsageBudget.PruneBuckets(BucketValues(c.Buckets),rollingPolicy,now));
+            if (frame["usageBuckets"] is JsonObject buckets)
+            {
+                if(c.Scalars["rollingLimit"]?.GetValueKind()==JsonValueKind.True)
+                    CountBudgetSnooze(c,rollingBefore,UsageBudget.UsedMs(UsageBudget.PruneBuckets(BucketValues(buckets),rollingPolicy,now)),now);
+                foreach (var (k, v) in buckets) c.Buckets[k] = Math.Max(0, Number(c.Buckets[k]) + Number(v)); c.BucketsSeeded = true;
+            }
             else if (!c.BucketsSeeded && frame["usageBucketsSeed"] is JsonObject seed) foreach (var (k, v) in seed) c.Buckets[k] = Math.Max(Number(c.Buckets[k]), Number(v));
-            var now = DateTimeOffset.Now.ToUnixTimeMilliseconds(); var cutoff = now - (Math.Max(Number(c.Scalars["resetIntervalHours"]), 24) * 3_600_000 + 60_000);
+            var cutoff = now - (Math.Max(Number(c.Scalars["resetIntervalHours"]), 24) * 3_600_000 + 60_000);
             foreach (var key in c.Buckets.Select(k => k.Key).Where(k => !double.TryParse(k, out var n) || n <= cutoff).ToList()) c.Buckets.Remove(key);
             if (Number(frame["snoozeTs"]) > c.SnoozeTimestamp) { CountSnooze(c, now, true); c.SnoozeTimestamp = Number(frame["snoozeTs"]); c.Snooze = frame["snooze"] is JsonObject snooze ? (JsonObject)snooze.DeepClone() : new(); }
             CountSnooze(c, now, false);
-            if (frame.ContainsKey("scalars") || frame.ContainsKey("scopes") || frame.ContainsKey("snooze")) Persist();
+            Persist();
         }
         BroadcastClusters();
     }
+    private static double SnoozeChanged(JsonNode? snooze) => Number(snooze?["changedAtMs"])>0 ? Number(snooze?["changedAtMs"]) : Number(snooze?["startsAtMs"]);
     private static string ScopeKey(JsonObject line) => Text(line["surface"]) == "apps" ? "apps" : Text(line["platform"]) is { Length: > 0 } p ? p : "site";
+    private static Dictionary<double,double> BucketValues(JsonObject buckets) => buckets.Where(b=>double.TryParse(b.Key,System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out var start) && double.IsFinite(start) && Number(b.Value)>0).ToDictionary(b=>double.Parse(b.Key,System.Globalization.CultureInfo.InvariantCulture),b=>Number(b.Value));
+    private static void CountBudgetSnooze(Cluster c,double before,double added,double now)
+    {
+        if(added<=0 || Text(c.Snooze["kind"])!="budget" || Number(c.Snooze["startsAtMs"])>now || Number(c.Snooze["untilMs"])<=now || Number(c.Snooze["extraMs"])<=0) return;
+        var allowance=Math.Max(0,Number(c.Scalars["allowedMinutes"]))*60_000;
+        c.SnoozeTotal+=Math.Max(0,before+added-Math.Max(before,allowance));
+    }
     private static void CountSnooze(Cluster c, double now, bool replacing)
     {
+        if (Text(c.Snooze["kind"])=="budget") return;
         var start = Number(c.Snooze["startsAtMs"]); var end = Number(c.Snooze["untilMs"]);
         if (start <= 0 || end <= start || c.Snooze["activeMsApplied"]?.GetValueKind() == JsonValueKind.True || !replacing && now < end) return;
         c.SnoozeTotal += Math.Max(0, Math.Min(now, end) - start); c.Snooze["activeMsApplied"] = true;
@@ -341,12 +354,18 @@ public sealed class ConnectionHub
         foreach (var g in groups.OfType<JsonObject>())
         {
             var gid = Text(g["id"]); Cluster? c; lock (_gate) c = Find(LocalProgram, gid); if (c == null) continue;
+            if(document["groupSnoozes"]?[gid] is JsonObject snooze && SnoozeChanged(snooze)>c.SnoozeTimestamp)
+                ApplySync(LocalProgram,gid,new() { ["snooze"]=snooze.DeepClone(),["snoozeTs"]=SnoozeChanged(snooze),["ts"]=0 });
             var scalars = new JsonObject(); foreach (var field in ScalarFields) if (g.ContainsKey(field)) scalars[field] = g[field]?.DeepClone();
-            var definition = scalars.ToJsonString() + g["scopes"]?.ToJsonString();
-            if (_seenDefinitions.GetValueOrDefault(gid) == definition) continue;
-            _seenDefinitions[gid] = definition;
-            var lockUnit = new JsonObject(); foreach (var field in LockFields) if (g.ContainsKey(field)) lockUnit[field] = g[field]?.DeepClone();
-            ApplySync(LocalProgram, gid, new() { ["scalars"] = scalars, ["scopes"] = g["scopes"]?.DeepClone() ?? new JsonArray(), ["lock"] = lockUnit, ["lockBase"] = Number(g["lockSyncedVersion"]), ["ts"] = DateTimeOffset.Now.ToUnixTimeMilliseconds() });
+            var lockUnit = new JsonObject(); if(g.ContainsKey("lockVersion")) foreach (var field in LockFields) lockUnit[field]=g[field]?.DeepClone();
+            var definition = scalars.ToJsonString() + g["scopes"]?.ToJsonString() + lockUnit.ToJsonString();
+            var previous = _seenDefinitions.GetValueOrDefault(gid); if(previous==definition) continue; _seenDefinitions[gid]=definition;
+            var joined=c.Contributed.Contains(LocalProgram);
+            if(joined && previous==null) continue;
+            if(joined && scalars.ToJsonString()==c.Scalars.ToJsonString() && g["scopes"]?.ToJsonString()==c.Scopes.ToJsonString() && (lockUnit.Count==0 || lockUnit.ToJsonString()==c.Lock.ToJsonString())) continue;
+            var frame = new JsonObject { ["scalars"]=scalars,["scopes"]=new JsonArray((g["scopes"] as JsonArray ?? new()).OfType<JsonObject>().Where(l=>Text(l["surface"])=="apps").Select(l=>l.DeepClone()).ToArray()),["ts"]=joined ? DateTimeOffset.Now.ToUnixTimeMilliseconds() : 0 };
+            if(lockUnit.Count>0) { frame["lock"]=lockUnit; frame["lockBase"]=Number(g["lockSyncedVersion"]); }
+            ApplySync(LocalProgram,gid,frame);
         }
         store.Update(root =>
         {
@@ -357,6 +376,8 @@ public sealed class ConnectionHub
                 if (c == null) { if (_unlinkedLocal.Remove(gid) && g["scopes"] is JsonArray s) g["scopes"] = new JsonArray(s.OfType<JsonObject>().Where(l => Text(l["surface"]) == "apps").Select(l => l.DeepClone()).ToArray()); continue; }
                 foreach (var (k, v) in c.Scalars) g[k] = v?.DeepClone();
                 if (c.Contributed.Count > 0) g["scopes"] = c.Scopes.DeepClone();
+                if(c.SnoozeTimestamp>0 && c.Snooze.Count>0 && c.SnoozeTimestamp>SnoozeChanged(root["groupSnoozes"]?[gid])) { var snoozes=root["groupSnoozes"] as JsonObject ?? new(); root["groupSnoozes"]=snoozes; snoozes[gid]=c.Snooze.DeepClone(); }
+                if(c.SnoozeTotal>0) { var totals=root["groupSnoozeTotalsMs"] as JsonObject ?? new(); root["groupSnoozeTotalsMs"]=totals; totals[gid]=c.SnoozeTotal; }
                 foreach (var (k, v) in c.Lock) g[k] = v?.DeepClone();
                 if (c.Lock.Count > 0) g["lockSyncedVersion"] = c.Lock["lockVersion"]?.DeepClone();
                 _seenDefinitions[gid] = new JsonObject(ScalarFields.Where(g.ContainsKey).Select(k => KeyValuePair.Create(k, g[k]?.DeepClone()))).ToJsonString() + g["scopes"]?.ToJsonString();
@@ -366,10 +387,12 @@ public sealed class ConnectionHub
     private JsonObject Snapshot(Cluster c)
     {
         var peers = _peers.Values.Where(p => p.Connected).Select(p => p.Program).Append(LocalProgram).ToHashSet();
-        return new() { ["id"] = c.Id, ["groupName"] = c.Name, ["allOnline"] = c.Members.Keys.All(peers.Contains), ["members"] = new JsonArray(c.Members.Select(m => (JsonNode)new JsonObject { ["program"] = m.Key, ["groupId"] = m.Value, ["groupName"] = c.Name, ["online"] = peers.Contains(m.Key) }).ToArray()), ["shared"] = new JsonObject { ["scalars"] = c.Scalars.DeepClone(), ["scopes"] = c.Scopes.DeepClone(), ["lock"] = c.Lock.DeepClone(), ["ts"] = c.Timestamp, ["usageMs"] = c.Usage, ["usageResetAtMs"] = c.Anchor, ["usageBuckets"] = c.Buckets.DeepClone(), ["snooze"] = c.Snooze.DeepClone(), ["snoozeTs"] = c.SnoozeTimestamp, ["snoozeTotalMs"] = c.SnoozeTotal } };
+        var snapshot = new JsonObject { ["id"] = c.Id, ["groupName"] = c.Name, ["allOnline"] = c.Members.Keys.All(peers.Contains), ["members"] = new JsonArray(c.Members.Select(m => (JsonNode)new JsonObject { ["program"] = m.Key, ["groupId"] = m.Value, ["groupName"] = c.Name, ["online"] = peers.Contains(m.Key) }).ToArray()), ["shared"] = new JsonObject { ["scalars"] = c.Scalars.DeepClone(), ["scopes"] = c.Scopes.DeepClone(), ["lock"] = c.Lock.DeepClone(), ["ts"] = c.Timestamp, ["usageMs"] = c.Usage, ["usageResetAtMs"] = c.Anchor, ["usageBuckets"] = c.Buckets.DeepClone(), ["snooze"] = c.Snooze.DeepClone(), ["snoozeTs"] = c.SnoozeTimestamp, ["snoozeTotalMs"] = c.SnoozeTotal } };
+        if(c.Contributed.Count==0) ((JsonObject)snapshot["shared"]!).Remove("scopes");
+        return snapshot;
     }
-    public string ClustersJson() { lock (_gate) return new JsonArray(_clusters.Values.Select(c => (JsonNode)Snapshot(c)).ToArray()).ToJsonString(); }
-    private void BroadcastClusters() { lock (_gate) foreach (var c in _clusters.Values) Broadcast(new() { ["kind"] = "cluster-updated", ["cluster"] = Snapshot(c) }); Broadcast(new() { ["kind"] = "clusters", ["clusters"] = JsonNode.Parse(ClustersJson()) }); }
+    public string ClustersJson() { lock (_gate) return new JsonObject { ["clusters"]=new JsonArray(_clusters.Values.Select(c => (JsonNode)Snapshot(c)).ToArray()),["rosters"]=new JsonObject(_rosters.Select(r=>new KeyValuePair<string,JsonNode?>(r.Key,r.Value.DeepClone()))) }.ToJsonString(); }
+    private void BroadcastClusters() { lock (_gate) foreach (var c in _clusters.Values) Broadcast(new() { ["kind"] = "cluster-updated", ["cluster"] = Snapshot(c) }); Broadcast(new() { ["kind"] = "clusters", ["clusters"] = JsonNode.Parse(ClustersJson())?["clusters"]?.DeepClone(), ["rosters"] = JsonNode.Parse(ClustersJson())?["rosters"]?.DeepClone() }); }
     private void Persist() { var temp = Storage.ClustersPath + ".tmp"; File.WriteAllText(temp, JsonSerializer.Serialize(_clusters.Values)); File.Move(temp, Storage.ClustersPath, true); }
     private void Restore() { lock (_gate) { if (_clusters.Count > 0 || !File.Exists(Storage.ClustersPath)) return; try { foreach (var c in JsonSerializer.Deserialize<List<Cluster>>(File.ReadAllText(Storage.ClustersPath)) ?? []) if (c.Members.Count >= 2 && c.Members.All(m => m.Value.Length > 0 && LocalHubAuthentication.Programs.Contains(m.Key))) _clusters[c.Id] = c; } catch { } } }
     private static double Number(JsonNode? node) => node?.GetValueKind() == JsonValueKind.Number && double.TryParse(node.ToJsonString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value) && double.IsFinite(value) ? value : 0;

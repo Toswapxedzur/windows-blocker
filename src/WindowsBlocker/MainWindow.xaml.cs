@@ -24,13 +24,15 @@ namespace WindowsBlocker;
 
 public partial class MainWindow : Window
 {
-    private const string VirtualHost = "appassets.windowsblocker";
+    private const string VirtualHost = NativeEditorContract.Host;
     private const string StoreKey = "__cb_chrome_storage__";
 
     private readonly WebStore _store = new();
     private readonly BlockedAppRegistry _registry = new();
     private readonly ConnectionHub _hub = new();
     private readonly ClassifierWorkerClient _classifier = new();
+    private readonly VaultMcpServer _mcp = new();
+    private readonly NativePolicyTools _policy;
     private readonly EnforcementEngine _engine;
     private readonly RuleEngine _ruleEngine;
     private readonly SelfPreservationGuard _guard = new();
@@ -39,6 +41,7 @@ public partial class MainWindow : Window
     private TimerOverlayWindow? _overlay;
     private ToastOverlayWindow? _toast;
     private PanelOverlay? _panel;
+    private QuickAddWindow? _quickAdd;
     private CustomRuleRuntime? _runtime;
     private bool _ruleBusy;
     private IntPtr _selfHwnd;
@@ -55,6 +58,11 @@ public partial class MainWindow : Window
         InitializeComponent();
         _engine = new EnforcementEngine(_store, _registry, _hub);
         _ruleEngine = new RuleEngine(_store);
+        _policy = new NativePolicyTools(_store,_hub,_ruleEngine);
+        _policy.Policy = InvokeCanonicalPolicy;
+        _policy.RulesEvent = output => { foreach(var app in output.CloseOnce) _engine.CloseMatching([app]); _panel?.ReplaceAll(_ruleEngine.PanelsSnapshot()); };
+        _mcp.Invoke = InvokeMcpTool;
+        _mcp.Tools = McpTools;
         _store.SeedIfNeeded();
         _hub.ClassifierRequest = HubClassifierRequest;
         _classifier.Event += OnClassifierEvent;
@@ -62,12 +70,17 @@ public partial class MainWindow : Window
         Closing += OnClosing;
     }
 
+    private void OpenMcpConnections(object sender,RoutedEventArgs e) => new McpConnectionsWindow(this).ShowDialog();
+
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         _selfHwnd = new WindowInteropHelper(this).Handle;
         _engine.SetSelfWindow(_selfHwnd);
         await InitWebViewAsync();
         StartMonitorAndTimer();
+        _hub.Start();
+        _mcp.Start();
+        if(_mcp.LastError==null) McpConnectorRegistry.ApplyDefaultConnections();
 
         // Bring the bridge up if the user previously enabled it (same as macOS,
         // which auto-starts the hub on launch from the persisted setting).
@@ -95,7 +108,7 @@ public partial class MainWindow : Window
 
         // 1) Map the WKWebView bridge name chrome-shim.js expects onto WebView2's
         //    postMessage, so chrome-shim.js itself stays verbatim.
-        await core.AddScriptToExecuteOnDocumentCreatedAsync(BridgeShimScript);
+        await core.AddScriptToExecuteOnDocumentCreatedAsync(BridgeShimScript.Replace("environment:'production'",Storage.Development ? "environment:'development'" : "environment:'production'"));
 
         // 2) Seed chrome.storage from the native store before chrome-shim.js reads
         //    it (chrome-shim loads from localStorage[StoreKey] on init).
@@ -107,6 +120,7 @@ public partial class MainWindow : Window
 
         core.WebMessageReceived += OnWebMessage;
         core.AddWebResourceRequestedFilter("*app-inventory.json", CoreWebView2WebResourceContext.All);
+        core.AddWebResourceRequestedFilter("https://appassets.windowsblocker/worker-resource*", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += OnWebResourceRequested;
         core.NewWindowRequested += (_, args) => args.Handled = true;
         core.NavigationStarting += (_, args) => { if (!TrustedEditorUri(args.Uri)) args.Cancel = true; };
@@ -202,11 +216,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private static string SeedScript(string storeJson)
-    {
-        // Encode the store text as a JS string literal.
-        return $"window.__cbNativeStoreSeed = {storeJson};";
-    }
+    private static string SeedScript(string storeJson) => NativeEditorContract.SeedScript(storeJson);
 
     private const string BridgeShimScript = @"
 (function(){
@@ -222,7 +232,7 @@ public partial class MainWindow : Window
   };
 })();";
 
-    private static bool TrustedEditorUri(string uri) => Uri.TryCreate(uri, UriKind.Absolute, out var u) && u.Scheme == "https" && u.Host == VirtualHost;
+    private static bool TrustedEditorUri(string uri) => NativeEditorContract.TrustedUri(uri);
 
     private async void OnWebMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
@@ -240,8 +250,8 @@ public partial class MainWindow : Window
                 case "classifier-message":
                     if (root.TryGetProperty("message", out var classifierMessage) && JsonNode.Parse(classifierMessage.GetRawText()) is JsonObject classifierBody)
                     {
-                        var snapshot = await _classifier.Request("action", classifierBody);
-                        if (snapshot != null) ApplyClassifierSnapshot(snapshot);
+                        var answer = await _classifier.Request("action", classifierBody);
+                        if (answer?["snapshot"] != null) ApplyClassifierSnapshot(answer["snapshot"]);
                     }
                     break;
                 case "activity-message":
@@ -255,6 +265,9 @@ public partial class MainWindow : Window
                 case "vault-classifier-tag-names":
                     NativeReply(root, new JsonObject { ["ok"] = true, ["names"] = await _classifier.Request("tagNames", new JsonObject { ["platform"] = ReadMessageString(root,"platform") }) });
                     break;
+                case "mcp-connectors": NativeReply(root,McpConnectorRegistry.Snapshot()); break;
+                case "mcp-connect": McpConnectorRegistry.Set(ReadMessageString(root,"id"),true); NativeReply(root,McpConnectorRegistry.Snapshot()); break;
+                case "mcp-disconnect": McpConnectorRegistry.Set(ReadMessageString(root,"id"),false); NativeReply(root,McpConnectorRegistry.Snapshot()); break;
                 case "persist-store":
                     if (root.TryGetProperty("changes", out var changes) && JsonNode.Parse(changes.GetRawText()) is JsonObject patch) _store.Merge(patch);
                     break;
@@ -303,6 +316,10 @@ public partial class MainWindow : Window
                     }
                     break;
                 }
+                case "reset-group-runtime":
+                    var resetId=ReadMessageString(root,"groupId");
+                    _store.Update(doc=>{foreach(var key in new[]{"usageTimersMs","usageResetAtMs","usageBucketsMs","groupSnoozes","groupSnoozeTotalsMs"}) if(doc[key] is JsonObject map) map.Remove(resetId); var anchors=doc["usageResetAtMs"] as JsonObject ?? new();doc["usageResetAtMs"]=anchors;anchors[resetId]=DateTimeOffset.Now.ToUnixTimeMilliseconds();});
+                    break;
                 case "unload-custom-group":
                 {
                     var gid = ReadMessageString(root, "groupId");
@@ -366,10 +383,24 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnWebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
+    private async void OnWebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
     {
         try
         {
+            if (e.Request.Uri.StartsWith("https://appassets.windowsblocker/worker-resource?url=",StringComparison.Ordinal))
+            {
+                var deferral = e.GetDeferral();
+                try
+                {
+                    var original = Uri.UnescapeDataString(e.Request.Uri.Split("?url=",2)[1]);
+                    var response = await _classifier.Request("resource",new JsonObject { ["url"] = original }) as JsonObject;
+                    var data = response?["dataBase64"]?.GetValue<string>();
+                    if (data != null) e.Response = Web.CoreWebView2.Environment.CreateWebResourceResponse(new MemoryStream(Convert.FromBase64String(data)),200,"OK","Content-Type: " + response!["contentType"]!.GetValue<string>());
+                }
+                catch { e.Response = Web.CoreWebView2.Environment.CreateWebResourceResponse(new MemoryStream(),404,"Not found",""); }
+                finally { deferral.Complete(); }
+                return;
+            }
             if (!e.Request.Uri.EndsWith("app-inventory.json", StringComparison.OrdinalIgnoreCase))
             {
                 return;
@@ -402,14 +433,17 @@ public partial class MainWindow : Window
         _toast = new ToastOverlayWindow();
         new WindowInteropHelper(_toast).EnsureHandle();
         _panel = new PanelOverlay { OnEvent = OnPanelEvent };
+        _quickAdd = new QuickAddWindow(async (id,app) => { await _policy.Invoke("add_application",new JsonObject { ["id"]=id,["appId"]=app.Canonical,["name"]=app.DisplayName }); PushNativeStore(); });
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += OnTick;
         _timer.Start();
     }
 
+    private bool _nativeTickBusy;
     private async void OnTick(object? sender, EventArgs e)
     {
+        if(_nativeTickBusy) return; _nativeTickBusy=true;
         // A transient failure (e.g. a momentarily malformed store write) must
         // never kill the enforcement timer, or blocking would silently stop.
         try
@@ -418,6 +452,8 @@ public partial class MainWindow : Window
             // enforcement consumes last tick's rule-blocked set; the rule engine
             // produces this tick's set for the next pass (≤1s latency).
             _hub.ReconcileLocal(_store);
+            if(_runtime!=null && await _policy.SettleSnoozesAsync()) { _hub.ReconcileLocal(_store); PushNativeStore(); }
+            if (JsonNode.Parse(_store.LoadRawJson() ?? "{}") is JsonObject quickAddStore) _quickAdd?.Reload(quickAddStore);
             var foreground = ProcessIdentity.ForWindow(NativeMethods.GetForegroundWindow());
             var status = _engine.Tick(foreground, _ruleEngine.BlockedIdentities);
             _ = RecordActivity(foreground);
@@ -446,7 +482,6 @@ public partial class MainWindow : Window
                     }
 
                     var rows = new List<TimerDisplayItem>(status.Timers);
-                    rows.AddRange(ruleOut.CustomTimers);
                     _overlay?.UpdateRows(rows);
 
                     foreach (var (message, level) in ruleOut.HudLogs)
@@ -475,11 +510,53 @@ public partial class MainWindow : Window
         {
             // Swallow and continue on the next tick.
         }
+        finally { _nativeTickBusy=false; }
     }
 
-    private async Task<JsonObject> HubClassifierRequest(string operation, JsonObject body)
+    private async Task<JsonNode?> InvokeCanonicalPolicy(string module,string method,object?[] args)
     {
-        var result = await _classifier.Request(operation.StartsWith("activity-") ? "activity" : "hub", operation.StartsWith("activity-") ? new JsonObject { ["kind"] = operation == "activity-record" ? "browser-record" : "settings", ["body"] = body.DeepClone() } : new JsonObject { ["sourcePeerID"] = "windowsapp", ["requestID"] = Guid.NewGuid().ToString(), ["operation"] = operation, ["body"] = body.DeepClone() });
+        var result = await Dispatcher.InvokeAsync(async () => _runtime != null ? await _runtime.PolicyAsync(module,method,args) : null).Task.Unwrap();
+        return result != null && result.TryGetValue("value",out var value) ? JsonNode.Parse(value.GetRawText()) : throw new InvalidOperationException("policy-runtime-unavailable");
+    }
+    private async Task<JsonNode?> InvokeMcpTool(string name,JsonObject args)
+    {
+        NativeToolSchema.Validate(await McpTools(),name,args);
+        if (NativePolicyTools.Names.Contains(name))
+            return await Dispatcher.InvokeAsync(async () => { var value = await _policy.Invoke(name,args); PushNativeStore(); return value; }).Task.Unwrap();
+        if (name.StartsWith("extension_"))
+        {
+            var operations = new Dictionary<string,string> { ["extension_state"]="settings-get",["extension_create_group"]="settings-create-group",["extension_set_group"]="settings-set-group",["extension_delete_group"]="settings-delete-group",["extension_lock_group"]="settings-lock-group",["extension_set_lock_gates"]="settings-set-lock-gates",["extension_delete_all"]="settings-delete-all",["extension_unlock_group"]="settings-unlock-group",["extension_snooze_group"]="settings-snooze-group",["extension_run_custom_rule"]="settings-run-custom-rule",["extension_end_snooze"]="settings-end-snooze",["extension_move_group"]="settings-move-group",["extension_set_global"]="settings-set-global" };
+            if (!operations.TryGetValue(name,out var operation)) throw new InvalidOperationException("unknown-tool");
+            var body = (JsonObject)args.DeepClone(); body.Remove("browser");
+            return await BrowserTool(operation,body,args["browser"]?.GetValue<string>());
+        }
+        return await _classifier.Request("mcp",new JsonObject { ["name"] = name,["arguments"] = args.DeepClone() });
+    }
+    private async Task<JsonNode?> BrowserTool(string operation,JsonObject body,string? browser) => await _hub.SendBrowserRequest(operation,body,browser);
+    private Task<JsonArray> McpTools()
+    {
+        var file = Path.Combine(AppContext.BaseDirectory,"WebAssets","mcp-tools.json");
+        if (File.Exists(file) && JsonNode.Parse(File.ReadAllText(file)) is JsonArray tools) return Task.FromResult(tools);
+        throw new InvalidOperationException("mcp-tool-catalog-unavailable");
+    }
+    private void PushNativeStore()
+    {
+        var json = _store.LoadRawJson(); if (json != null && Web.CoreWebView2 != null) _ = Web.CoreWebView2.ExecuteScriptAsync($"window.__cbApplyNativeStore && window.__cbApplyNativeStore({JsonSerializer.Serialize(json)});");
+    }
+
+    private async Task<JsonObject> HubClassifierRequest(string sourcePeer, string requestId, string operation, JsonObject body)
+    {
+        if(operation=="activity-record")
+        {
+            var recorded=await _classifier.Request("activity",new JsonObject { ["kind"]="browser-record",["body"]=body.DeepClone() });
+            return new JsonObject { ["stored"]=recorded?["accepted"]?.DeepClone() ?? JsonValue.Create(0) };
+        }
+        if(operation=="activity-settings")
+        {
+            var settings=await _classifier.Request("activity",new JsonObject { ["kind"]="settings",["settings"]=body["settings"]?.DeepClone() });
+            return new JsonObject { ["settings"]=settings?["settings"]?.DeepClone() ?? new JsonObject() };
+        }
+        var result=await _classifier.Request("hub",new JsonObject { ["sourcePeerID"]=sourcePeer,["requestID"]=requestId,["operation"]=operation,["body"]=body.DeepClone() });
         if (result is JsonObject obj && obj["body"] is JsonObject answer) return (JsonObject)answer.DeepClone();
         if (result is JsonObject error && error["error"] is JsonNode code) throw new InvalidOperationException(code.GetValue<string>());
         return result as JsonObject ?? new();
@@ -504,9 +581,15 @@ public partial class MainWindow : Window
         var args = new[] { "snapshot", "icons", "facts", "collection", "tags", "contentSnapshot" }.Select(k => r[k]?.ToJsonString() ?? (k == "tags" ? "[]" : "{}"));
         _ = Web.CoreWebView2.ExecuteScriptAsync($"window.activityApply && window.activityApply({string.Join(",", args)});");
     }
+    private long? _lastActivitySample;
     private async Task RecordActivity(AppIdentity foreground)
     {
-        try { await _classifier.Request("activity", new JsonObject { ["kind"] = "native-sample", ["appId"] = foreground.Canonical, ["name"] = foreground.DisplayName, ["elapsedMs"] = 1000, ["atMs"] = DateTimeOffset.Now.ToUnixTimeMilliseconds() }); } catch { }
+        var sample=System.Diagnostics.Stopwatch.GetTimestamp(); var elapsed=_lastActivitySample.HasValue ? Math.Max(0,(sample-_lastActivitySample.Value)*1000.0/System.Diagnostics.Stopwatch.Frequency) : 0; _lastActivitySample=sample;
+        try
+        {
+            var app=AppInventory.DescribeActivity(foreground);
+            await _classifier.Request("activity",new JsonObject { ["kind"]="native-sample",["appId"]=foreground.IsEmpty ? null : foreground.Canonical,["name"]=app.Name,["icon"]=app.Icon,["elapsedMs"]=elapsed,["monotonicMs"]=(long)(sample*1000.0/System.Diagnostics.Stopwatch.Frequency),["atMs"]=DateTimeOffset.Now.ToUnixTimeMilliseconds() });
+        } catch { }
     }
 
     // ---- Custom-rule helpers ------------------------------------------------
@@ -647,7 +730,7 @@ public partial class MainWindow : Window
         if (body.TryGetProperty("requestId", out var id) && id.ValueKind == JsonValueKind.String)
             _ = Web.CoreWebView2.ExecuteScriptAsync($"window.__cbNativeReply && window.__cbNativeReply({JsonSerializer.Serialize(id.GetString())},{reply.ToJsonString()});");
     }
-    private void PushFolderStatus() => _ = Web.CoreWebView2.ExecuteScriptAsync($"window.__cbLocalFolderState && window.__cbLocalFolderState({LocalFolderGrant.Status().ToJsonString()});");
+    private void PushFolderStatus() => _ = Web.CoreWebView2.ExecuteScriptAsync($"window.__cbLocalFolderStatus && window.__cbLocalFolderStatus({LocalFolderGrant.Status().ToJsonString()});");
 
     private void RevealLocalFolder()
     {
@@ -791,7 +874,9 @@ public partial class MainWindow : Window
             "window.__cbPermissionState && window.__cbPermissionState({\"appBlockingGranted\":true});");
     }
 
-    private void OnClosing(object? sender, CancelEventArgs e)
+    private bool _flushedForClosing;
+    private bool _closingFlush;
+    private async void OnClosing(object? sender, CancelEventArgs e)
     {
         if (_guard.ShouldCancelClose())
         {
@@ -800,12 +885,19 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
+        if (!_flushedForClosing)
+        {
+            e.Cancel = true; if(_closingFlush) return; _closingFlush=true; _timer?.Stop(); await _mcp.StopAsync(); await _hub.StopAsync(); await _classifier.ShutdownAsync(); _flushedForClosing = true; Close(); return;
+        }
+        _mcp.Dispose();
         _classifier.Dispose();
         _timer?.Stop();
         _monitor?.Dispose();
         _hub.Stop();
         // Close every auxiliary top-level window too, or the app would keep
         // running (each is a window under the default OnLastWindowClose mode).
+        _quickAdd?.Close();
+        _quickAdd = null;
         _overlay?.Close();
         _overlay = null;
         _toast?.Close();
