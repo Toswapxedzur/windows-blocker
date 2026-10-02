@@ -11,4 +11,6 @@
 
 - **Info explanations (2026-10-01):** English-only help uses the shared standalone vault-info component, without importing newer browser dropdown/runtime behavior.
 
-- **Field Info (2026-10-02):** 14px blue-gray icons retain a 24px invisible hit area. English field explanations are explicit; built-in settings, names, switches, searches and picker fields use the shared component. Other locales retain inline help.
+- **Field Info (2026-10-02):** 10px blue-gray icons retain a 24px invisible hit area. English field explanations are explicit; built-in settings, names, switches, searches and picker fields use the shared component. Other locales retain inline help.
+
+- **Compact Info (2026-10-02):** 10px icons retain a 24px click area; explanations use 12px text in a softly shaded, 260px-wide popup with tighter padding. English search copy is concise.
