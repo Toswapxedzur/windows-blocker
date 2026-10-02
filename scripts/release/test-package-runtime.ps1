@@ -8,6 +8,7 @@ $package=(Resolve-Path $PackageDirectory).Path
 $evidence=[IO.Path]::GetFullPath($EvidenceDirectory)
 New-Item -ItemType Directory -Force $evidence|Out-Null
 $result=Join-Path $evidence 'result.json'
+if(Test-Path $result){throw 'Choose a new evidence directory for this package verification.'}
 if(!$Interactive) {
     # SSH sessions are not the logged-in desktop. Run the installer and GUI
     # unelevated in that desktop, rather than accidentally testing as admin.
@@ -31,6 +32,7 @@ $checks=[Collections.Generic.List[string]]::new()
 $install=Join-Path $evidence 'Installed'
 $profile=Join-Path $evidence 'UserData'
 $app=$null
+$mcpHelper=$null
 $previous=@{}
 $shortcut=Join-Path ([Environment]::GetFolderPath('Programs')) 'Windows Vault Development.lnk'
 $shortcutBackup=Join-Path $evidence 'shortcut-before.lnk'
@@ -130,6 +132,28 @@ try {
     try {& "$package\Install.ps1" -Environment development -Destination $install *> "$evidence\update-running.log"}catch{if($_.Exception.Message -notlike '*Close this Windows Vault*'){throw};$refused=$true}
     Check $refused 'Updating a running installation is refused before changing its files'
     Stop-App
+    $helperStart=New-Object Diagnostics.ProcessStartInfo
+    $helperStart.FileName="$install\NativeHost\VaultNativeHost.exe"
+    $helperStart.Arguments='--mcp-proxy development'
+    $helperStart.UseShellExecute=$false
+    $helperStart.RedirectStandardInput=$true
+    $helperStart.RedirectStandardOutput=$true
+    $helperStart.RedirectStandardError=$true
+    $mcpHelper=New-Object Diagnostics.Process
+    $mcpHelper.StartInfo=$helperStart
+    $null=$mcpHelper.Start()
+    try {
+        Start-Sleep -Milliseconds 500
+        Check (!$mcpHelper.HasExited) 'A connected MCP stdio helper can remain alive after the GUI closes'
+        $manifestBefore=(Get-FileHash "$install\package-manifest.json").Hash
+        $refused=$false
+        try {& "$package\Install.ps1" -Environment development -Destination $install *> "$evidence\update-helper-running.log"}catch{if($_.Exception.Message -notlike '*Close this Windows Vault*'){throw};$refused=$true}
+        Check ($refused -and (Get-FileHash "$install\package-manifest.json").Hash -eq $manifestBefore -and (Test-Path "$install\Start-WindowsVault.ps1")) 'Updating while an installed MCP helper remains alive is refused without changing files or launcher'
+    } finally {
+        $mcpHelper.StandardInput.Close()
+        if(!$mcpHelper.WaitForExit(10000)){throw 'Owned MCP helper did not exit after stdin EOF'}
+        $mcpHelper.Dispose();$mcpHelper=$null
+    }
     Set-Content "$install\obsolete-fixture.txt" 'obsolete application file'
     $secretBefore=(Get-FileHash "$profile\local-hub-secret.bin").Hash
     & "$package\Install.ps1" -Environment development -Destination $install *> "$evidence\update.log"
@@ -144,8 +168,13 @@ try {
     $report=@{ok=$false;error=$_.Exception.ToString();checks=@($checks)}
 }finally{
     if($app -and !$app.HasExited){Stop-Process -Id $app.Id -Force}
+    if($mcpHelper){if(!$mcpHelper.HasExited){$mcpHelper.Kill();$mcpHelper.WaitForExit()};$mcpHelper.Dispose()}
     Get-Process VaultClassifierWorker -ErrorAction SilentlyContinue|Where-Object{$_.Path -eq "$install\ClassifierWorker\VaultClassifierWorker.exe"}|Stop-Process -Force
     foreach($key in $previous.Keys){if($previous[$key].exists){New-Item $key -Force|Out-Null;Set-Item $key $previous[$key].value}else{Remove-Item $key -Force -ErrorAction SilentlyContinue}}
     if(Test-Path $shortcutBackup){Copy-Item $shortcutBackup $shortcut -Force}else{Remove-Item $shortcut -ErrorAction SilentlyContinue}
 }
-$report|ConvertTo-Json -Depth 5|Set-Content $result -Encoding UTF8
+$pendingResult=$result+'.writing-'+[Guid]::NewGuid().ToString('N')
+try {
+    $report|ConvertTo-Json -Depth 5|Set-Content $pendingResult -Encoding UTF8
+    Move-Item $pendingResult $result
+} finally {if(Test-Path $pendingResult){Remove-Item $pendingResult -Force}}
