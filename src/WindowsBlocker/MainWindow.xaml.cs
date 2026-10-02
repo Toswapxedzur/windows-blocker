@@ -529,7 +529,7 @@ public partial class MainWindow : Window
             var body = (JsonObject)args.DeepClone(); body.Remove("browser");
             return await BrowserTool(operation,body,args["browser"]?.GetValue<string>());
         }
-        return await _classifier.Request("mcp",ClassifierMcpRequest.Create(name,args));
+        return await _classifier.Request("mcp",new JsonObject { ["name"] = name,["arguments"] = args.DeepClone() });
     }
     private async Task<JsonNode?> BrowserTool(string operation,JsonObject body,string? browser) => await _hub.SendBrowserRequest(operation,body,browser);
     private Task<JsonArray> McpTools()
