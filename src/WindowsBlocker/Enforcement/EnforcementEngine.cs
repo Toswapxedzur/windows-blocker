@@ -26,6 +26,7 @@ public sealed class EnforcementEngine
     private readonly ConnectionHub? _hub;
     private readonly double _tickSeconds;
     private IntPtr _selfWindow;
+    private readonly QuitRequestScheduler _quits = new();
     // Groups whose local total has already been seeded into the shared cluster
     // budget, so subsequent reports send only this tick's increment.
     private readonly HashSet<string> _clusterSeeded = new();
@@ -67,11 +68,20 @@ public sealed class EnforcementEngine
         var resetUpdates = new Dictionary<string, double>();
         var bucketUpdates = new Dictionary<string, Dictionary<double, double>>();
 
+        if (_hub != null) foreach (var group in groups)
+        {
+            var shared = _hub.SharedUsage(group.Id);
+            if (!shared.HasValue) continue;
+            timers.TimersMs[group.Id] = shared.Value.Ms;
+            timers.ResetAtMs[group.Id] = shared.Value.ResetAtMs;
+            timers.BucketsMs[group.Id] = shared.Value.Buckets;
+        }
+
         // Reset-interval rollover (macOS reconcileUsage parity): zero a timed
         // group's used time once its reset window elapses. This runs for every
         // enabled timed group, independent of whether it is currently active or
         // snoozed, so a budget that expired mid-window is restored on schedule.
-        ReconcileResets(groups, timers, now, usageUpdates, resetUpdates, bucketUpdates);
+        ReconcileResets(groups.Where(g => _hub?.SharedUsage(g.Id) == null).ToList(), timers, now, usageUpdates, resetUpdates, bucketUpdates);
 
         var blockedIdentities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var timerItems = new List<TimerDisplayItem>();
@@ -83,7 +93,7 @@ public sealed class EnforcementEngine
             {
                 continue;
             }
-            if (snoozes.TryGetValue(group.Id, out var snooze) && snooze.Phase(now) == SnoozePhase.Active)
+            if (snoozes.TryGetValue(group.Id, out var snooze) && snooze.Exempts(now))
             {
                 continue;
             }
@@ -93,6 +103,8 @@ public sealed class EnforcementEngine
                 .Select(t => t.NormalizedValue)
                 .Where(v => !string.IsNullOrWhiteSpace(v))
                 .ToList();
+            if (group.ApplicationAllowlist)
+                appTargets = SnapshotRunningIdentities().Where(p => NativeAppSafety.CanControl(p) && !appTargets.Any(t => TargetMatchesIdentity(t, p))).Select(p => p.Canonical).ToList();
 
             switch (group.Mode)
             {
@@ -104,7 +116,7 @@ public sealed class EnforcementEngine
                     break;
                 case BlockingMode.AfterMinutes:
                     var usedMs = timers.TimersMs.GetValueOrDefault(group.Id, 0);
-                    var allowedMs = Math.Max(0, group.AllowedMinutes) * 60_000.0;
+                    var allowedMs = Math.Max(0, group.AllowedMinutes) * 60_000.0 + (snoozes.GetValueOrDefault(group.Id)?.Extra(now) ?? 0);
                     var remainingSeconds = Math.Max(0, (allowedMs - usedMs) / 1000.0);
                     if (remainingSeconds <= 0)
                     {
@@ -151,10 +163,12 @@ public sealed class EnforcementEngine
             var identity = ProcessIdentity.ForWindow(hwnd);
             if (!identity.IsEmpty && _registry.IsBlocked(identity))
             {
-                WindowCloser.CloseWindow(hwnd);
+                TryRequestQuit(identity, now);
             }
             return true;
         }, IntPtr.Zero);
+
+        _quits.Reconcile(SnapshotRunningIdentities().Select(p => p.ProcessInstance).ToHashSet());
 
         // Accrue time for timed groups whose target app is currently FOCUSED. For
         // a clustered group (linked over the web-app bridge) the cluster owns ONE
@@ -183,23 +197,23 @@ public sealed class EnforcementEngine
 
             // The gate keeps non-bridge groups entirely local: SharedUsage is null
             // unless this group is actually in a cluster involving this app.
-            if (_hub != null && _hub.SharedUsage(group.Name) != null)
+            if (_hub != null && _hub.SharedUsage(group.Id) != null)
             {
                 if (_clusterSeeded.Contains(group.Id))
                 {
                     // resetAtMs:0 — the browser is the reset authority; our local
                     // window anchor isn't comparable, so we never drive rollover.
-                    _hub.ReportLocalUsage(group.Name, addedMs, 0);
+                    _hub.ReportLocalUsage(group.Id, addedMs, 0);
                 }
                 else
                 {
                     // First report since joining: seed the shared budget with our
                     // current local total (no delta) so prior usage is preserved.
-                    _hub.ReportLocalUsage(group.Name, 0, 0, current);
+                    _hub.ReportLocalUsage(group.Id, 0, 0, current);
                     _clusterSeeded.Add(group.Id);
                 }
 
-                var shared = _hub.SharedUsage(group.Name);
+                var shared = _hub.SharedUsage(group.Id);
                 if (shared.HasValue)
                 {
                     var total = Math.Max(0, shared.Value.Ms);
@@ -229,8 +243,19 @@ public sealed class EnforcementEngine
     }
 
     /// Called by the WinEvent monitor: close immediately if blocked.
-    public void OnWindowEvent(IntPtr hwnd) =>
-        WindowCloser.CloseIfBlocked(hwnd, _registry, _selfWindow);
+    public void OnWindowEvent(IntPtr hwnd)
+    {
+        if (hwnd == _selfWindow || !IsCloseableTopLevel(hwnd)) return;
+        var identity = ProcessIdentity.ForWindow(hwnd);
+        if (_registry.IsBlocked(identity)) TryRequestQuit(identity, DateTimeOffset.Now);
+    }
+
+    private void TryRequestQuit(AppIdentity identity, DateTimeOffset now)
+    {
+        if (!NativeAppSafety.CanControl(identity)) return;
+        if (_quits.ShouldRequest(identity.ProcessInstance, now, TimeSpan.FromMinutes(_store.QuitRetryMinutes)))
+            WindowCloser.RequestProcessQuit(identity.ProcessId, _selfWindow);
+    }
 
     /// Snapshot the identities of every currently-open closeable top-level
     /// window, de-duplicated. Used by the rule engine for the `allApps` event
@@ -253,6 +278,14 @@ public sealed class EnforcementEngine
             }
             return true;
         }, IntPtr.Zero);
+        foreach (var process in System.Diagnostics.Process.GetProcesses())
+        {
+            using (process)
+            {
+                var identity = ProcessIdentity.ForProcess((uint)process.Id);
+                if (identity.ExecutablePath.Length > 0 && seen.Add(identity.Canonical)) result.Add(identity);
+            }
+        }
         return result;
     }
 
@@ -283,7 +316,7 @@ public sealed class EnforcementEngine
             }
             if (targets.Any(t => TargetMatchesIdentity(t, identity)))
             {
-                WindowCloser.CloseWindow(hwnd);
+                TryRequestQuit(identity, DateTimeOffset.Now);
                 closed++;
             }
             return true;
@@ -313,22 +346,22 @@ public sealed class EnforcementEngine
         {
             buckets[minute] = buckets.GetValueOrDefault(minute, 0) + addedMs;
         }
-        if (_hub != null && _hub.SharedUsage(group.Name) != null)
+        if (_hub != null && _hub.SharedUsage(group.Id) != null)
         {
             if (_clusterSeeded.Contains(gid))
             {
                 if (addedMs > 0)
                 {
-                    _hub.ReportLocalUsage(group.Name, 0, 0,
+                    _hub.ReportLocalUsage(group.Id, 0, 0,
                         bucketDeltas: new Dictionary<double, double> { [minute] = addedMs });
                 }
             }
             else
             {
-                _hub.ReportLocalUsage(group.Name, 0, 0, seedBuckets: buckets);
+                _hub.ReportLocalUsage(group.Id, 0, 0, seedBuckets: buckets);
                 _clusterSeeded.Add(gid);
             }
-            buckets = _hub.SharedUsage(group.Name)?.Buckets ?? buckets;
+            buckets = _hub.SharedUsage(group.Id)?.Buckets ?? buckets;
         }
         else
         {
@@ -419,9 +452,9 @@ public sealed class EnforcementEngine
         {
             return false;
         }
-        return group.Targets
-            .Where(t => t.Kind == BlockTarget.TargetKind.Application)
-            .Any(t => TargetMatchesIdentity(t.NormalizedValue, foreground));
+        if (!NativeAppSafety.CanControl(foreground)) return false;
+        var matched = group.Targets.Where(t => t.Kind == BlockTarget.TargetKind.Application).Any(t => TargetMatchesIdentity(t.NormalizedValue, foreground));
+        return group.ApplicationAllowlist ? !matched : matched;
     }
 
     // Matches one app target value (AUMID, full path, or bare name) against a
@@ -440,8 +473,7 @@ public sealed class EnforcementEngine
         }
         if (value.Contains('\\') || value.Contains('/'))
         {
-            return (!string.IsNullOrEmpty(identity.ExecutablePath) && value == identity.ExecutablePath)
-                || (!string.IsNullOrEmpty(identity.ExecutableName) && Path.GetFileName(value) == identity.ExecutableName);
+            return (!string.IsNullOrEmpty(identity.ExecutablePath) && value == identity.ExecutablePath);
         }
         var exe = value.EndsWith(".exe") ? value : value + ".exe";
         return !string.IsNullOrEmpty(identity.ExecutableName) && exe == identity.ExecutableName;

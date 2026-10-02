@@ -34,24 +34,46 @@ public sealed class WebStore
         }
     }
 
-    /// Persists the raw store JSON string pushed from the editor bridge.
+    public double QuitRetryMinutes => Math.Clamp(Number(LoadObject()?["globalSettings"]?["quitRetryMinutes"]), 0, 1440);
+    private static double Number(JsonNode? v) => v?.GetValueKind() == JsonValueKind.Number && double.TryParse(v.ToJsonString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value) && double.IsFinite(value) ? value : 0;
+
     public void SaveRaw(string rawJson)
     {
-        // Validate it parses before writing so we never persist garbage.
-        try
-        {
-            using var _ = JsonDocument.Parse(rawJson);
-        }
-        catch
-        {
-            return;
-        }
+        if (JsonNode.Parse(rawJson) is not JsonObject root) return;
+        lock (_gate) Write(root);
+    }
+
+    // Patch only the keys a writer changed. Native usage and another group's
+    // state survive editor autosaves; null has chrome.storage.remove semantics.
+    public void Merge(JsonObject changes)
+    {
         lock (_gate)
         {
-            var tmp = FilePath + ".tmp";
-            File.WriteAllText(tmp, rawJson);
-            File.Move(tmp, FilePath, overwrite: true);
+            var root = LoadObject() ?? new JsonObject();
+            foreach (var (key, value) in changes)
+            {
+                if (value is null) root.Remove(key);
+                else if (PerGroupKeys.Contains(key) && value is JsonObject entries)
+                {
+                    var map = root[key] as JsonObject ?? new();
+                    root[key] = map;
+                    foreach (var (id, entry) in entries) map[id] = entry?.DeepClone();
+                }
+                else root[key] = value.DeepClone();
+            }
+            Write(root);
         }
+    }
+    public void Update(Action<JsonObject> mutation)
+    {
+        lock (_gate) { var root = LoadObject() ?? new JsonObject(); var before = root.ToJsonString(); mutation(root); if (root.ToJsonString() != before) Write(root); }
+    }
+    private static readonly HashSet<string> PerGroupKeys = new() { "usageTimersMs", "usageResetAtMs", "usageBucketsMs", "groupSnoozes", "groupSnoozeTotalMs", "customRuleStates", "groupRuleState", "ruleLogByGroup", "cbRuleState" };
+    private void Write(JsonObject root)
+    {
+        var tmp = FilePath + ".tmp";
+        File.WriteAllText(tmp, root.ToJsonString());
+        File.Move(tmp, FilePath, overwrite: true);
     }
 
     public ChromeExtensionImportResult? ImportedGroups()
@@ -179,6 +201,7 @@ public sealed class WebStore
             }
             result[groupId] = new SnoozeState
             {
+                Budget = StringValue(d["kind"]) == "budget", ExtraMs = Number(d["extraMs"]),
                 StartsAt = MsToDate(d["startsAtMs"]),
                 Until = MsToDate(d["untilMs"]),
                 CooldownUntil = MsToDate(d["cooldownUntilMs"]),

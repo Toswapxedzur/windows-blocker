@@ -9,17 +9,7 @@ namespace WindowsBlocker.Core;
 public enum BlockGroupType
 {
     Site,
-    YouTube,
-    TikTok,
-    Facebook,
-    Instagram,
-    Twitch,
-    Reddit,
-    Discord,
-    Twitter,
-    Custom,
-    App,
-    Category
+    Custom
 }
 
 public enum BlockingMode
@@ -94,4 +84,5 @@ public sealed class BlockGroup
     // the WebView2-hosted MacBlockerRuntime, exactly as macOS runs it in JSCore.
     public string CustomRuleSource { get; init; } = "";
     public List<BlockTarget> Targets { get; init; } = new();
+    public bool ApplicationAllowlist { get; init; }
 }
