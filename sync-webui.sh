@@ -21,15 +21,19 @@ for name in files:
     # Browser assets stay canonical even if the Mac mirror has not been synced.
     source = ext / name if (ext / name).is_file() and name != "popup.html" else editor / name
     shutil.copy2(source, dest / name)
-for name in ["translation", "icons", "code-manual", "manual"]:
+for name in ["translation", "code-manual", "manual"]:
     target = dest / name
     if target.exists(): shutil.rmtree(target)
     source = editor / name if name in ["code-manual", "manual"] else ext / name
     shutil.copytree(source, target)
-# Windows editor branding is generated from the selected Windows master.
+# Windows editor branding comes solely from the selected Windows master.
+# Browser-only master previews must not leak into the desktop payload.
+icons = dest / "icons"
+if icons.exists(): shutil.rmtree(icons)
+icons.mkdir()
 for icon in (root / "src/WindowsBlocker/Assets/BrowserIcons").iterdir():
-    if icon.suffix not in (".png", ".svg"): continue
-    shutil.copy2(icon, dest / "icons" / icon.name)
+    if icon.suffix not in (".png", ".svg") and icon.name != "package-info.md": continue
+    shutil.copy2(icon, icons / icon.name)
 # Native API differences are kept explicit in English; locale catalogs remain
 # the same canonical assets for the separate translation batch.
 for folder in ["manual", "code-manual"]:
