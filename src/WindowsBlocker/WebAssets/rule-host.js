@@ -2,6 +2,8 @@
   "use strict";
 
   var workers = new Map();
+  var candidates = new Map();
+  var policyWorker = null;
 
   function respond(requestId, ok, result, error) {
     window.chrome.webview.postMessage({
@@ -17,20 +19,36 @@
     var existing = workers.get(groupId);
     if (existing) existing.terminate();
     workers.delete(groupId);
+    var candidate = candidates.get(groupId);
+    if (candidate) candidate.terminate();
+    candidates.delete(groupId);
   }
 
   function createGroupWorker(groupId) {
-    resetGroup(groupId);
+    var previousCandidate = candidates.get(groupId);
+    if (previousCandidate) previousCandidate.terminate();
     var worker = new Worker("rule-worker.js");
+    candidates.set(groupId, worker);
     worker.addEventListener("message", function (event) {
       var data = event.data;
       if (!data || data.kind !== "rule-runtime-response") return;
+      if (candidates.get(groupId) === worker) {
+        candidates.delete(groupId);
+        if (data.ok && data.result && data.result.ok) {
+          var previous = workers.get(groupId);
+          if (previous) previous.terminate();
+          workers.set(groupId, worker);
+        } else {
+          worker.terminate();
+        }
+      }
       respond(data.requestId, data.ok, data.result, data.error);
     });
     worker.addEventListener("error", function () {
-      resetGroup(groupId);
+      if (candidates.get(groupId) === worker) candidates.delete(groupId);
+      if (workers.get(groupId) === worker) workers.delete(groupId);
+      worker.terminate();
     });
-    workers.set(groupId, worker);
     return worker;
   }
 
@@ -49,6 +67,21 @@
     var groupId = String(request.groupId || "");
     if (operation === "ping") {
       respond(requestId, true, { ready: true }, "");
+      return;
+    }
+    if (operation === "policy") {
+      if (!policyWorker) {
+        policyWorker = new Worker("policy-worker.js");
+        policyWorker.addEventListener("message", function (event) {
+          var data = event.data;
+          if (data && data.kind === "rule-runtime-response") respond(data.requestId, data.ok, data.result, data.error);
+        });
+        policyWorker.addEventListener("error", function () {
+          policyWorker.terminate();
+          policyWorker = null;
+        });
+      }
+      policyWorker.postMessage(request);
       return;
     }
     if (!groupId) {
