@@ -3,6 +3,8 @@ bin/
 obj/
 [Dd]ebug/
 [Rr]elease/
+!scripts/release/
+!scripts/release/**
 x64/
 ARM64/
 *.user
@@ -43,3 +45,5 @@ dist/
 __pycache__/
 .DS_Store
 spike/.build/
+.native-dependencies/
+src/WindowsBlocker/ClassifierWorker/
