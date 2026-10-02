@@ -10,6 +10,7 @@ $repo=(Resolve-Path "$PSScriptRoot\..\..").Path
 $worker=(Resolve-Path $ClassifierWorkerDirectory).Path
 $output=[IO.Path]::GetFullPath($OutputDirectory)
 if ($output -eq [IO.Path]::GetPathRoot($output) -or $repo.StartsWith($output.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase) -or $output -eq $repo) { throw 'Choose a dedicated package output folder.' }
+if ($output -eq $worker -or $output.StartsWith($worker.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase) -or $worker.StartsWith($output.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Choose a package output folder separate from the Classifier worker.' }
 if ((Test-Path $output) -and @(Get-ChildItem $output -Force).Count -gt 0) {
     $previousPackage=$null
     try { $previousPackage=Get-Content "$output\package-manifest.json" -Raw|ConvertFrom-Json } catch { }
