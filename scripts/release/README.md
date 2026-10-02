@@ -8,13 +8,19 @@ notices are included in the hashed payload. End users need no .NET SDK, Swift, N
 compiler. This is a development package; no public release or signed installer
 is claimed.
 
-Extract the package and run `Install.ps1` normally. It installs into the current
-user's application directory, registers the browser native host in HKCU and
+Extract the package, open PowerShell in its folder, and run as your normal user:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1
+```
+
+This execution-policy option applies only to that process. The installer writes
+to the current user's application directory, registers the browser native host in HKCU and
 adds a Start menu shortcut. If Microsoft WebView2 is missing, it downloads and
 verifies Microsoft's signed Evergreen bootstrapper before installing the
 runtime. It needs an internet connection only for that missing dependency.
-Use `-Environment development` for the separate development profile. Close a
-running instance before updating its installation. User data and downloaded
+Use `-Environment development` for the separate development profile. Close the
+app and connected browser/MCP clients before updating its installation. User data and downloaded
 models stay outside the application directory.
 
 Windows 10 22H2 and Windows 11 are the intended x64 targets. Runtime acceptance
