@@ -11,6 +11,13 @@ if ((Test-Path $Destination) -and @(Get-ChildItem $Destination -Force).Count -gt
     try { $previousInstall=Get-Content "$Destination\.vault-install.json" -Raw|ConvertFrom-Json } catch { }
     if($previousInstall.product -ne 'Windows Vault' -or $previousInstall.environment -ne $Environment) { throw 'Refusing to replace an unrelated application folder.' }
 }
+# Browser and MCP helpers can outlive the GUI and keep installed binaries open.
+# Refuse their update as well, before replacing any application files.
+Get-Process|ForEach-Object {
+    $runningPath=$null
+    try {$runningPath=$_.Path} catch { }
+    if ($runningPath -and $runningPath.StartsWith($Destination.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Close this Windows Vault instance and its connected browser/MCP clients before updating it.' }
+}
 $package=Get-Content "$source\package-manifest.json" -Raw|ConvertFrom-Json
 if ($package.schema -ne 1 -or $package.product -ne 'Windows Vault' -or $package.architecture -ne 'x64' -or @($package.files).Count -eq 0) { throw 'Invalid Windows Vault package manifest.' }
 foreach($file in $package.files) {
@@ -34,10 +41,6 @@ if (!$hasRuntime) {
         if($process.ExitCode -notin 0,3010){throw 'Microsoft WebView2 installation failed.'}
     } finally { if(Test-Path $bootstrap){Remove-Item $bootstrap -Force} }
 }
-# Refuse an update while this install is running, preserving its queued writes.
-Get-Process WindowsBlocker -ErrorAction SilentlyContinue|ForEach-Object {
-    if ($_.Path -and $_.Path.StartsWith($Destination.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Close this Windows Vault instance before updating it.' }
-}
 $stage=$Destination+'.staging-'+[Guid]::NewGuid().ToString('N')
 New-Item -ItemType Directory -Force $stage|Out-Null
 try {
@@ -48,7 +51,6 @@ try {
     $previous=$Destination+'.previous-'+[Guid]::NewGuid().ToString('N')
     if(Test-Path $Destination){Move-Item $Destination $previous}
     try { Move-Item $stage $Destination } catch { if(Test-Path $previous){Move-Item $previous $Destination}; throw }
-    if(Test-Path $previous){Remove-Item $previous -Recurse -Force}
 } finally { if(Test-Path $stage){Remove-Item $stage -Recurse -Force} }
 & "$Destination\install-native-host.ps1" -HostDirectory "$Destination\NativeHost" -Environment $Environment
 $launcher=Join-Path $Destination 'Start-WindowsVault.ps1'
@@ -61,4 +63,10 @@ $link.Arguments="-NoProfile -ExecutionPolicy Bypass -File `"$launcher`""
 $link.WorkingDirectory=$Destination
 $link.IconLocation="$Destination\WindowsBlocker.exe,0"
 $link.Save()
+# Finalize the usable launcher and registrations before removing old files.
+# A transient scanner/file lock must not interrupt a successful installation.
+if(Test-Path $previous){
+    try {Remove-Item $previous -Recurse -Force}
+    catch {Write-Warning "Installation finished; close clients before removing the old application folder: $previous"}
+}
 Write-Output "Installed Windows Vault for the current user: $Destination"
