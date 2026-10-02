@@ -38,7 +38,8 @@
   ["fetch", "XMLHttpRequest", "WebSocket", "EventSource", "importScripts",
    "postMessage", "close", "setTimeout", "setInterval", "queueMicrotask",
    "Worker", "SharedWorker", "BroadcastChannel", "MessageChannel",
-   "indexedDB", "caches", "Notification", "dispatchEvent"].forEach(lockCapability);
+   "indexedDB", "caches", "localStorage", "sessionStorage", "navigator", "chrome", "webkit",
+   "Notification", "dispatchEvent"].forEach(lockCapability);
   try {
     Object.defineProperty(self, "onmessage", {
       get: function () { return null; },
