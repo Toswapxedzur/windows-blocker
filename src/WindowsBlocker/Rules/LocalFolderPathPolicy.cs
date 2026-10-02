@@ -15,10 +15,13 @@ public static class LocalFolderPathPolicy
         using var handle=CreateFile(path,0x80,7,IntPtr.Zero,3,0x02000000,IntPtr.Zero);
         if(handle.IsInvalid)throw new IOException("local-file-error");
         var buffer=new StringBuilder(32768);var length=GetFinalPathNameByHandle(handle,buffer,(uint)buffer.Capacity,0);
+        // A volume mounted as a folder may have no drive letter. Its GUID path
+        // remains a usable absolute Windows path and preserves the granted root.
+        if(length==0 && Marshal.GetLastWin32Error()==3)length=GetFinalPathNameByHandle(handle,buffer,(uint)buffer.Capacity,1);
         if(length==0 || length>=buffer.Capacity)throw new IOException("local-file-error");
         var final=buffer.ToString();
         if(final.StartsWith(@"\\?\UNC\",StringComparison.OrdinalIgnoreCase))final=@"\\"+final[8..];
-        else if(final.StartsWith(@"\\?\",StringComparison.Ordinal))final=final[4..];
+        else if(final.StartsWith(@"\\?\",StringComparison.Ordinal) && final.Length>=7 && final[5]==':')final=final[4..];
         return Path.GetFullPath(final);
     }
     public static bool RedirectsName(uint reparseTag) => (reparseTag & 0x20000000) != 0;
