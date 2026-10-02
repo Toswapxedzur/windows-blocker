@@ -5,6 +5,8 @@
     <Compile Include="../../src/WindowsBlocker/Core/*.cs" Link="Core/%(Filename)%(Extension)" />
     <Compile Include="../../src/WindowsBlocker/Enforcement/*.cs" Link="Enforcement/%(Filename)%(Extension)" />
     <Compile Include="../../src/WindowsBlocker/Bridge/ConnectionHub.cs;../../src/WindowsBlocker/Bridge/LocalHubAuthentication.cs;../../src/WindowsBlocker/Bridge/WindowsAppId.cs;../../src/WindowsBlocker/Bridge/NativeToolSchema.cs;../../src/WindowsBlocker/Bridge/LoopbackServer.cs" Link="Bridge/%(Filename)%(Extension)" />
+    <Compile Include="../../src/WindowsBlocker/Rules/LocalFolderPathPolicy.cs" Link="LocalFolderPathPolicy.cs" />
+    <Compile Include="../../src/WindowsBlocker/WebUI/ActivityNativeIcons.cs" Link="ActivityNativeIcons.cs" />
     <Compile Include="../../src/WindowsBlocker/WebUI/NativeEditorContract.cs" Link="NativeEditorContract.cs" />
     <Compile Include="../../src/WindowsBlocker/WebUI/Storage.cs" Link="Storage.cs" />
     <Compile Include="../../src/WindowsBlocker/WebUI/WebStore.cs" Link="WebStore.cs" />

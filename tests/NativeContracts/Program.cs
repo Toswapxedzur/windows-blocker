@@ -86,4 +86,12 @@ Check(SnoozeTotal(budgets,"rolling")==3_000,"Rolling seeds and unrelated fixed-d
 var restored=new ConnectionHub();restored.Start();
 try { Check(restored.SharedUsage("fixed")?.Ms==61_500 && SnoozeTotal(restored,"fixed")==1_500 && SnoozeTotal(restored,"rolling")==3_000,"Usage-only contributions and snooze consumption survive a hub restart"); }
 finally { await restored.StopAsync(); }
+Check(WindowsBlocker.Rules.LocalFolderPathPolicy.RedirectsName(0xA000000C) && WindowsBlocker.Rules.LocalFolderPathPolicy.RedirectsName(0xA0000003),"Windows junction and symlink tags are name redirections");
+Check(!WindowsBlocker.Rules.LocalFolderPathPolicy.RedirectsName(0x9000001A) && !WindowsBlocker.Rules.LocalFolderPathPolicy.RedirectsName(0x9000F01A) && !WindowsBlocker.Rules.LocalFolderPathPolicy.RedirectsName(0x80000021),"Cloud placeholders and OneDrive tags retain ordinary selected-folder access");
+var historicalIcons=new JsonObject{["kind"]="known-items",["items"]=new JsonArray(new JsonObject{["id"]=@"app|C:\History\closed.exe"},new JsonObject{["id"]="app|family_name!App"},new JsonObject{["id"]="web|example.com"}),["icons"]=new JsonObject{["example.com"]="browser-cache"}};
+ActivityNativeIcons.Enrich(historicalIcons,key=>"native:"+key);
+Check(historicalIcons["icons"]?[@"C:\History\closed.exe"]?.GetValue<string>()==@"native:C:\History\closed.exe" && historicalIcons["icons"]?["family_name!App"]!=null && historicalIcons["icons"]?["example.com"]?.GetValue<string>()=="browser-cache","Historical Activity icons resolve exact executable/AUMID identities without changing browser icons");
+var groupedIcons=new JsonObject{["snapshot"]=new JsonObject{["groups"]=new JsonArray(new JsonObject{["members"]=new JsonArray(@"app|C:\History\closed.exe")})},["icons"]=new JsonObject{[@"C:\History\closed.exe"]="current-icon"}};
+ActivityNativeIcons.Enrich(groupedIcons,key=>throw new Exception("Existing icon must not be resolved again"));
+Check(groupedIcons["icons"]?[@"C:\History\closed.exe"]?.GetValue<string>()=="current-icon","Merged Activity groups retain existing native icons");
 Console.WriteLine("Native contract suite passed");
