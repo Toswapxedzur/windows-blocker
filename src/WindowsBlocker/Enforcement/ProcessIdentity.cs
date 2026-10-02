@@ -12,6 +12,8 @@ namespace WindowsBlocker.Enforcement;
 public sealed class AppIdentity
 {
     public uint ProcessId { get; init; }
+    public long StartedAtTicks { get; init; }
+    public string ProcessInstance => $"{ProcessId}:{StartedAtTicks}";
     public string ExecutablePath { get; init; } = "";
     public string ExecutableName { get; init; } = "";
     // Application User Model ID for packaged (UWP/Store) apps, lowercased. Empty
@@ -49,7 +51,19 @@ public sealed class AppIdentity
 
 public static class ProcessIdentity
 {
+    private static long StartedAt(uint pid)
+    {
+        try { using var p = System.Diagnostics.Process.GetProcessById((int)pid); return p.StartTime.ToUniversalTime().Ticks; }
+        catch { return 0; }
+    }
+
     private const string FrameHost = "applicationframehost.exe";
+
+    public static AppIdentity ForProcess(uint pid)
+    {
+        var path = PathForProcess(pid);
+        return new() { ProcessId = pid, StartedAtTicks = StartedAt(pid), ExecutablePath = path, ExecutableName = Path.GetFileName(path).ToLowerInvariant(), Aumid = AumidForProcess(pid) };
+    }
 
     public static AppIdentity ForWindow(IntPtr hwnd)
     {
@@ -76,6 +90,7 @@ public static class ProcessIdentity
         return new AppIdentity
         {
             ProcessId = pid,
+            StartedAtTicks = StartedAt(pid),
             ExecutablePath = path,
             ExecutableName = name,
             Aumid = AumidForProcess(pid)
@@ -96,6 +111,7 @@ public static class ProcessIdentity
                     found = new AppIdentity
                     {
                         ProcessId = childPid,
+                        StartedAtTicks = StartedAt(childPid),
                         ExecutablePath = path,
                         ExecutableName = Path.GetFileName(path).ToLowerInvariant(),
                         Aumid = AumidForProcess(childPid)

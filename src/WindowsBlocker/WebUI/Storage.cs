@@ -1,32 +1,23 @@
-using System;
 using System.IO;
 
 namespace WindowsBlocker.WebUI;
 
-// Windows equivalent of MacBlockerCore/AppGroup + SharedAppGroupStore. There is
-// no App Group container on Windows; state lives under %LOCALAPPDATA%.
 public static class Storage
 {
-    public const string WebStoreFileName = "web-store.json";
-    public const string ClustersFileName = "clusters.json";
-    public const string BridgePairingKeyFileName = "bridge-pairing-key.txt";
-
+    public static bool Development => Environment.GetEnvironmentVariable("VAULT_ENVIRONMENT") == "development";
+    public static int HubPort => Development ? 18787 : 8787;
+    public static int McpPort => Development ? 18788 : 8788;
     public static string RootDirectory
     {
         get
         {
-            var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var dir = Path.Combine(local, "WindowsBlocker");
+            var custom = Development ? Environment.GetEnvironmentVariable("VAULT_STORAGE_ROOT") : null;
+            var dir = !string.IsNullOrWhiteSpace(custom) ? custom : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AdamanciaVault", Development ? "Development" : "Production");
             Directory.CreateDirectory(dir);
             return dir;
         }
     }
-
-    public static string WebStorePath => Path.Combine(RootDirectory, WebStoreFileName);
-
-    // Persisted web-app bridge cluster registry (ConnectionHub). Mirrors the
-    // macOS hub's UserDefaults-backed registry so links survive a restart.
-    public static string ClustersPath => Path.Combine(RootDirectory, ClustersFileName);
-
-    public static string BridgePairingKeyPath => Path.Combine(RootDirectory, BridgePairingKeyFileName);
+    public static string WebStorePath => Path.Combine(RootDirectory, "web-store.json");
+    public static string ClustersPath => Path.Combine(RootDirectory, "clusters-v4.json");
+    public static string HubSecretPath => Path.Combine(RootDirectory, "local-hub-secret.bin");
 }

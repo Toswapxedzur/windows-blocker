@@ -17,6 +17,10 @@ public sealed class SnoozeState
     public DateTimeOffset? StartsAt { get; init; }
     public DateTimeOffset? Until { get; init; }
     public DateTimeOffset? CooldownUntil { get; init; }
+    public bool Budget { get; init; }
+    public double ExtraMs { get; init; }
+    public bool Exempts(DateTimeOffset now) => !Budget && Phase(now) == SnoozePhase.Active;
+    public double Extra(DateTimeOffset now) => Budget && Phase(now) == SnoozePhase.Active ? Math.Max(0,ExtraMs) : 0;
     public string Justification { get; init; } = "";
 
     public SnoozePhase Phase(DateTimeOffset date)

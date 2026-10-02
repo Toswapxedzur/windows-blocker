@@ -1,306 +1,53 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text.Json;
 
 namespace WindowsBlocker.Core;
 
-// Ported from MacBlockerCore/ChromeExtensionImport.swift. Reads the editor's
-// raw chrome.storage snapshot (the same `blockedGroups` schema the Chrome
-// extension used) and maps it into the typed BlockGroup model.
 public sealed class ChromeExtensionImportResult
 {
     public List<BlockGroup> Groups { get; init; } = new();
 }
 
+// Desktop policy reads only the current Apps scope. Browser scopes remain with
+// their browser; a stored old shape is safely ignored rather than widened.
 public static class ChromeExtensionImporter
 {
     public static ChromeExtensionImportResult ImportGroups(string json)
     {
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-
-        JsonElement source;
-        if (root.ValueKind == JsonValueKind.Array)
-        {
-            source = root;
-        }
-        else if (root.ValueKind == JsonValueKind.Object &&
-                 root.TryGetProperty("blockedGroups", out var arr) &&
-                 arr.ValueKind == JsonValueKind.Array)
-        {
-            source = arr;
-        }
-        else
-        {
-            throw new FormatException("Unsupported store shape");
-        }
-
-        var groups = new List<BlockGroup>();
-        foreach (var element in source.EnumerateArray())
-        {
-            groups.Add(ImportGroup(element));
-        }
-        return new ChromeExtensionImportResult { Groups = groups };
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        var source = root.ValueKind == JsonValueKind.Array ? root
+            : root.ValueKind == JsonValueKind.Object && root.TryGetProperty("blockedGroups", out var groups) && groups.ValueKind == JsonValueKind.Array ? groups
+            : throw new FormatException("Unsupported store shape");
+        return new() { Groups = source.EnumerateArray().Where(g => g.ValueKind == JsonValueKind.Object).Select(ImportGroup).ToList() };
     }
 
     private static BlockGroup ImportGroup(JsonElement obj)
     {
-        var groupType = ParseGroupType(Str(obj, "groupType") ?? "site");
-        var id = Str(obj, "id") ?? Guid.NewGuid().ToString();
-        var scheduleText = Str(obj, "timeWindowsText") ?? "";
-
-        // The extension scopes an entry to a path when it carries one
-        // ("youtube.com/shorts"). This app blocks whole hosts, so such an
-        // entry is skipped rather than widened to its host.
-        // A stored group carries its website list as a "site" scope line
-        // ({surface: "site", sites, sitesExcept}) since 2026-09-24, and may
-        // name platforms besides; older stores and flat exports carry `sites`
-        // at the top level. Read both.
-        var scopeSites = (Array(obj, "scopes") ?? Enumerable.Empty<JsonElement>())
-            .Where(line => line.ValueKind == JsonValueKind.Object
-                && line.TryGetProperty("surface", out var surface)
-                && surface.ValueKind == JsonValueKind.String
-                && surface.GetString() == "site"
-                && line.TryGetProperty("sites", out var lineSites)
-                && lineSites.ValueKind == JsonValueKind.Array)
-            .SelectMany(line => line.GetProperty("sites").EnumerateArray());
-        var sites = (Array(obj, "sites") ?? Enumerable.Empty<JsonElement>())
-            .Concat(scopeSites)
-            .Select(AsString)
-            .Where(v => v is not null && !IsPathScopedSite(v))
-            .Select(NormalizeHost)
-            .Where(h => h is not null)
-            .Select(h => new BlockTarget
-            {
-                Kind = BlockTarget.TargetKind.WebDomain,
-                DisplayName = h!,
-                NormalizedValue = h!,
-                Tags = LegacyTags(groupType)
-            })
-            .ToList();
-
-        // Each app entry is { id: <identity>, name: <displayName> }. On Windows
-        // the identity is the executable path/name supplied by the app picker.
-        var apps = (ArrayOfObjects(obj, "apps") ?? Enumerable.Empty<JsonElement>())
-            .Select(entry =>
-            {
-                var identity = Str(entry, "id")?.Trim();
-                if (string.IsNullOrEmpty(identity))
-                {
-                    return null;
-                }
-                var name = Str(entry, "name")?.Trim();
-                return new BlockTarget
-                {
-                    Id = identity!,
-                    Kind = BlockTarget.TargetKind.Application,
-                    DisplayName = !string.IsNullOrEmpty(name) ? name! : identity!,
-                    NormalizedValue = identity!,
-                    Tags = new HashSet<string> { "windows", "application" }
-                };
-            })
-            .Where(t => t is not null)
-            .Select(t => t!)
-            .ToList();
-
-        var targets = new List<BlockTarget>();
-        targets.AddRange(sites);
-        targets.AddRange(apps);
-
-        return new BlockGroup
+        var appLine = Array(obj, "scopes").FirstOrDefault(s => Str(s, "surface") == "apps");
+        var apps = Array(appLine, "apps").Where(a => Str(a, "id")?.Trim().Length > 0).Select(a => new BlockTarget
         {
-            Id = id,
-            GroupType = MapGroupType(groupType),
-            Name = Str(obj, "name") ?? DefaultName(groupType),
-            Enabled = Bool(obj, "enabled") ?? true,
-            Mode = ParseMode(Str(obj, "mode")),
-            AllowedMinutes = Number(obj, "allowedMinutes") ?? 15,
-            ResetIntervalHours = Number(obj, "resetIntervalHours") ?? 24,
-            ResetAtMidnight = Bool(obj, "resetAtMidnight") ?? false,
-            RollingLimit = Bool(obj, "rollingLimit") ?? false,
-            AllowSnooze = Bool(obj, "allowSnooze") ?? true,
-            SnoozeMinutes = Int(obj, "snoozeMinutes") ?? 30,
-            SnoozeActivationDelayMinutes = Int(obj, "snoozeActivationDelayMinutes") ?? 0,
-            SnoozeCooldownMinutes = Int(obj, "snoozeCooldownMinutes") ?? 0,
-            SnoozeConfirmations = Int(obj, "snoozeConfirmations") ?? 0,
-            ActiveDays = ParseDays(obj),
-            TimeWindows = ScheduleParser.ParseWindows(scheduleText),
-            FreezeMode = MapFreezeMode(Str(obj, "freezeMode")),
-            StrictFreezeHours = Int(obj, "strictFreezeHours") ?? 24,
-            FrozenAt = DateFromMs(obj, "frozenAtMs"),
-            ParentalPasswordHash = Str(obj, "parentalPasswordHash"),
-            ParentalPasswordSalt = Str(obj, "parentalPasswordSalt"),
-            FallbackMessage = "",
-            CustomRuleSource = Str(obj, "blockingRulesText") ?? "",
-            Targets = targets
+            Id = Str(a, "id")!.Trim(), Kind = BlockTarget.TargetKind.Application,
+            NormalizedValue = Str(a, "id")!.Trim(), DisplayName = Str(a, "name") ?? Str(a, "id")!, Tags = new() { "windows", "application" }
+        }).ToList();
+        var days = obj.TryGetProperty("activeDays", out var d) && d.ValueKind == JsonValueKind.Array
+            ? d.EnumerateArray().Select(e => Weekdays.Parse(e.ValueKind == JsonValueKind.String ? e.GetString()! : "")).Where(e => e.HasValue).Select(e => e!.Value).ToHashSet()
+            : new(Weekdays.All);
+        return new()
+        {
+            Id = Str(obj, "id") ?? Guid.NewGuid().ToString(), Name = Str(obj, "name") ?? "Block Group",
+            GroupType = Str(obj, "groupType") == "custom" ? BlockGroupType.Custom : BlockGroupType.Site,
+            Enabled = Bool(obj, "enabled") && Str(obj, "effect") != "allow",
+            Mode = Str(obj, "mode") is "after-minutes" or "timer" ? BlockingMode.AfterMinutes : BlockingMode.Instant,
+            AllowedMinutes = Positive(obj, "allowedMinutes", 15), ResetIntervalHours = Positive(obj, "resetIntervalHours", 24),
+            ResetAtMidnight = Bool(obj, "resetAtMidnight"), RollingLimit = Bool(obj, "rollingLimit"), ActiveDays = days,
+            TimeWindows = ScheduleParser.ParseWindows(Str(obj, "timeWindowsText") ?? ""),
+            CustomRuleSource = Str(obj, "activeEventSource") ?? "", Targets = apps,
+            ApplicationAllowlist = Bool(appLine, "appsExcept")
         };
     }
 
-    private static BlockGroupType ParseGroupType(string raw) => raw.ToLowerInvariant() switch
-    {
-        "site" => BlockGroupType.Site,
-        "youtube" => BlockGroupType.YouTube,
-        "tiktok" => BlockGroupType.TikTok,
-        "facebook" => BlockGroupType.Facebook,
-        "instagram" => BlockGroupType.Instagram,
-        "twitch" => BlockGroupType.Twitch,
-        "reddit" => BlockGroupType.Reddit,
-        "discord" => BlockGroupType.Discord,
-        "twitter" => BlockGroupType.Twitter,
-        "custom" => BlockGroupType.Custom,
-        "app" => BlockGroupType.App,
-        "category" => BlockGroupType.Category,
-        _ => BlockGroupType.Site
-    };
-
-    private static BlockingMode ParseMode(string? raw) => raw switch
-    {
-        "instant" => BlockingMode.Instant,
-        "after-minutes" => BlockingMode.AfterMinutes,
-        // Crash guard: the count-up "timer" mode was removed 2026-09-25; such a
-        // group carries on as a normal timed group.
-        "timer" => BlockingMode.AfterMinutes,
-        _ => BlockingMode.Instant
-    };
-
-    private static FreezeMode MapFreezeMode(string? raw) => raw switch
-    {
-        "frozen" or "normal" => FreezeMode.Normal,
-        "strict" => FreezeMode.Strict,
-        "parental" => FreezeMode.Parental,
-        _ => FreezeMode.None
-    };
-
-    private static BlockGroupType MapGroupType(BlockGroupType groupType) => groupType switch
-    {
-        BlockGroupType.YouTube or BlockGroupType.TikTok or BlockGroupType.Facebook or
-        BlockGroupType.Instagram or BlockGroupType.Twitch or BlockGroupType.Reddit or
-        BlockGroupType.Discord or BlockGroupType.Twitter => BlockGroupType.App,
-        _ => groupType
-    };
-
-    private static HashSet<string> LegacyTags(BlockGroupType groupType) => groupType switch
-    {
-        BlockGroupType.YouTube or BlockGroupType.TikTok or BlockGroupType.Facebook or BlockGroupType.Instagram
-            => new HashSet<string> { "social", "shortVideo", groupType.ToString().ToLowerInvariant() },
-        BlockGroupType.Twitch => new HashSet<string> { "video", "streaming", "twitch" },
-        BlockGroupType.Reddit or BlockGroupType.Discord or BlockGroupType.Twitter
-            => new HashSet<string> { "social", groupType.ToString().ToLowerInvariant() },
-        _ => new HashSet<string>()
-    };
-
-    private static HashSet<Weekday> ParseDays(JsonElement obj)
-    {
-        var values = Array(obj, "activeDays");
-        if (values is null)
-        {
-            return new HashSet<Weekday>(Weekdays.All);
-        }
-        var days = values
-            .Select(e => Weekdays.Parse(AsString(e) ?? ""))
-            .Where(d => d is not null)
-            .Select(d => d!.Value)
-            .ToHashSet();
-        return days.Count == 0 ? new HashSet<Weekday>(Weekdays.All) : days;
-    }
-
-    // True when a site entry names a path under its host ("youtube.com/shorts"):
-    // the extension scopes such entries to that path, which a host-level
-    // blocker cannot express.
-    private static bool IsPathScopedSite(string value)
-    {
-        var text = value.Trim();
-        if (!text.Contains("://"))
-        {
-            text = "https://" + text;
-        }
-        if (!Uri.TryCreate(text, UriKind.Absolute, out var uri))
-        {
-            return false;
-        }
-        return uri.AbsolutePath.Trim('/').Length > 0;
-    }
-
-    private static string? NormalizeHost(string? value)
-    {
-        value = value?.Trim().ToLowerInvariant();
-        if (string.IsNullOrEmpty(value))
-        {
-            return null;
-        }
-        if (!value.Contains("://"))
-        {
-            value = "https://" + value;
-        }
-        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(uri.Host))
-        {
-            return null;
-        }
-        var host = uri.Host.ToLowerInvariant();
-        return host.StartsWith("www.") ? host.Substring(4) : host;
-    }
-
-    private static string DefaultName(BlockGroupType groupType) =>
-        groupType == BlockGroupType.Custom ? "Custom Block" : "Block Group";
-
-    // ----- JSON helpers -----
-
-    private static string? Str(JsonElement obj, string key) =>
-        obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String
-            ? v.GetString()
-            : null;
-
-    private static string? AsString(JsonElement e) => e.ValueKind == JsonValueKind.String ? e.GetString() : null;
-
-    private static bool? Bool(JsonElement obj, string key)
-    {
-        if (obj.ValueKind != JsonValueKind.Object || !obj.TryGetProperty(key, out var v))
-        {
-            return null;
-        }
-        return v.ValueKind switch
-        {
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            _ => null
-        };
-    }
-
-    private static double? Number(JsonElement obj, string key)
-    {
-        if (obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(key, out var v) &&
-            v.ValueKind == JsonValueKind.Number && v.TryGetDouble(out var d) && double.IsFinite(d))
-        {
-            return d;
-        }
-        return null;
-    }
-
-    private static int? Int(JsonElement obj, string key)
-    {
-        if (obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(key, out var v) &&
-            v.ValueKind == JsonValueKind.Number && v.TryGetDouble(out var d))
-        {
-            return (int)d;
-        }
-        return null;
-    }
-
-    private static DateTimeOffset? DateFromMs(JsonElement obj, string key)
-    {
-        if (obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(key, out var v) &&
-            v.ValueKind == JsonValueKind.Number && v.TryGetDouble(out var ms) && ms > 0)
-        {
-            return DateTimeOffset.FromUnixTimeMilliseconds((long)ms);
-        }
-        return null;
-    }
-
-    private static IEnumerable<JsonElement>? Array(JsonElement obj, string key) =>
-        obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Array
-            ? v.EnumerateArray()
-            : null;
-
-    private static IEnumerable<JsonElement>? ArrayOfObjects(JsonElement obj, string key) => Array(obj, key);
+    internal static string? Str(JsonElement obj, string key) => obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+    internal static bool Bool(JsonElement obj, string key) => obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.True;
+    internal static IEnumerable<JsonElement> Array(JsonElement obj, string key) => obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Array ? v.EnumerateArray() : Enumerable.Empty<JsonElement>();
+    private static double Positive(JsonElement obj, string key, double fallback) => obj.TryGetProperty(key, out var v) && v.TryGetDouble(out var n) && double.IsFinite(n) && n > 0 ? n : fallback;
 }

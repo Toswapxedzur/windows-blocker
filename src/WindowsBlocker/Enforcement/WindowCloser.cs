@@ -8,21 +8,16 @@ namespace WindowsBlocker.Enforcement;
 // reappears) and an app with an unsaved-changes prompt may stay up.
 public static class WindowCloser
 {
-    /// Closes a single window if its owning app is blocked. Used by the
-    /// WinEvent monitor on the low-latency show/foreground path.
-    public static bool CloseIfBlocked(IntPtr hwnd, BlockedAppRegistry registry, IntPtr selfWindow)
+    public static void RequestProcessQuit(uint processId, IntPtr selfWindow)
     {
-        if (hwnd == selfWindow || !registry.HasAny || !IsCloseableTopLevel(hwnd))
+        // One sweep belongs to one cooperative quit request. A save prompt
+        // opened afterwards is left alone until an explicit retry is due.
+        NativeMethods.EnumWindows((hwnd, _) =>
         {
-            return false;
-        }
-        var identity = ProcessIdentity.ForWindow(hwnd);
-        if (!registry.IsBlocked(identity))
-        {
-            return false;
-        }
-        CloseWindow(hwnd);
-        return true;
+            if (hwnd == selfWindow || !IsCloseableTopLevel(hwnd)) return true;
+            if (ProcessIdentity.ForWindow(hwnd).ProcessId == processId) CloseWindow(hwnd);
+            return true;
+        }, IntPtr.Zero);
     }
 
     public static void CloseWindow(IntPtr hwnd)
