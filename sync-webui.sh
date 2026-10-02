@@ -37,7 +37,7 @@ for folder in ["manual", "code-manual"]:
     text = text.replace("Running includes foreground, menu-bar and background `.app` processes with bundle IDs; not every Unix process.", "Running lists identified Windows application processes.")
     text = text.replace("displayed as plain text on Mac", "displayed as plain text on Windows")
     text = text.replace('"com.valvesoftware.steam"', json.dumps(r"C:\Program Files (x86)\Steam\steam.exe"))
-    text = text.replace("Safari rules use the browser code manual, even when Windows Vault hosts their engine.", "Browser rules use the browser extension's code manual.")
+    text = text.replace("Safari rules use the browser code manual and run in Safari Vault's own containing app.", "Browser rules use the browser extension's code manual.")
     text = text.replace("not the system Keychain", "with access restricted to the current Windows user")
     page.write_text(text, encoding="utf-8")
 target = dest / "classifier"
