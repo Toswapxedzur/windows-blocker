@@ -1,59 +1,24 @@
-/* Desktop editor syntax-check contract. Run from the repository root with:
- * node windowsBlocker/tests/runner-editor-syntax.js
- */
-
-const fs = require("fs");
-const path = require("path");
-const vm = require("vm");
-
-const shims = [
-  path.resolve(__dirname, "../../macosBlocker/Sources/MacBlockerWebUI/WebAssets/chrome-shim.js"),
-  path.resolve(__dirname, "../src/WindowsBlocker/WebAssets/chrome-shim.js")
-];
-
-async function checkShim(path) {
-  const storage = new Map();
-  const context = {
-    console,
-    Promise,
-    URL,
-    navigator: { language: "en" },
-    document: { baseURI: "https://appassets.windowsblocker/" },
-    localStorage: {
-      getItem: (key) => storage.has(key) ? storage.get(key) : null,
-      setItem: (key, value) => storage.set(key, String(value))
-    }
-  };
-  context.window = context;
-  vm.createContext(context);
-  vm.runInContext(fs.readFileSync(path, "utf8"), context, { filename: path });
-
-  const response = await context.chrome.runtime.sendMessage({
-    type: "check-custom-group-syntax",
-    source: `(event) => {
-      event.on("tickEvent", "raw-on", () => {});
-      event.registerFocusEvent("typed", () => {});
-    }`
-  });
-  if (!response?.result?.ok || response.result.handlers !== 2) {
-    throw new Error(`${path}: expected event.on + typed alias to count as 2 handlers; got ${JSON.stringify(response)}`);
-  }
-  const started = Date.now();
-  const bounded = await context.chrome.runtime.sendMessage({
-    type: "check-custom-group-syntax",
-    source: `(event) => { while (true) {} event.on("tickEvent", "loop", () => {}); }`
-  });
-  if (!bounded?.result?.ok || bounded.result.handlers !== 1 || Date.now() - started > 250) {
-    throw new Error(`${path}: syntax preview executed the registration body or lost event.on`);
-  }
-  console.log(`PASS ${path} counts event.on and typed registrations`);
-  console.log(`PASS ${path} parses without executing registration code`);
-}
-
-(async () => {
-  for (const path of shims) await checkShim(path);
-  console.log("DESKTOP EDITOR SYNTAX TOTAL 4 PASS 4 FAIL 0");
-})().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+/* Shared native storage and request contracts. Run on mini1. */
+const fs=require("node:fs"),vm=require("node:vm"),path=require("node:path"),assert=require("node:assert/strict");
+const shims=["../../macosBlocker/Sources/MacBlockerWebUI/WebAssets/chrome-shim.js","../src/WindowsBlocker/WebAssets/chrome-shim.js"];
+(async()=>{for(const file of shims){
+ const messages=[],storage=new Map();
+ const context={console,Promise,URL,Set,setTimeout,clearTimeout,navigator:{language:"en"},document:{baseURI:"https://appassets.windowsblocker/"},
+ localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,String(value))},
+ __CB_DESKTOP_PROGRAM_ID:"windowsapp",__cbNativeStoreSeed:JSON.stringify({blockedGroups:[{id:"a"}],usageTimersMs:{a:10,b:20}})};
+ context.window=context;
+ context.webkit={messageHandlers:{cbBridge:{postMessage:message=>{messages.push(message);if(message.requestId) context.__cbNativeReply(message.requestId,{ok:true,loadResult:{ok:true,handlers:1}})}}}};
+ vm.createContext(context);vm.runInContext(fs.readFileSync(path.resolve(__dirname,file),"utf8"),context);
+ assert.equal(context.chrome.runtime.id,"windows-vault");
+ await context.chrome.storage.local.set({usageTimersMs:{a:11,b:20}});
+ assert.deepEqual(JSON.parse(JSON.stringify(messages[0])),{kind:"persist-store",changes:{usageTimersMs:{a:11}}});
+ context.__cbApplyNativeStore({blockedGroups:[{id:"a"}],usageTimersMs:{a:11,b:99}});
+ assert.equal((await context.chrome.storage.local.get("usageTimersMs")).usageTimersMs.b,99);
+ assert.equal(messages.length,1,"native snapshots must not echo writes");
+ const response=await context.chrome.runtime.sendMessage({type:"run-custom-group",groupId:"a",source:"(on,v)=>{}"});
+ assert.equal(response.loadResult.handlers,1);assert.equal(messages[1].kind,"run-custom-group");
+ context.__cbApplyNativeRuleLog([{source:"v.log",groupId:"a",message:"own"},{source:"diagnostic",groupId:"a",message:"hidden"},{source:"v.log",groupId:"other",message:"gone"}]);
+ assert.equal((await context.chrome.runtime.sendMessage({type:"get-log-feed",groupId:"a"})).entries.length,1);
+ assert.equal((await context.chrome.runtime.sendMessage({type:"get-log-feed",groupId:"other"})).entries.length,0);
+ console.log("PASS",file,"patch merge, native reply, and per-group v.log contracts");
+}})().catch(error=>{console.error(error);process.exitCode=1});

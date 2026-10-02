@@ -1,0 +1,214 @@
+/* Mac Vault's Activity scene (see scenes.js / activity.js): Groups on top,
+   then Usage and Content (each with its own range and focus), Recording last.
+   The shared look is vault-ui.css. */
+/* The scene's mount stands where the page's body used to. */
+#activity { display: flex; flex-direction: column; height: 100%; padding: 10px 12px; }
+main { flex: 1; min-height: 0; overflow: auto; }
+.page { max-width: 1320px; margin: 0 auto; }
+.page { display: flex; flex-direction: column; gap: 12px; }
+.panel { background: rgba(255, 255, 255, 0.92); border-radius: 16px; box-shadow: var(--vui-panel-shadow); padding: 12px; }
+.strip-panel { padding: 12px 12px 2px; }
+.settings-panel { padding: 8px 12px; }
+/* Usage, Videos, Authors, Tags and Groups: panels side by side, wrapping. */
+.column-head { display: flex; align-items: center; gap: 12px; margin: 0 4px 6px; min-height: 22px; }
+.head-button { margin-left: auto; }
+.column-head h2 { font-size: var(--vui-size-title); }
+.total { margin-left: auto; color: var(--vui-muted); }
+.total strong { color: var(--vui-text); font-size: var(--vui-size-title); font-weight: 700; margin-left: 4px; }
+/* day strip */
+.strip { position: relative; height: 44px; border-radius: 10px; background: var(--vui-fill); overflow: hidden; }
+.strip .seg { position: absolute; top: 0; bottom: 0; min-width: 2px; }
+/* A site inside a browser's time: the top band; the browser's colour stays
+   visible as the band below it. */
+.strip .seg.site { bottom: 15%; }
+.strip .day { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255, 255, 255, 0.9); }
+.axis { display: flex; justify-content: space-between; color: var(--vui-muted); font-size: var(--vui-size-small); margin: 4px 2px 10px; }
+/* rows */
+.row { position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 7px 4px; border-radius: var(--vui-radius-sm); }
+/* "+ Group" floats over a row's end on hover (it takes no column). */
+.row-add { position: absolute; right: 76px; top: 50%; transform: translateY(-50%); opacity: 0; pointer-events: none; }
+.row:hover .row-add, .row-add:focus-visible { opacity: 1; pointer-events: auto; }
+.row:hover { background: #f8fafc; }
+.icon { width: 36px; height: 36px; border-radius: 9px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--navy-100); color: var(--navy-700); font-weight: 700; font-size: 14px; }
+.icon img { width: 36px; height: 36px; object-fit: contain; }
+.row-body { min-width: 0; }
+.row-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 700; }
+.row-bar { height: 5px; margin-top: 5px; border-radius: 99px; background: var(--vui-fill); overflow: hidden; }
+.row-bar span { display: block; height: 100%; border-radius: 99px; }
+.row-time { color: var(--vui-muted); font-variant-numeric: tabular-nums; min-width: 56px; text-align: right; }
+/* App or Website, beside the name. */
+.row-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-kind { flex: none; padding: 1px 7px; border-radius: 999px; background: var(--vui-fill); color: var(--vui-muted); font-size: 10px; font-weight: 700; }
+.empty { color: var(--vui-muted); padding: 14px 4px; }
+.off { display: flex; align-items: center; gap: 8px; color: var(--vui-muted); padding: 10px 4px; }
+/* settings */
+.settings { margin: 0; }
+.settings-row { display: flex; align-items: center; gap: 12px; padding: 6px 4px; }
+.settings-row .name { flex: 1; }
+.settings-row label { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; }
+.settings-row .vui-select { width: auto; }
+/* A Usage row picks the item the Details charts show. */
+.row.pickable { cursor: pointer; }
+/* Charts: the year map, the day bars and the pie. */
+.days { display: block; margin-bottom: 12px; }
+.chart-title { font-weight: 700; margin-bottom: 6px; }
+.map-scroll { overflow-x: auto; }
+.map, .hours, .pie { display: block; }
+.axis-label { fill: var(--vui-muted); font-size: 10px; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; color: var(--vui-muted); font-size: var(--vui-size-small); }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-item .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.legend-note { color: var(--vui-muted); }
+.chart-legend .legend-note { margin-left: auto; }
+.pie-body { display: flex; align-items: center; gap: 16px; }
+.pie-legend { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: var(--vui-size-small); }
+.pie-legend .legend-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 130px; }
+/* A group's icon: slices of its members' icons (activity.js groupIcon). */
+.group-icon { position: relative; background: var(--vui-fill); }
+.group-icon .slice { position: absolute; inset: 0; }
+.group-icon .face { position: absolute; width: 100%; height: 100%; }
+.group-icon .lettered { background: var(--navy-100); }
+.group-icon .letter { position: absolute; transform: translate(-50%, -50%); font-size: 10px; }
+.group-icon .more { background: #475569; color: #ffffff; }
+.group-icon.big { width: 44px; height: 44px; border-radius: 11px; flex: none; }
+.row-count { flex: none; color: var(--vui-muted); font-size: var(--vui-size-small); font-weight: 400; }
+/* The Groups panel: the page's top, one fixed height (cards or editor). */
+.groups { height: 206px; display: flex; flex-direction: column; flex: none; }
+.groups .empty { padding: 6px 4px; }
+.group-cards { flex: 1; min-height: 0; display: flex; gap: 10px; overflow-x: auto; overflow-y: hidden; padding-bottom: 4px; }
+/* A group's card is the editor's (owner 2026-09-30): light navy, a soft shadow,
+   lifted on hover; the chosen one filled, never ringed. */
+.group-card { flex: none; width: 210px; display: flex; flex-direction: column; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--navy-100) 45%, #ffffff); box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06); cursor: pointer; transition: background 120ms ease, box-shadow 120ms ease, transform 120ms ease; }
+.group-card:hover { transform: translateY(-1px); box-shadow: 0 8px 18px rgba(15, 23, 42, 0.1); }
+.group-card.is-focus { background: var(--navy-100); box-shadow: 0 8px 18px rgba(30, 58, 138, 0.16); }
+.group-card.is-focus .row-label { color: var(--navy-700); }
+.group-card-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.group-card-name { display: flex; align-items: center; gap: 6px; min-width: 0; font-weight: 700; }
+.group-card .row-kind { background: #ffffff; }
+.group-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--vui-muted); font-size: var(--vui-size-small); font-variant-numeric: tabular-nums; }
+/* The editor: name, merge and actions | members | add. */
+.group-form { flex: 1; min-height: 0; display: grid; grid-template-columns: 280px minmax(0, 1fr) minmax(0, 1.3fr); gap: 16px; }
+.group-col { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.group-top { display: flex; align-items: center; gap: 10px; }
+.group-merge { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 4px 3px 3px; border-radius: 10px; background: var(--vui-fill); }
+.chip .icon { width: 20px; height: 20px; border-radius: 5px; font-size: 10px; }
+.chip .icon img { width: 20px; height: 20px; }
+.chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip .row-kind { background: #ffffff; }
+.chip-remove { background: none; color: var(--vui-muted); padding: 0 4px; font-size: 13px; line-height: 1; }
+.chip-remove:hover { color: var(--red-text); filter: none; }
+/* The add column: the search stays, the suggestions scroll under it. */
+.group-add { overflow: hidden; }
+.group-members { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 4px; }
+.group-selected-members { flex: 1; align-content: flex-start; }
+.group-members > *, .scroll-list > *, .colour-map > * { flex-shrink: 0; }
+.group-members, .scroll-list, .colour-map { overscroll-behavior: contain; scrollbar-width: thin; }
+.member-row { display: flex; align-items: center; gap: 8px; width: auto; max-width: 100%; padding: 4px 8px 4px 4px; border-radius: 8px; background: none; color: #1f2937; font-size: 12px; font-weight: 400; text-align: left; }
+.member-row:hover { background: var(--navy-100); filter: none; }
+.member-row .icon { width: 24px; height: 24px; border-radius: 6px; font-size: 11px; }
+.member-row .icon img { width: 24px; height: 24px; }
+.member-row .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-count { color: var(--vui-muted); font-size: var(--vui-size-small); }
+.group-note { display: flex; align-items: center; gap: 10px; color: var(--red-text); font-size: var(--vui-size-small); }
+.group-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+@media (max-width: 900px) {
+  .groups.is-editing { height: 340px; }
+  .group-form { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto minmax(0, 1fr); gap: 12px 16px; }
+  .group-details { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; overflow: visible; }
+  .group-details .group-actions, .group-details .group-note { grid-column: 1 / -1; }
+  .group-top input { min-width: 0; width: 100%; }
+  .group-count { flex: none; }
+}
+/* The hover card (activity.js showHover): our own, never the system tooltip. */
+.hovercard { position: fixed; z-index: 30; max-width: 280px; padding: 10px 12px; border-radius: 12px; background: #ffffff; box-shadow: 0 12px 34px rgba(15, 23, 42, 0.18); pointer-events: none; display: flex; flex-direction: column; gap: 3px; }
+.hovercard[hidden] { display: none; }
+.hover-head { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.hover-head .icon { width: 24px; height: 24px; border-radius: 6px; font-size: 11px; flex: none; }
+.hover-head .icon img { width: 24px; height: 24px; }
+.hover-head .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.hover-title { font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hover-line { color: var(--vui-copy); font-size: var(--vui-size-small); font-variant-numeric: tabular-nums; }
+.hover-list { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; font-size: var(--vui-size-small); }
+.hover-item { display: flex; gap: 12px; }
+.hover-item-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hover-item-time { margin-left: auto; color: var(--vui-muted); flex: none; font-variant-numeric: tabular-nums; }
+/* The part under the pointer. */
+/* Hovered: lighter, never outlined (no borders). */
+.strip .seg.is-hot { filter: brightness(1.18) saturate(1.1); z-index: 1; }
+rect.is-hot, path.is-hot, circle.is-hot { opacity: 0.72; }
+.legend-item.is-hot .legend-label { color: var(--navy-700); }
+.legend-item { cursor: default; }
+/* Recording → Platform feeds (the classifier's per-platform recording). */
+.feeds { margin-top: 10px; }
+.feeds-title { font-weight: 700; padding: 6px 4px 0; }
+.feeds-hint { color: var(--vui-muted); font-size: var(--vui-size-small); padding: 2px 4px 4px; margin: 0; }
+.settings-row .name { display: flex; flex-direction: column; gap: 1px; }
+.feeds-meta { color: var(--vui-muted); font-size: var(--vui-size-small); }
+
+/* ── The page (owner 2026-09-30): Usage and Content stacked; fixed-size
+   panels that scroll inside. ── */
+.act-section { display: flex; flex-direction: column; gap: 12px; }
+.section-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.section-head h2 { font-size: var(--vui-size-title); margin-right: 4px; }
+.section-head .vui-select { width: auto; min-width: 220px; max-width: 360px; }
+.section-summary { margin-left: auto; color: var(--vui-muted); }
+.section-summary strong { color: var(--vui-text); font-size: var(--vui-size-title); margin-right: 2px; }
+.strip-scroll { overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; }
+.strip-axis { position: relative; height: 16px; margin: 4px 0 0; display: flex; justify-content: space-between; }
+.strip-axis .strip-day { position: absolute; top: 0; white-space: nowrap; padding-left: 4px; }
+.act-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.act-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 900px) { .act-grid, .act-grid.two { grid-template-columns: minmax(0, 1fr); } }
+.act-cell { min-width: 0; height: 300px; display: flex; flex-direction: column; border-radius: 12px; background: color-mix(in srgb, var(--navy-100) 45%, #ffffff); padding: 10px 12px; overflow: hidden; }
+.act-cell > .chart { min-height: 0; flex: 1; overflow: auto; }
+.act-list { height: 360px; }
+.act-wide { min-width: 0; }
+.chart-note { color: var(--vui-muted); font-size: var(--vui-size-small); margin: 6px 0 0; }
+.colour-map, .scroll-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+.colour-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 6px; border-radius: 8px; background: none; color: #1f2937; font-size: 12px; font-weight: 400; text-align: left; }
+.colour-row:hover { background: var(--navy-100); filter: none; }
+.colour-row .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.colour-row .icon { width: 20px; height: 20px; border-radius: 5px; font-size: 10px; }
+.colour-row .icon img { width: 20px; height: 20px; }
+.colour-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.colour-time { color: var(--vui-muted); font-variant-numeric: tabular-nums; }
+.colour-row.is-empty { cursor: default; }
+.totals-scroll { overflow-x: auto; }
+.day-chart-toolbar { position: sticky; left: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 100%; width: max-content; background: #ffffff; }
+.day-chart-toolbar .chart-subtitle { margin: 6px 0 2px; }
+.block-length-control { display: flex; align-items: center; gap: 8px; color: var(--vui-muted); font-size: var(--vui-size-small); font-weight: 700; white-space: nowrap; }
+.block-length-control .vui-select { width: 108px; }
+.block-length-control .vui-select-button { padding: 5px 9px; }
+.author-row, .raw-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 5px 4px; }
+.author-row .icon, .raw-row .icon { width: 28px; height: 28px; border-radius: 7px; font-size: 12px; }
+.author-row .icon img, .raw-row .icon img { width: 28px; height: 28px; }
+.day-bar { display: flex; height: 6px; margin-top: 5px; border-radius: 99px; overflow: hidden; background: var(--vui-fill); }
+.day-bar > span { display: block; height: 100%; }
+.raw-title { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.raw-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 2px; color: var(--vui-muted); font-size: var(--vui-size-small); }
+.tag-chip { padding: 1px 7px; border-radius: 999px; color: #000; font-size: 10px; font-weight: 700; }
+.chart-subtitle { color: var(--vui-muted); font-size: var(--vui-size-small); font-weight: 700; margin: 6px 0 2px; position: sticky; left: 0; }
+/* A section's range tabs (Today / A week / A month / Custom date). */
+.range-tabs { flex: none; }
+/* Our date picker (activity.js openPicker): a month, Monday first. */
+.date-picker { position: fixed; z-index: 31; width: 252px; padding: 10px; border-radius: 14px; background: #ffffff; box-shadow: 0 12px 34px rgba(15, 23, 42, 0.18); display: flex; flex-direction: column; gap: 6px; }
+.picker-head { display: flex; align-items: center; gap: 2px; }
+.picker-title { flex: 1; text-align: center; font-weight: 700; }
+.picker-nav { background: none; color: var(--vui-text); padding: 2px 7px; font-size: 14px; line-height: 1; border-radius: 8px; }
+.picker-nav:hover { background: var(--vui-fill); filter: none; }
+.picker-nav:disabled { opacity: 0.3; background: none; }
+.picker-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.picker-weekday { text-align: center; color: var(--vui-muted); font-size: 10px; font-weight: 700; padding: 2px 0; }
+.picker-day { height: 30px; padding: 0; border-radius: 8px; background: none; color: var(--vui-text); font-size: 12px; font-weight: 400; }
+.picker-day:hover { background: var(--navy-100); filter: none; }
+/* Today: bold navy with a dot under it (no outline). */
+.picker-day { position: relative; }
+.picker-day.is-today { font-weight: 700; color: var(--navy-700); }
+.picker-day.is-today::after { content: ""; position: absolute; left: 50%; bottom: 3px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: currentColor; }
+.picker-day.is-chosen { background: var(--navy-700); color: #ffffff; }
+.picker-day:disabled { color: #cbd5e1; background: none; }
+.picker-note { color: var(--vui-muted); font-size: var(--vui-size-small); text-align: center; }
+
+.group-top > .vui-info-field { flex: 1; min-width: 0; }
