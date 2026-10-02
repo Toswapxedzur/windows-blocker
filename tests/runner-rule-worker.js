@@ -6,7 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const { Worker } = require("worker_threads");
 
-const runtimePath = path.resolve(__dirname, "../src/WindowsBlocker/WebAssets/custom-rule-runtime.js");
+const assetsPath = path.resolve(__dirname, "../src/WindowsBlocker/WebAssets");
 const workerPath = path.resolve(__dirname, "../src/WindowsBlocker/WebAssets/rule-worker.js");
 
 function createRuleWorker() {
@@ -20,10 +20,10 @@ function createRuleWorker() {
       if (type === "message") parentPort.on("message", (data) => handler({ data }));
     };
     globalThis.removeEventListener = () => {};
-    globalThis.importScripts = () => vm.runInThisContext(
-      fs.readFileSync(${JSON.stringify(runtimePath)}, "utf8"),
-      { filename: ${JSON.stringify(runtimePath)} }
-    );
+    globalThis.importScripts = (...names) => names.forEach(name => vm.runInThisContext(
+      fs.readFileSync(require("path").join(${JSON.stringify(assetsPath)}, name), "utf8"),
+      { filename: name }
+    ));
     vm.runInThisContext(
       fs.readFileSync(${JSON.stringify(workerPath)}, "utf8"),
       { filename: ${JSON.stringify(workerPath)} }
@@ -65,7 +65,7 @@ async function main() {
     requestId: "load-normal",
     operation: "load",
     groupId: "normal",
-    source: `(event) => {
+    source: `(on, v) => {
       let unavailable = 0;
       for (const probe of [
         () => fetch("https://example.com"),
@@ -75,31 +75,38 @@ async function main() {
       ]) {
         try { probe(); } catch (_) { unavailable += 1; }
       }
-      event.on("tickEvent", "capabilities", (ev) => {
-        if (unavailable === 4) ev.block("safe.exe");
+      on("tick", (ev) => {
+        if (unavailable === 4) v.block(ev.data.appId);
       });
     }`
   });
   if (!loaded.ok || loaded.result.handlers !== 1) throw new Error("normal rule did not load");
   passed += 1;
-  console.log("PASS rule worker loads event.on rule");
+  console.log("PASS rule worker loads current raw-event rule");
 
   const dispatched = await request(worker, {
     requestId: "dispatch-normal",
     operation: "dispatch",
     groupId: "normal",
-    event: {
-      type: "tickEvent",
-      groupID: "normal",
-      now: new Date().toISOString(),
+    descriptor: {
+      type: "tick",
+      now: Date.now(),
       data: { appId: "safe.exe", isBrowser: "false" }
     }
   });
-  if (!dispatched.ok || dispatched.result.intents?.[0]?.target !== "safe.exe") {
+  if (!dispatched.ok || dispatched.result.actions?.[0]?.appId !== "safe.exe") {
     throw new Error("worker capabilities were not sealed or dispatch failed");
   }
   passed += 1;
   console.log("PASS rule worker seals network, messaging, child-worker, and shared-storage capabilities");
+  const longPath = "C:\\" + "a\\".repeat(200) + "game.exe";
+  const long = await request(worker, {
+    requestId: "dispatch-long", operation: "dispatch", groupId: "normal",
+    descriptor: { type: "tick", now: Date.now(), data: { appId: longPath } }
+  });
+  if (long.result.actions?.[0]?.appId !== longPath) throw new Error("Windows identity was truncated");
+  passed += 1;
+  console.log("PASS isolated Windows worker preserves a long executable identity");
   await worker.terminate();
 
   const looping = createRuleWorker();
@@ -110,7 +117,7 @@ async function main() {
       requestId: "load-loop",
       operation: "load",
       groupId: "loop",
-      source: "(event) => { while (true) {} }"
+      source: "(on,v) => { while (true) {} }"
     }, 150);
   } catch (error) {
     timedOut = error.message === "timeout";

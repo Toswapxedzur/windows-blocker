@@ -5,9 +5,12 @@
   var reply = self.postMessage.bind(self);
   var listen = self.addEventListener.bind(self);
 
-  importScripts("custom-rule-runtime.js");
+  self.CBNativeRulePlatform = "windows";
+  importScripts("rule-core.js", "custom-rule-runtime.js");
+  delete self.CBNativeRulePlatform;
   var runtime = self.MacBlockerRuntime;
   self.MacBlockerRuntime = undefined;
+  self.RuleCore = undefined;
 
   // Rule code needs synchronous JavaScript only. Remove network, host-message,
   // import, and scheduling capabilities before any user source is evaluated.
@@ -56,13 +59,16 @@
       var result;
       if (request.operation === "load") {
         try {
-          result = JSON.parse(runtime.load(groupId, String(request.source || "")));
+          result = JSON.parse(runtime.load(groupId, String(request.source || ""), request.stateJSON || "{}"));
         } catch (error) {
           runtime.unload(groupId);
           throw error;
         }
       } else if (request.operation === "dispatch") {
-        result = JSON.parse(runtime.dispatch(request.event || {}));
+        result = JSON.parse(runtime.dispatch(JSON.stringify({ ...(request.descriptor || {}), targetGroupId: groupId })));
+      } else if (request.operation === "suppress") {
+        runtime.suppress(groupId, request.on === true);
+        result = { ok: true };
       } else {
         throw new Error("unsupported-operation");
       }

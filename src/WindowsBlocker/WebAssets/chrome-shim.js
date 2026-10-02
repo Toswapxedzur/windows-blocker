@@ -21,7 +21,7 @@
  * before the editor reads storage.
  */
 (function () {
-  window.__CB_DESKTOP_PROGRAM_ID = "windowsapp";
+  window.__CB_DESKTOP_PROGRAM_ID = window.__CB_DESKTOP_PROGRAM_ID || "macapp";
   if (window.chrome && window.chrome.__cbShim) {
     return;
   }
@@ -41,7 +41,18 @@
     return null;
   }
 
+  // The native host parks its store snapshot on `window` at document start
+  // (see BlockerWebView): it is the truth and wins over the localStorage mirror,
+  // which may be stale when a native writer changed the file while the editor
+  // was closed.
   function loadStore() {
+    try {
+      if (typeof window.__cbNativeStoreSeed === "string") {
+        var seeded = JSON.parse(window.__cbNativeStoreSeed) || {};
+        try { window.localStorage.setItem(STORE_KEY, JSON.stringify(seeded)); } catch (_) {}
+        return seeded;
+      }
+    } catch (_) {}
     try {
       return JSON.parse(window.localStorage.getItem(STORE_KEY) || "{}") || {};
     } catch (_) {
@@ -49,30 +60,79 @@
     }
   }
 
-  function persist() {
+  // Only the keys the editor set (or removed; null) go to Mac Vault, which
+  // merges them into its file — like chrome.storage, a key another writer
+  // changed meanwhile (the engine, a tool) is kept.
+  // Per-group maps (WebStoreDocument.perGroupMapKeys): only the entries this
+  // editor changed are sent — its copy of other groups' entries may be older
+  // than the engine's, and Mac Vault merges them by group.
+  var PER_GROUP_KEYS = ["usageTimersMs", "usageResetAtMs", "usageBucketsMs", "groupSnoozes", "groupSnoozeTotalsMs", "parentalPinAttempts"];
+  function persist(keys, before) {
     try {
       window.localStorage.setItem(STORE_KEY, JSON.stringify(store));
     } catch (_) {}
     var bridge = nativeBridge();
     if (bridge) {
+      var changes = {};
+      keys.forEach(function (key) {
+        var value = Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null;
+        if (value && typeof value === "object" && before && PER_GROUP_KEYS.indexOf(key) >= 0) {
+          var old = before[key] && typeof before[key] === "object" ? before[key] : {};
+          var changed = {};
+          Object.keys(value).forEach(function (id) {
+            if (JSON.stringify(value[id]) !== JSON.stringify(old[id])) changed[id] = value[id];
+          });
+          value = changed;
+        }
+        changes[key] = value;
+      });
       try {
-        bridge.postMessage({ kind: "persist-store", store: store });
+        bridge.postMessage({ kind: "persist-store", changes: changes });
       } catch (_) {}
     }
   }
 
   var store = loadStore();
 
-  // Allow the native host to seed/replace the store before first read.
+  // Allow the native host to seed/replace the store. Also used at RUNTIME to
+  // reconcile the open editor after a native writer (e.g. an MCP tool) mutated
+  // web-store.json out-of-band: replace the store, mirror it into localStorage,
+  // and fire chrome.storage change listeners for the keys that actually differ —
+  // WITHOUT calling persist(), so there is no write-back echo to native (mirrors
+  // the safe __cbApplyNativeRuleLog / __cbApplyNativeUsage pattern). Before the
+  // editor registers its listeners this is just a seed (notifyChanges no-ops).
   window.__cbApplyNativeStore = function (json) {
     try {
       var incoming = typeof json === "string" ? JSON.parse(json) : json;
-      if (incoming && typeof incoming === "object") {
-        store = incoming;
-        try {
-          window.localStorage.setItem(STORE_KEY, JSON.stringify(store));
-        } catch (_) {}
+      if (!incoming || typeof incoming !== "object") return;
+      var previous = store;
+      store = incoming;
+      delete store.ruleLog;
+      pruneRuleLogs();
+      try {
+        window.localStorage.setItem(STORE_KEY, JSON.stringify(store));
+      } catch (_) {}
+      var changes = {};
+      var keys = {};
+      var k;
+      for (k in (previous || {})) {
+        if (Object.prototype.hasOwnProperty.call(previous, k)) keys[k] = true;
       }
+      for (k in incoming) {
+        if (Object.prototype.hasOwnProperty.call(incoming, k)) keys[k] = true;
+      }
+      for (k in keys) {
+        var oldVal = previous ? previous[k] : undefined;
+        var newVal = incoming[k];
+        var differs;
+        try {
+          differs = JSON.stringify(oldVal) !== JSON.stringify(newVal);
+        } catch (_) {
+          differs = true;
+        }
+        if (differs) changes[k] = { oldValue: oldVal, newValue: newVal };
+      }
+      if (Object.keys(changes).length > 0) notifyChanges(changes);
     } catch (_) {}
   };
 
@@ -124,65 +184,57 @@
     } catch (_) {}
   };
 
-  // Native rule-log push. Each entry: { timestamp, level, group, message }.
-  // Stored under the "ruleLog" key in the shim store so the popup Log panel
-  // can read it like any other chrome.storage.local value.
-  // Also dispatches each entry as a "log-feed-entry" runtime message so the
-  // popup's live Log panel updates immediately.
+  // Only v.log output, keyed by immutable group ID. Config snapshots must
+  // never overwrite this independent log store. The retired mixed buffer is ignored.
+  var RULE_LOG_KEY = "__cb_rule_logs_by_group__";
+  var ruleLogs = Object.create(null);
   var logFeedCounter = 0;
+  var logFeedSession = Date.now() + "-" + Math.random().toString(36).slice(2);
+  try {
+    var savedLogs = JSON.parse(window.localStorage.getItem(RULE_LOG_KEY) || "{}");
+    Object.keys(savedLogs || {}).forEach(function (groupId) {
+      if (!Array.isArray(savedLogs[groupId])) return;
+      ruleLogs[groupId] = savedLogs[groupId].filter(function (entry) {
+        return entry && entry.source === "v.log" && entry.groupId === groupId;
+      }).slice(-200);
+    });
+  } catch (_) {}
+  delete store.ruleLog;
+
+  function persistRuleLogs() {
+    try { window.localStorage.setItem(RULE_LOG_KEY, JSON.stringify(ruleLogs)); } catch (_) {}
+  }
+
+  function pruneRuleLogs() {
+    var ids = new Set((store.blockedGroups || []).map(function (group) { return group.id; }));
+    Object.keys(ruleLogs).forEach(function (id) { if (!ids.has(id)) delete ruleLogs[id]; });
+    persistRuleLogs();
+  }
 
   function nativeLogToFeedEntry(e) {
+    if (!e || e.source !== "v.log" || typeof e.groupId !== "string" || !e.groupId) return null;
     var ts = e.timestamp ? new Date(e.timestamp).getTime() : Date.now();
     if (!Number.isFinite(ts)) ts = Date.now();
     return {
-      id: "native-" + ts + "-" + (++logFeedCounter),
-      ts: ts,
-      level: e.level || "log",
-      eventType: e.group || "",
-      groupName: e.group || "",
-      message: e.message || ""
+      id: "native-" + logFeedSession + "-" + (++logFeedCounter),
+      ts: ts, source: "v.log", level: "log", groupId: e.groupId,
+      eventType: e.eventType || "", message: e.message || ""
     };
   }
-
-  // System overlay panel events pushed from the native host (e.g. parental PIN
-  // entry). The web editor registers handlers via window.__cbSystemPanelHandlers
-  // (see openOverlayPanel in popup.js).
-  window.__cbSystemPanelHandlers = window.__cbSystemPanelHandlers || [];
-  window.__cbSystemPanelEvent = function (json) {
-    try {
-      var events = typeof json === "string" ? JSON.parse(json) : json;
-      if (!Array.isArray(events)) events = [events];
-      var handlers = window.__cbSystemPanelHandlers.slice();
-      for (var i = 0; i < events.length; i++) {
-        for (var j = 0; j < handlers.length; j++) {
-          try { handlers[j](events[i]); } catch (_) {}
-        }
-      }
-    } catch (_) {}
-  };
 
   window.__cbApplyNativeRuleLog = function (json) {
     try {
       var entries = typeof json === "string" ? JSON.parse(json) : json;
-      if (!Array.isArray(entries) || entries.length === 0) return;
-      var existing = Array.isArray(store.ruleLog) ? store.ruleLog : [];
-      var merged = existing.concat(entries);
-      if (merged.length > 200) merged = merged.slice(merged.length - 200);
-      var oldValue = store.ruleLog;
-      store.ruleLog = merged;
-      try {
-        window.localStorage.setItem(STORE_KEY, JSON.stringify(store));
-      } catch (_) {}
-      notifyChanges({ ruleLog: { oldValue: oldValue, newValue: merged } });
-
-      for (var i = 0; i < entries.length; i++) {
-        try {
-          window.__cbDispatchRuntimeMessage({
-            type: "log-feed-entry",
-            entry: nativeLogToFeedEntry(entries[i])
-          });
-        } catch (_) {}
-      }
+      if (!Array.isArray(entries)) return;
+      entries.forEach(function (nativeEntry) {
+        var entry = nativeLogToFeedEntry(nativeEntry);
+        if (!entry) return;
+        var feed = ruleLogs[entry.groupId] || [];
+        feed.push(entry);
+        ruleLogs[entry.groupId] = feed.slice(-200);
+        window.__cbDispatchRuntimeMessage({ type: "log-feed-entry", entry: entry });
+      });
+      pruneRuleLogs();
     } catch (_) {}
   };
 
@@ -254,14 +306,16 @@
     },
     set: function (items, callback) {
       var changes = {};
+      var before = {};
       Object.keys(items || {}).forEach(function (key) {
+        before[key] = store[key];
         changes[key] = {
           oldValue: deepClone(store[key]),
           newValue: deepClone(items[key])
         };
         store[key] = deepClone(items[key]);
       });
-      persist();
+      persist(Object.keys(items || {}), before);
       notifyChanges(changes);
       return settleCallback(undefined, callback);
     },
@@ -272,41 +326,40 @@
         changes[key] = { oldValue: deepClone(store[key]), newValue: undefined };
         delete store[key];
       });
-      persist();
+      persist(list);
       notifyChanges(changes);
       return settleCallback(undefined, callback);
     }
   };
 
-  // ----- custom-rule syntax check (parse-only; never executes user code) -----
-
-  function checkSyntax(source) {
-    try {
-      var text = String(source || "");
-      // Parse only. Executing the registration body here would run untrusted
-      // code in the privileged editor page and could freeze its UI before the
-      // isolated rule worker's execution deadline has a chance to intervene.
-      new Function('"use strict"; return (' + text + "\n);");
-      if (!/=>|\bfunction\b/.test(text)) {
-        return { ok: true, result: { ok: false, error: "Rule must evaluate to a function." } };
-      }
-      // Registration count is a UI preview only; the isolated native runtime
-      // supplies the authoritative count after Run. Cover raw event.on and
-      // the register/registerX aliases without evaluating the source.
-      var registrations = text.match(/\b(?:event|events)\s*\.\s*(?:on|register(?:[A-Z_$][\w$]*)?)\s*\(/g) || [];
-      var count = Math.min(1000, registrations.length);
-      return { ok: true, result: { ok: true, handlers: count } };
-    } catch (parseErr) {
-      return {
-        ok: true,
-        result: { ok: false, error: String((parseErr && parseErr.message) || parseErr) }
-      };
-    }
-  }
-
   // ----- runtime -----
 
   var messageListeners = [];
+
+  // A request Mac Vault answers through window.__cbNativeReply(id, reply).
+  var nativeReplies = {};
+  var nativeReplySeq = 0;
+  function nativeRequest(kind, message, fallback) {
+    var bridge = nativeBridge();
+    if (!bridge) return Promise.resolve(fallback);
+    return new Promise(function (resolve) {
+      var id = "r" + (++nativeReplySeq);
+      nativeReplies[id] = resolve;
+      setTimeout(function () {
+        if (nativeReplies[id]) { delete nativeReplies[id]; resolve(fallback); }
+      }, 5000);
+      try {
+        bridge.postMessage({ kind: kind, message: message, requestId: id });
+      } catch (_) {
+        delete nativeReplies[id];
+        resolve(fallback);
+      }
+    });
+  }
+  window.__cbNativeReply = function (id, reply) {
+    var resolve = nativeReplies[id];
+    if (resolve) { delete nativeReplies[id]; resolve(reply); }
+  };
 
   function bridgeOrResolve(kind, message, fallback) {
     var bridge = nativeBridge();
@@ -322,68 +375,33 @@
     var type = message && message.type;
     switch (type) {
       case "get-log-feed":
-        var feed = Array.isArray(store.ruleLog) ? store.ruleLog : [];
-        var mapped = feed.map(function (e, i) { return nativeLogToFeedEntry(e); });
-        return Promise.resolve({ ok: true, entries: mapped });
+        pruneRuleLogs();
+        return Promise.resolve({ ok: true, entries: (ruleLogs[message.groupId] || []).slice() });
       case "clear-log-feed":
-        store.ruleLog = [];
-        try { window.localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch (_) {}
-        return Promise.resolve({ ok: true });
-      case "check-custom-group-syntax":
-        return Promise.resolve(checkSyntax(message && message.source));
+        delete ruleLogs[message.groupId];
+        persistRuleLogs();
+        return nativeRequest("clear-rule-log", message, { ok: true });
       case "run-custom-group":
-        var runResult = checkSyntax(message && message.source);
-        var bridge = nativeBridge();
-        if (bridge) {
-          try { bridge.postMessage({ kind: "run-custom-group", message: message }); } catch (_) {}
-        }
-        return Promise.resolve({
-          ok: true,
-          loadResult: runResult && runResult.result ? runResult.result : { ok: true, handlers: 0 }
-        });
+        // The rule loads in Mac Vault's own engine; its load result comes back.
+        return nativeRequest("run-custom-group", message, { ok: false, error: "rules-not-running" });
       case "fire-snooze-press":
         return bridgeOrResolve("fire-snooze-press", message, { ok: true });
-      case "custom-panel-event":
-        return bridgeOrResolve("custom-panel-event", message, { ok: true });
-      case "show-system-panel":
-        return bridgeOrResolve("show-system-panel", message, { ok: true });
-      case "dismiss-system-panel":
-        return bridgeOrResolve("dismiss-system-panel", message, { ok: true });
-      case "request-app-blocking-permission":
-        return bridgeOrResolve("request-app-blocking-permission", message, { ok: true });
-      case "open-permission-settings":
-        return bridgeOrResolve("open-permission-settings", message, { ok: true });
-      case "refresh-blocking-rules":
-        return bridgeOrResolve("refresh-blocking-rules", message, { ok: true });
-      case "unload-custom-group":
-        return bridgeOrResolve("unload-custom-group", message, { ok: true });
-      case "connection-server-start":
-        return bridgeOrResolve("connection-server-start", message, { ok: true });
-      case "connection-server-stop":
-        return bridgeOrResolve("connection-server-stop", message, { ok: true });
-      case "connection-connect":
-        return bridgeOrResolve("connection-connect", message, { ok: true });
-      case "connection-disconnect":
-        return bridgeOrResolve("connection-disconnect", message, { ok: true });
-      case "connection-status":
-        return bridgeOrResolve("connection-status", message, { ok: true });
-      case "group-connect":
-        return bridgeOrResolve("group-connect", message, { ok: true });
-      case "group-disconnect":
-        return bridgeOrResolve("group-disconnect", message, { ok: true });
-      case "group-sync":
-        return bridgeOrResolve("group-sync", message, { ok: true });
-      case "groups-announce":
-        return bridgeOrResolve("groups-announce", message, { ok: true });
+      case "vault-classifier-tag-names":
+        return nativeRequest("vault-classifier-tag-names", message, { ok: false, names: [] });
+      case "reset-group-runtime":
+        return bridgeOrResolve("reset-group-runtime", message, { ok: true });
       case "clusters-status":
         return bridgeOrResolve("clusters-status", message, { ok: true });
+      case "group-link":
+      case "group-unlink":
+        return bridgeOrResolve(message.type, message, { ok: true });
       default:
         return Promise.resolve({ ok: true });
     }
   }
 
   var runtime = {
-    id: "ios-blocker",
+    id: window.__CB_DESKTOP_PROGRAM_ID === "windowsapp" ? "windows-vault" : "mac-vault",
     lastError: null,
     getURL: function (path) {
       try {
@@ -393,7 +411,7 @@
       }
     },
     getManifest: function () {
-      return { version: "1.2.0", name: "macosBlocker" };
+      return window.__CB_DESKTOP_MANIFEST || { version: "1.2.0", name: "macosBlocker" };
     },
     sendMessage: function (message, callback) {
       var result = handleSendMessage(message);

@@ -6,17 +6,21 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var PROTOCOL_VERSION = 2;
-  var DESKTOP_PROGRAMS = ["macapp", "windowsapp"];
-  var REMOTE_PROGRAMS = ["chrome", "edge", "firefox", "safari", "opera", "browser"];
-
-  function normalizePairingKey(value) {
-    var key = typeof value === "string" ? value.trim().toLowerCase() : "";
-    return /^[0-9a-f]{64}$/.test(key) ? key : "";
-  }
+  var PROTOCOL_VERSION = 4;
+  // A desktop Vault app owns the fixed local hub. Desktop identities can also
+  // be the hub identity when they win the loopback listener.
+  var DESKTOP_PROGRAMS = ["macapp", "windowsapp", "classifier"];
+  var HUB_PROGRAMS = DESKTOP_PROGRAMS.slice();
+  // Safari proves its identity through its containing native app extension;
+  // Chromium uses its registered native host. Unsupported engines fail closed.
+  var REMOTE_PROGRAMS = ["chrome", "edge", "safari"];
 
   function isDesktopProgram(program) {
     return DESKTOP_PROGRAMS.indexOf(String(program || "")) >= 0;
+  }
+
+  function isHubProgram(program) {
+    return HUB_PROGRAMS.indexOf(String(program || "")) >= 0;
   }
 
   function isRemoteProgram(program) {
@@ -27,9 +31,20 @@
     return isDesktopProgram(value) ? String(value) : "macapp";
   }
 
+  // The browser program a user agent names (the popup and the worker agree).
+  function browserProgramId(userAgent) {
+    var ua = String(userAgent || "");
+    if (/\bEdg\//.test(ua)) return "edge";
+    if (/\bFirefox\//.test(ua)) return "firefox";
+    if (/\bOPR\//.test(ua) || /\bOpera\//.test(ua)) return "opera";
+    if (/\bChrome\//.test(ua)) return "chrome";
+    if (/\bSafari\//.test(ua)) return "safari";
+    return "browser";
+  }
+
   function hubProgramFromStatus(status) {
     var program = status && status.hubProgram;
-    return isDesktopProgram(program) ? program : "";
+    return isHubProgram(program) ? program : "";
   }
 
   function localMember(cluster, program) {
@@ -39,20 +54,14 @@
     }) || null;
   }
 
-  // A member carrying a pinned group id must resolve by id or not at all. Name
-  // fallback is only for pre-id-pinning cluster snapshots.
+  // A member resolves by its pinned group id or not at all.
   function groupForCluster(groups, cluster, program) {
     var list = Array.isArray(groups) ? groups : [];
     var member = localMember(cluster, program);
     if (!member) return null;
-    if (member.groupId) {
-      return list.find(function (group) {
-        return group && group.id === member.groupId;
-      }) || null;
-    }
-    var name = member.groupName || (cluster && cluster.groupName) || "";
+    // Links are by group id (made by the user), never by name.
     return list.find(function (group) {
-      return group && group.name === name;
+      return group && member.groupId && group.id === member.groupId;
     }) || null;
   }
 
@@ -62,18 +71,20 @@
     return list.find(function (cluster) {
       var member = localMember(cluster, program);
       if (!member) return false;
-      return member.groupId ? member.groupId === group.id : member.groupName === group.name;
+      return Boolean(member.groupId) && member.groupId === group.id;
     }) || null;
   }
 
   return {
     PROTOCOL_VERSION: PROTOCOL_VERSION,
     DESKTOP_PROGRAMS: DESKTOP_PROGRAMS.slice(),
+    HUB_PROGRAMS: HUB_PROGRAMS.slice(),
     REMOTE_PROGRAMS: REMOTE_PROGRAMS.slice(),
-    normalizePairingKey: normalizePairingKey,
     isDesktopProgram: isDesktopProgram,
+    isHubProgram: isHubProgram,
     isRemoteProgram: isRemoteProgram,
     nativeProgramId: nativeProgramId,
+    browserProgramId: browserProgramId,
     hubProgramFromStatus: hubProgramFromStatus,
     localMember: localMember,
     groupForCluster: groupForCluster,

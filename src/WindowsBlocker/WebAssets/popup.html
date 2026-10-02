@@ -3,51 +3,27 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title data-i18n="app.title">Windows Vault</title>
+    <title data-i18n="app.title">Adamancia Vault</title>
     <link rel="icon" media="(prefers-color-scheme: light)" href="icons/adamancia-vault-lock-v3-128.png" />
     <link rel="icon" media="(prefers-color-scheme: dark)" href="icons/adamancia-vault-lock-inverse-dark-128.png?v=20260712b" />
+    <link rel="stylesheet" href="vault-ui.css" />
     <link rel="stylesheet" href="popup.css" />
+    <link rel="stylesheet" href="scenes.css" />
     <link rel="stylesheet" href="vault-info.css" />
   </head>
   <body>
     <main class="popup">
-      <header class="hero">
-        <div class="hero-topbar">
-          <div>
-            <h1 data-i18n="app.shortTitle">Windows Vault</h1>
-          </div>
-          <div class="hero-actions">
-            <button id="settingsButton" type="button" class="secondary" data-i18n="settings.button">
-              Settings
-            </button>
-            <button id="manualButton" type="button" class="secondary" data-i18n="manual.button">
-              Instruction Manual
-            </button>
-            <div class="language-picker vui-info-field" data-info-key="languageSelect" data-info-label="Language" data-info-copy="Choose the app’s interface language. Stored groups and names stay the same.">
-              <select id="languageSelect" aria-label="Language" data-i18n-aria-label="language.label" translate="no" class="notranslate">
-                <option value="en">English</option>
-                <option value="zh">简体中文</option>
-                <option value="es">Espanol</option>
-                <option value="hi">हिन्दी</option>
-                <option value="ar">العربية</option>
-                <option value="bn">বাংলা</option>
-                <option value="pt">Portugues</option>
-                <option value="ru">Русский</option>
-                <option value="ja">日本語</option>
-                <option value="pa">ਪੰਜਾਬੀ</option>
-                <option value="de">Deutsch</option>
-                <option value="fr">Francais</option>
-                <option value="ko">한국어</option>
-                <option value="tr">Turkce</option>
-                <option value="vi">Tieng Viet</option>
-                <option value="it">Italiano</option>
-                <option value="th">ไทย</option>
-                <option value="nl">Nederlands</option>
-                <option value="pl">Polski</option>
-                <option value="id">Bahasa Indonesia</option>
-              </select>
-            </div>
-          </div>
+      <header class="vui-topbar">
+        <!-- Mac Vault: the scene switch (Vault / Classifier / Activity). -->
+        <nav class="vui-tabs desktop-only" id="sceneTabs" aria-label="Scene">
+          <button type="button" class="vui-tab is-active" data-scene="vault" data-i18n="scene.vault">Vault</button>
+          <button type="button" class="vui-tab" data-scene="classifier" data-i18n="scene.classifier">Classifier</button>
+          <button type="button" class="vui-tab" data-scene="activity" data-i18n="scene.activity">Activity</button>
+        </nav>
+        <h1 class="browser-only app-title" data-i18n="app.shortTitle">Adamancia Vault</h1>
+        <div class="vui-topbar-links">
+          <button id="settingsButton" type="button" class="secondary" data-i18n="settings.button">Settings</button>
+          <button id="manualButton" type="button" class="secondary" data-i18n="manual.button">Manual</button>
         </div>
       </header>
 
@@ -65,7 +41,7 @@
           </span>
         </div>
         <div class="site-access-banner-actions">
-          <button id="siteAccessGrantButton" type="button" data-i18n="siteAccess.grant">
+          <button id="siteAccessGrantButton" type="button" class="primary" data-i18n="siteAccess.grant">
             Grant access
           </button>
           <button
@@ -81,27 +57,17 @@
 
       <section id="layout" class="layout">
         <aside class="groups-panel">
-          <div class="panel-header">
-            <div>
-              <h2 data-i18n="groups.title">Blocking groups</h2>
-              <p class="panel-copy" data-i18n="groups.copy" data-info="groups.copy">
-                Drag groups to reorder them. Each group has its own rules and toggle.
-              </p>
-            </div>
+          <div class="groups-head">
+            <h2 data-i18n="groups.title">Blocking groups</h2>
             <div class="add-group-controls">
-              <span class="vui-info-field" data-info-key="addGroupType" data-info-label="Group type" data-info-copy="Choose the kind of blocking group to create, then click Add."><select id="addGroupType" aria-label="Block group type to add" data-i18n-aria-label="groups.addTypeAria">
-                <option value="site" data-i18n="groupType.site">Apps</option>
-                <option value="custom" data-i18n="groupType.custom">Custom</option>
-              </select></span>
-              <div class="add-group-buttons">
-                <button id="addGroupButton" type="button" data-i18n="groups.addButton">Add</button>
-                <button id="deleteAllGroupsButton" type="button" class="secondary danger" data-i18n="groups.deleteAllButton">Clear</button>
-              </div>
+              <!-- A group covers websites, platforms and apps through "Applies to";
+                   only a custom rule is a different kind of group. -->
+              <button id="addCustomGroupButton" type="button" class="secondary" data-i18n="groups.addCustom">Add custom rule</button>
+              <button id="addGroupButton" type="button" class="primary" data-i18n="groups.addButton">Add</button>
             </div>
           </div>
           <p id="bulkActionNotice" class="field-help"></p>
-
-          <div id="groupList" class="group-list" aria-label="Blocking groups" data-i18n-aria-label="groups.listAria"></div>
+          <div id="groupList" data-vui-search="vault-groups" data-vui-search-copy="Find a blocking group by name. Clear search before reordering groups." data-vui-search-label="Search groups" data-vui-search-items=".group-card" class="group-list vui-list-box" tabindex="0" aria-label="Blocking groups" data-i18n-aria-label="groups.listAria"></div>
         </aside>
 
         <div
@@ -114,206 +80,97 @@
           tabindex="0"
         ></div>
 
-        <section class="editor-panel">
-          <div class="panel-header editor-header">
-            <div>
-              <h2 id="editorTitle" data-i18n="editor.title">Group settings</h2>
-              <p id="editorCopy" class="panel-copy" data-i18n="editor.copy" data-info="editor.copy">
-                Choose the apps you want this group to block.
-              </p>
-              <p id="groupTypeSummary" class="panel-copy" data-info></p>
-            </div>
-            <div class="editor-actions">
-              <button id="exportGroupButton" type="button" class="secondary" data-i18n="editor.exportGroupButton">
-                Export
-              </button>
-              <button id="importGroupButton" type="button" class="secondary" data-i18n="editor.importGroupButton">
-                Import
-              </button>
-              <button id="deleteGroupButton" type="button" class="secondary danger" data-i18n="editor.deleteGroupButton">
-                Delete group
-              </button>
-            </div>
+        <section id="editorPanel" class="editor-panel">
+          <!-- No groups yet: the editor shows only this (owner 2026-09-30). -->
+          <div id="editorEmpty" class="editor-empty hidden">
+            <p data-i18n="empty.noGroups">No blocking groups yet. Add your first group to begin.</p>
+            <button id="emptyAddGroupButton" type="button" class="primary" data-i18n="groups.addButton">Add</button>
           </div>
-
-          <label class="label" for="groupName" data-i18n="editor.groupName" data-info-key="editor.groupName" data-info-copy="The name shown for this blocking group. Renaming it does not change its rules.">Group name</label>
-          <input
-            id="groupName"
-            type="text"
-            maxlength="60"
-            placeholder="Work distractions"
-            data-i18n-placeholder="editor.groupNamePlaceholder"
-          />
-
-          <label class="checkbox-row" for="groupEnabled">
-            <input id="groupEnabled" type="checkbox" />
-            <span data-i18n="editor.enableGroup" data-info-key="editor.enableGroup" data-info-copy="Turn this group’s blocking rules on or off. Frozen groups cannot be changed.">Enable this group</span>
-          </label>
-
-          <div id="blockModeSection">
-            <label class="label" for="blockMode" data-i18n="editor.blockMode" data-info-key="editor.blockMode" data-info-copy="Block immediately, or let the group’s targets use a time allowance before blocking.">Blocking behavior</label>
-            <select id="blockMode">
-              <option value="instant" data-i18n="mode.instant">Block immediately</option>
-              <option value="after-minutes" data-i18n="mode.afterMinutes">Block after a number of minutes</option>
-              <option value="timer" data-i18n="mode.timer">Timer (count up, no block)</option>
-            </select>
+          <div class="editor-head">
+            <div class="vui-info-field" data-info-key="groupName" data-info-label="Group name" data-info-copy="The name shown for this blocking group. Renaming it does not change its rules.">
+            <input
+              id="groupName"
+              class="editor-name"
+              type="text"
+              maxlength="60"
+              placeholder="Work distractions"
+              data-i18n-placeholder="editor.groupNamePlaceholder"
+              aria-label="Group name"
+              data-i18n-aria-label="editor.groupName"
+            />
+            </div>
+            <button id="deleteGroupButton" type="button" class="danger" data-i18n="editor.deleteGroupButton">Delete group</button>
+            <label class="editor-on" for="groupEnabled">
+              <input id="groupEnabled" type="checkbox" />
+              <span data-i18n="editor.enableGroup" data-info-key="editor.enableGroup" data-info-copy="Turn this group’s blocking rules on or off. Frozen groups cannot be changed.">Enable this group</span>
+            </label>
           </div>
+          <!-- Kept for the editor's code; the name field above is the title. -->
+          <h2 id="editorTitle" hidden></h2>
+          <p id="editorCopy" hidden></p>
+          <p id="groupTypeSummary" hidden data-info></p>
 
-          <!-- Redirection removed: app blocking has no URL to redirect to.
-               A hidden field is retained only so the shared editor pipeline
-               keeps working; it is always empty and ignored by enforcement. -->
-          <input id="fallbackUrl" type="hidden" value="" />
-
-          <section id="siteSettingsSection">
-            <label class="label" data-i18n="apps.label" data-info-key="apps.label" data-info-copy="Choose the installed apps that this group applies to. Use the plus button to find an app.">Blocked apps</label>
-            <p class="field-help" data-i18n="apps.help" data-info="apps.help">
-              Add the apps you want this group to block. Use the plus button to search installed apps.
-            </p>
-
-            <!-- Hidden backing store: newline-free JSON array of { id, name }.
-                 The chips UI below is the editable surface; this field keeps the
-                 existing draft/autosave pipeline working unchanged. -->
-            <input id="blockedAppsData" type="hidden" />
-
-            <div id="blockedAppsList" class="app-chip-list" role="list"></div>
-
-            <div class="actions">
-              <button id="clearSitesButton" type="button" class="secondary danger" data-i18n="apps.clearButton">
-                Clear Apps
-              </button>
-            </div>
-
-            <!-- Read-only mirror of the blocked-list type owned by the linked
-                 browser (websites here on the Mac). Shown only for clustered
-                 Default groups; styled translucent because it is not editable
-                 from this side. -->
-            <div id="bridgeMirrorSection" class="bridge-mirror-section hidden">
-              <label class="label" id="bridgeMirrorLabel" data-i18n="connectionGroup.mirrorSites" data-info-key="connectionGroup.mirrorSites" data-info-copy="The website rules mirrored from the browser side of this connected group.">
-                Blocked websites
-              </label>
-              <p class="field-help" id="bridgeMirrorHint" data-i18n="connectionGroup.mirrorSitesHint" data-info="connectionGroup.mirrorSitesHint">
-                Managed on the linked app. Shown here read-only.
-              </p>
-              <div id="bridgeMirrorList" class="bridge-mirror-list" role="list"></div>
-            </div>
+          <section class="editor-block">
+            <h3 class="block-title" data-i18n="editor.whatTitle">What</h3>
+            <section id="groupScopesSection" class="hidden">
+            <label id="groupScopesLabel" class="label" for="groupScopesAdd" data-i18n="scopes.label" data-info-key="scopes.label" data-info-copy="Choose the websites, platforms, or apps that this group applies to. Each entry keeps its own page controls.">Applies to</label>
+            <div id="groupScopesList" data-vui-search="vault-scopes" data-vui-search-label="Search targets" data-vui-search-items=".scope-chip" class="site-chip-list vui-list-box" role="list" tabindex="0" aria-labelledby="groupScopesLabel"></div>
+            <select id="groupScopesAdd" class="scope-add-select"></select>
+            <p id="entryOwnerHint" class="field-help hidden" data-i18n="scopes.browserOwnedHint" data-info="scopes.browserOwnedHint">Websites and platforms are set in the browser extension; Mac Vault only controls apps.</p>
           </section>
 
-          <div id="timedSettings" class="timed-settings">
-            <div class="settings-grid">
-              <div id="allowedMinutesRow">
-                <label class="label" for="allowedMinutes" data-i18n="timed.allowedMinutes" data-info-key="timed.allowedMinutes" data-info-copy="The usage time this group allows before blocking. Enter minutes; fractions are accepted.">Allowed minutes before block</label>
-                <input
-                  id="allowedMinutes"
-                  type="number"
-                  min="0.1"
-                  step="0.1"
-                  inputmode="decimal"
-                  placeholder="15"
-                  data-i18n-placeholder="timed.allowedMinutesPlaceholder"
-                />
-              </div>
+            <section id="siteSettingsSection">
+            <label class="label" id="siteSettingsLabel" data-i18n="sites.label" data-info-key="sites.label" data-info-copy="Add website addresses to this group. Matching sites are blocked, or allowed if the allowlist switch is on.">Blocked websites</label>
 
-              <div>
-                <label class="label" for="resetIntervalHours" data-i18n="timed.resetHours" data-info-key="timed.resetHours" data-info-copy="How often a fixed time allowance starts again. The rolling-limit setting uses this interval as its lookback window.">Timer reset interval (hours)</label>
-                <input
-                  id="resetIntervalHours"
-                  type="number"
-                  min="0.1"
-                  step="0.1"
-                  inputmode="decimal"
-                  placeholder="24"
-                  data-i18n-placeholder="timed.resetHoursPlaceholder"
-                />
-              </div>
-            </div>
+            <!-- Hidden backing store: newline-separated hostnames. The chip list
+                 below is the editable surface; this field keeps the existing
+                 draft / autosave / save pipeline working unchanged. -->
+            <textarea id="blockedSites" hidden></textarea>
 
-            <label class="checkbox-row compact" for="resetAtMidnight">
-              <input id="resetAtMidnight" type="checkbox" />
-              <span data-i18n="timed.resetAtMidnight" data-info-key="timed.resetAtMidnight" data-info-copy="Also restart the allowance cycle at local midnight. With a rolling limit, usage before midnight no longer counts.">Also restart the reset cycle at midnight</span>
-            </label>
+            <div id="blockedSitesList" data-vui-search="vault-sites" data-vui-search-label="Search websites" data-vui-search-items=".site-chip" class="site-chip-list vui-list-box" role="list" tabindex="0" aria-labelledby="siteSettingsLabel"></div>
 
-            <label class="checkbox-row compact" for="rollingLimit">
-              <input id="rollingLimit" type="checkbox" />
-              <span data-i18n="timed.rollingLimit" data-info-key="timed.rollingLimit" data-info-copy="Count usage within the latest reset interval rather than a fixed allowance period. Older usage gradually leaves that window.">Rolling limit: used time comes back once it is older than the reset interval</span>
-            </label>
-
-            <div class="usage-row">
-              <p id="usageSummary" class="usage-summary"></p>
-            </div>
-          </div>
-
-          <section id="customSettingsCard" class="section-card hidden">
-            <div class="section-header">
-              <div>
-                <h3 data-i18n="custom.title" data-info-key="custom-code" data-info-copy="Write a custom rule using the API documented by this app. Running the rule activates its code for this group.">Blocking Rules</h3>
-              </div>
-            </div>
-
-            <div id="blockingRulesEditor" class="code-editor">
-              <pre id="blockingRulesHighlight" class="code-editor-highlight" aria-hidden="true"></pre>
+            <div id="siteAddPanel" class="site-add-panel hidden">
               <textarea
-                id="blockingRules"
-                rows="8"
-                aria-label="Custom Rules"
-                data-i18n-aria-label="custom.rules"
-                placeholder="(event, helpers) => {&#10;  // Register handlers here.&#10;}"
-                data-i18n-placeholder="custom.rulesPlaceholder"
+                id="siteAddInput"
+                rows="3"
+                placeholder="facebook.com&#10;youtube.com&#10;news.ycombinator.com"
+                data-i18n-placeholder="sites.placeholder"
                 spellcheck="false"
               ></textarea>
-            </div>
-            <p id="blockingRulesLint" class="code-editor-lint" aria-live="polite"></p>
-            <div class="field-actions">
-              <button id="runCustomGroupButton" type="button" class="weird" data-i18n="custom.runButton">
-                Run
-              </button>
-              <button id="checkSyntaxButton" type="button" class="secondary weird" data-i18n="custom.letAiCodeButton">
-                Write with AI
-              </button>
-              <span id="runCustomGroupStatus" class="run-status"></span>
-            </div>
-            <div id="aiPromptPanel" class="ai-prompt-panel hidden">
-              <label class="label" for="aiPromptInput" data-i18n="custom.aiPromptLabel" data-info-key="custom.aiPromptLabel" data-info-copy="Describe the rule you want. Copy prompt for AI includes your request, current code, and the rule API reference.">Prompt for AI</label>
-              <textarea
-                id="aiPromptInput"
-                rows="4"
-                data-i18n-placeholder="custom.aiPromptPlaceholder"
-                spellcheck="true"
-              ></textarea>
-              <div class="field-actions">
-                <button id="aiPromptCopyButton" type="button" class="weird" data-i18n="custom.aiPromptCopyButton">
-                  Copy AI prompt
+              <div class="site-add-actions">
+                <button id="siteAddCancelButton" type="button" class="secondary" data-i18n="sites.addCancel">
+                  Cancel
                 </button>
-                <span id="aiPromptStatus" class="run-status"></span>
+                <button id="siteAddConfirmButton" type="button" class="primary" data-i18n="sites.addConfirm">
+                  Add
+                </button>
               </div>
-              <p class="field-help" data-i18n="custom.aiPromptHelp" data-info="custom.aiPromptHelp">
-                This copies a bundled prompt with your request, the current rule, and the custom-rule API reference. Paste it into your AI tool, then paste the generated code back here.
-              </p>
             </div>
-
-            <details id="logFeedSection" class="log-feed">
-              <summary>
-                <span data-i18n="logFeed.title">Log</span>
-                <span id="logFeedCount" class="log-feed-count">0</span>
-              </summary>
-              <div class="log-feed-toolbar">
-                <button id="logFeedDownload" type="button" class="weird" title="Download logs" aria-label="Download logs">⬇</button>
-                <span class="log-feed-hint" data-i18n="logFeed.hint" data-info="logFeed.hint">Live feed of helpers.getLogHelper() output from every event dispatch.</span>
-                <button id="logFeedClear" type="button" class="weird" data-i18n="logFeed.clear">Clear</button>
-              </div>
-              <div id="logFeedList" class="log-feed-list" aria-live="polite"></div>
-              <p id="logFeedEmpty" class="log-feed-empty" data-i18n="logFeed.empty">No activity yet. Trigger an event (e.g. press Start Snooze, switch tabs, or click Run) to see logs here.</p>
-            </details>
           </section>
 
-          <!-- Unified, data-driven platform-rules card. Which sub-blocks show
-               (creator/account list, subreddit list, server list, hide-element
-               toggles) is decided per platform by popup.js from the registry. -->
-          <section id="platformRulesCard" class="section-card hidden">
-            <div class="section-header">
-              <div>
-                <h3 id="platformRulesTitle"></h3>
-                <p id="platformRulesCopy" class="section-copy" data-info></p>
-              </div>
+            <section id="appsSettingsSection" class="hidden">
+            <label id="appsSettingsLabel" class="label" data-i18n="apps.label" data-info-key="apps.label" data-info-copy="Choose the installed apps that this group applies to. Use the plus button to find an app.">Blocked apps</label>
+            <p id="appsHelp" class="field-help" data-i18n="apps.help" data-info="apps.help">
+              Add the apps you want this group to block. Use the plus button to search installed apps.
+            </p>
+            <input id="blockedAppsData" type="hidden" />
+            <div id="blockedAppsList" data-vui-search="vault-apps" data-vui-search-label="Search saved apps" data-vui-search-items=".app-chip" class="app-chip-list vui-list-box" role="list" tabindex="0" aria-labelledby="appsSettingsLabel"></div>
+          </section>
+
+            <section id="platformRulesCard" class="hidden">
+            <!-- Straight in "What", like the custom rules (no card of its own). -->
+            <span id="platformRulesTitle" class="label"></span>
+            <p id="platformRulesCopy" class="field-help" data-info></p>
+
+            <!-- Verified card/content controls. Kept immediately below the
+                 platform choice so each platform's actual available card
+                 controls are visible before author and feed-scope settings. -->
+            <div id="surfaceHidesSection" class="platform-fields hidden">
+              <label id="surfaceHidesTitle" class="label" data-i18n="surfaceHide.contentTitle" data-info-key="surfaceHide.contentTitle" data-info-copy="Choose which supported parts of the platform’s pages to hide. These controls can be combined.">Content controls</label>
+              <p id="surfaceHidesHelp" class="field-help" data-i18n="surfaceHide.contentHelp" data-info="surfaceHide.contentHelp">
+                Hide the supported parts of a page that you choose. You can combine these controls.
+              </p>
+              <div id="surfaceHidesList" class="surface-hides-list"></div>
             </div>
 
             <!-- Creator / account fields (video platforms + Twitter/X) -->
@@ -326,66 +183,69 @@
                   <option value="long"></option>
                   <option value="post"></option>
                 </select>
+                <p id="platformVideoModeHelp" class="field-help" data-info></p>
               </div>
 
               <label id="platformAuthorModeLabel" class="label" for="platformAuthorMode" data-info-key="platformAuthorModeLabel" data-info-copy="Choose how the listed content sources are matched. The selected mode determines whether the list is blocked or exempted."></label>
-              <select id="platformAuthorMode">
-                <option value="none"></option>
-                <option value="include"></option>
-                <option value="exclude"></option>
-              </select>
+              <select id="platformAuthorMode"></select>
+              <p id="platformAuthorModeHelp" class="field-help" data-info></p>
 
-              <label id="platformAuthorsLabel" class="label" for="platformAuthors" data-info-key="platformAuthorsLabel" data-info-copy="Enter supported content-source identifiers or links, one per line. The selected source-filter mode determines how the list is used."></label>
-              <textarea
-                id="platformAuthors"
-                rows="5"
-                placeholder="@creatorhandle&#10;https://www.youtube.com/@anothercreator&#10;channel/UC..."
-                data-i18n-placeholder="filter.platformAuthorsPlaceholder"
-                spellcheck="false"
-              ></textarea>
-              <p id="platformVideoHelp" class="field-help" data-info></p>
+              <div id="platformAuthorsBlock">
+                <label id="platformAuthorsLabel" class="label" for="platformAuthors" data-info-key="platformAuthorsLabel" data-info-copy="Enter supported content-source identifiers or links, one per line. The selected source-filter mode determines how the list is used."></label>
+                <textarea
+                  id="platformAuthors"
+                  rows="5"
+                  placeholder="@creatorhandle&#10;https://www.youtube.com/@anothercreator&#10;channel/UC..."
+                  data-i18n-placeholder="filter.platformAuthorsPlaceholder"
+                  spellcheck="false"
+                ></textarea>
+                <p id="platformVideoHelp" class="field-help" data-info></p>
+              </div>
 
+              <!-- Content-tag filter: block by what the Vault classifier tagged
+                   the content. Shown only for tag-compatible platforms. -->
               <label class="checkbox-row compact" for="platformBlockHomePage">
                 <input id="platformBlockHomePage" type="checkbox" />
                 <span data-i18n="filter.blockHomePage" data-info-key="filter.blockHomePage" data-info-copy="Also block the platform’s supported home or feed pages.">Block home/feed pages</span>
               </label>
 
-              <!-- Redirection removed on macOS: "skip to next" was a
-                   redirect-style behavior. Hidden field retained only for
-                   pipeline stability. -->
-              <div id="skipToNextOnBlockRow" class="hidden">
-                <input id="skipToNextOnBlock" type="checkbox" hidden />
-              </div>
             </div>
 
-            <!-- Reddit (subreddit) fields -->
-            <div id="redditFields" class="platform-fields hidden">
-              <label class="label" for="redditMode" data-i18n="reddit.mode" data-info-key="reddit.mode" data-info-copy="Choose whether the listed Reddit communities are blocked or allowed.">Community filter</label>
-              <select id="redditMode">
-                <option value="all" data-i18n="reddit.modeAll">Apply to all Reddit pages</option>
-                <option value="include" data-i18n="reddit.modeInclude">Apply to certain subreddits</option>
-                <option value="exclude" data-i18n="reddit.modeExclude">Apply to all except certain subreddits</option>
+            <!-- Content-tag filter: shown for any platform whose feed cards
+                 carry classifier tags (youtube, bilibili, reddit, …). Sibling
+                 of the per-platform field groups so it shows for all of them. -->
+            <div id="platformTagFields" class="platform-tag-fields hidden">
+              <label class="label" for="platformTagMode" data-i18n="tagFilter.mode" data-info-key="tagFilter.mode" data-info-copy="Choose whether matching tags are blocked or exempted. Tags come from the Classifier.">Content tag filter</label>
+              <select id="platformTagMode">
+                <option value="all" data-i18n="tagFilter.modeAll">Apply to all content</option>
+                <option value="include" data-i18n="tagFilter.modeInclude">Block certain tags</option>
+                <option value="exclude" data-i18n="tagFilter.modeExclude">Block all except certain tags</option>
               </select>
-
-              <label class="label" for="redditSubreddits" data-i18n="reddit.subreddits" data-info-key="reddit.subreddits" data-info-copy="Add Reddit community names or links, one per line.">Communities</label>
-              <textarea
-                id="redditSubreddits"
-                rows="6"
-                placeholder="productivity&#10;programming&#10;r/focus"
-                data-i18n-placeholder="reddit.subredditsPlaceholder"
-                spellcheck="false"
-              ></textarea>
-              <p class="field-help" data-i18n="reddit.help" data-info="reddit.help">
-                Use one subreddit per line. Plain names like `productivity` and paths like `r/productivity` are both accepted.
+              <p class="field-help" data-i18n="tagFilter.help" data-info="tagFilter.help">
+                Filter content using its Classifier tags. One rule per line: "Gaming" matches that tag; "Gaming @3" sets a minimum confidence; "Gaming + Drama" requires both; "!Tutorial" makes an exception.
               </p>
-
-              <label class="checkbox-row compact" for="redditBlockHomePage">
-                <input id="redditBlockHomePage" type="checkbox" />
-                <span data-i18n="filter.blockHomePage" data-info-key="filter.blockHomePage" data-info-copy="Also block the platform’s supported home or feed pages.">Block home/feed pages</span>
-              </label>
-              <p class="field-help" data-i18n="filter.blockHomePageRedditHelp" data-info="filter.blockHomePageRedditHelp">
-                Blocks the Reddit home feed, r/popular, and r/all when enabled.
-              </p>
+              <div id="platformTagListBlock">
+                <label class="label" for="platformTags" data-i18n="tagFilter.tags" data-info-key="tagFilter.tags" data-info-copy="Add tags or tag rules to match against classified content. A confidence suffix such as @3 sets a minimum score.">Tags</label>
+                <textarea
+                  id="platformTags" data-vui-find-text
+                  rows="4"
+                  placeholder="Gaming&#10;Drama @3"
+                  data-i18n-placeholder="tagFilter.tagsPlaceholder"
+                  spellcheck="false"
+                ></textarea>
+                <div id="platformTagSuggestions" class="tag-suggestions hidden"></div>
+                <div class="content-tag-row">
+                  <label class="label" for="platformTagEffect" data-i18n="tagFilter.effect" data-info-key="tagFilter.effect" data-info-copy="Choose whether matching content is covered or hidden. Available effects depend on the platform.">When it matches</label>
+                  <select id="platformTagEffect">
+                    <option value="dim" data-i18n="tagFilter.effectDim">Cover content (tags remain editable)</option>
+                    <option value="block" data-i18n="tagFilter.effectHide">Hide content</option>
+                  </select>
+                </div>
+                <label class="checkbox-row compact" for="platformTagBlockPage">
+                  <input id="platformTagBlockPage" type="checkbox" checked />
+                  <span data-i18n="tagFilter.blockPage" data-info-key="tagFilter.blockPage" data-info-copy="Also cover the entire content page when this tag rule blocks it.">Also cover a matching content page</span>
+                </label>
+              </div>
             </div>
 
             <!-- Discord (server/channel) fields -->
@@ -418,215 +278,251 @@
               </p>
             </div>
 
-            <!-- Hide elements (surface hides): chrome + content-type toggles -->
-            <div id="surfaceHidesSection" class="platform-fields hidden">
-              <label class="label" data-i18n="surfaceHide.title">Hide elements</label>
-              <p class="field-help" data-i18n="surfaceHide.help" data-info="surfaceHide.help">
-                Hide specific buttons or content surfaces on this platform, independent of blocking.
-              </p>
-              <div id="surfaceHidesList" class="surface-hides-list"></div>
-            </div>
           </section>
 
-          <section id="scheduleSection" class="section-card">
-            <div class="section-header">
-              <div>
-                <h3 data-i18n="schedule.title">Schedule</h3>
-                <p class="section-copy" data-i18n="schedule.copy" data-info="schedule.copy">
-                  Limit this group to certain days or time windows.
-                </p>
-              </div>
+            <section id="customSettingsCard" class="hidden">
+            <span class="label" data-i18n="custom.title" data-info-key="custom.title" data-info-copy="Write a custom rule using the Vault rule API. Running the rule activates the code for this group.">Custom rule</span>
+
+
+            <div id="blockingRulesEditor" class="code-editor">
+              <pre id="blockingRulesHighlight" class="code-editor-highlight" aria-hidden="true"></pre>
+              <textarea
+                id="blockingRules"
+                rows="8"
+                aria-label="Custom rule"
+                data-i18n-aria-label="custom.rules"
+                placeholder="(on, v) => {&#10;  // Register handlers here.&#10;}"
+                data-i18n-placeholder="custom.rulesPlaceholder"
+                spellcheck="false"
+              ></textarea>
             </div>
-
-            <label class="label" data-i18n="schedule.days" data-info-key="schedule.days" data-info-copy="Select the weekdays on which the group’s blocking rules apply.">Days to block</label>
-            <div id="daysGrid" class="days-grid">
-              <label class="day-pill"><input type="checkbox" value="monday" /> <span data-i18n="day.mon">Mon</span></label>
-              <label class="day-pill"><input type="checkbox" value="tuesday" /> <span data-i18n="day.tue">Tue</span></label>
-              <label class="day-pill"><input type="checkbox" value="wednesday" /> <span data-i18n="day.wed">Wed</span></label>
-              <label class="day-pill"><input type="checkbox" value="thursday" /> <span data-i18n="day.thu">Thu</span></label>
-              <label class="day-pill"><input type="checkbox" value="friday" /> <span data-i18n="day.fri">Fri</span></label>
-              <label class="day-pill"><input type="checkbox" value="saturday" /> <span data-i18n="day.sat">Sat</span></label>
-              <label class="day-pill"><input type="checkbox" value="sunday" /> <span data-i18n="day.sun">Sun</span></label>
-            </div>
-
-            <label class="label" for="scheduleWindows" data-i18n="schedule.windows" data-info-key="schedule.windows" data-info-copy="Limit blocking to these daily time ranges. Leave blank for all day; use one range per line, such as 09:00-10:00.">Time windows</label>
-            <textarea
-              id="scheduleWindows"
-              rows="4"
-              placeholder="0900-1000&#10;1200-1300"
-              data-i18n-placeholder="schedule.windowsPlaceholder"
-              spellcheck="false"
-            ></textarea>
-            <p class="field-help" data-i18n="schedule.help" data-info="schedule.help">
-              Leave blank to apply all day. Use one range per line in `HHMM-HHMM` format.
-            </p>
-          </section>
-
-          <section class="section-card freeze-section">
-            <div class="section-header">
-              <div>
-                <h3 data-i18n="freeze.title">Freeze</h3>
-                <p id="freezeSummary" class="section-copy"></p>
-              </div>
-              <button id="unfreezeButton" type="button" class="secondary hidden" data-i18n="freeze.unfreezeButton">
-                Unfreeze
+            <p id="blockingRulesLint" class="code-editor-lint" aria-live="polite"></p>
+            <div class="field-actions">
+              <button id="runCustomGroupButton" type="button" class="weird" data-i18n="custom.runButton">
+                Run
               </button>
+              <button id="copyCodeDocsButton" type="button" class="secondary weird" data-i18n="custom.copyCodeDocs">
+                Copy code docs
+              </button>
+              <span id="runCustomGroupStatus" class="run-status"></span>
             </div>
-
-            <p id="freezeBridgeNotice" class="field-help bridge-offline-notice hidden" data-i18n="freeze.bridgeOffline">
-              Freeze can't be changed while a linked program is offline.
-            </p>
-
-            <div id="freezeSetup" class="freeze-setup">
-              <div class="settings-grid">
-                <div>
-                  <label class="label" for="freezeMode" data-i18n="freeze.mode" data-info-key="freeze.mode" data-info-copy="Choose whether unfreezing requires a PIN, a wait, or the strict time-based mode supported by this app.">Freeze mode</label>
-                  <select id="freezeMode">
-                    <option value="frozen" data-i18n="freeze.frozenOption">Frozen</option>
-                    <option value="strict" data-i18n="freeze.strictOption">Strict frozen</option>
-                    <option value="parental" data-i18n="freeze.parentalOption">PIN-protected freeze</option>
-                  </select>
-                </div>
-
-                <div id="strictFreezeSettings" class="hidden">
-                  <label class="label" for="strictFreezeHours" data-i18n="freeze.unlockAfter" data-info-key="freeze.unlockAfter" data-info-copy="How long this app’s strict freeze lasts before unfreezing is allowed.">Unlock after (hours)</label>
-                  <input
-                    id="strictFreezeHours"
-                    type="number"
-                    min="0.1"
-                    max="72"
-                    step="0.1"
-                    inputmode="decimal"
-                    placeholder="24"
-                    data-i18n-placeholder="freeze.unlockAfterPlaceholder"
-                  />
-                </div>
+            <!-- The rules' own output (v.log), under the code that writes it. -->
+            <details id="logFeedSection" class="vui-expand log-feed">
+              <summary>
+                <span data-i18n="logFeed.title">Log</span>
+                <span id="logFeedCount" class="log-feed-count">0</span>
+              </summary>
+              <div class="log-feed-toolbar">
+                <button id="logFeedDownload" type="button" class="weird" data-hint="Download logs" aria-label="Download logs">⬇</button>
+                <span class="log-feed-hint" data-i18n="logFeed.hint" data-info="logFeed.hint">Output from v.log() in this group’s custom rule.</span>
+                <button id="logFeedClear" type="button" class="weird" data-i18n="logFeed.clear">Clear</button>
               </div>
+              <div id="logFeedList" data-vui-search="vault-logs" data-vui-search-label="Search log messages" data-vui-search-items=".log-feed-entry" class="log-feed-list" aria-live="polite"></div>
+              <p id="logFeedEmpty" class="log-feed-empty" data-i18n="logFeed.empty">No output from this rule yet. Call v.log("hello") in a handler to add an entry.</p>
+            </details>
 
-              <div class="actions">
-                <button
-                  id="parentalSettingsButton"
-                  type="button"
-                  class="secondary hidden parental-settings-button"
-                  data-i18n-title="freeze.parentalSettings"
-                  title="PIN settings"
-                  aria-label="Guardian password settings"
-                >&#9881;</button>
-                <button id="applyFreezeButton" type="button" data-i18n="freeze.applyButton">Freeze Group</button>
-              </div>
+          </section>
+          </section>
+
+          <section id="whenSection" class="section-card when-card">
+            <h3 class="block-title" data-i18n="editor.whenTitle">When</h3>
+            <div id="blockModeSection" class="field-row">
+              <label class="label" for="blockMode" data-i18n="editor.blockMode" data-info-key="editor.blockMode" data-info-copy="Block immediately, or let the group’s targets use a time allowance before blocking.">Blocking behavior</label>
+              <select id="blockMode">
+                <option value="instant" data-i18n="mode.instant">Block immediately</option>
+                <option value="after-minutes" data-i18n="mode.afterMinutes">Block when the time allowance is used</option>
+              </select>
             </div>
+            <div id="timedSettings" class="timed-settings">
+              <div id="allowedMinutesRow" class="field-row">
+                <label class="label" for="allowedMinutes" data-i18n="timed.allowedMinutes" data-info-key="timed.allowedMinutes" data-info-copy="The usage time this group allows before blocking. Enter minutes; fractions are accepted.">Time allowance (minutes)</label>
+                <input id="allowedMinutes" class="number-field" type="number" min="0.1" step="0.1" inputmode="decimal" placeholder="15" data-i18n-placeholder="timed.allowedMinutesPlaceholder" />
+              </div>
+              <div class="field-row">
+                <label class="label" for="resetIntervalHours" data-i18n="timed.resetHours" data-info-key="timed.resetHours" data-info-copy="How often a fixed time allowance starts again. The rolling-limit setting uses this interval as its lookback window.">Allowance reset interval (hours)</label>
+                <input id="resetIntervalHours" class="number-field" type="number" min="0.1" step="0.1" inputmode="decimal" placeholder="24" data-i18n-placeholder="timed.resetHoursPlaceholder" />
+              </div>
+              <p id="usageSummary" class="usage-summary"></p>
+            </div>
+            <section id="scheduleSection">
+              <label class="label" data-i18n="schedule.days" data-info-key="schedule.days" data-info-copy="Select the weekdays on which the group’s blocking rules apply.">Days to block</label>
+              <div id="daysGrid" class="days-grid">
+                <label class="day-pill"><input type="checkbox" value="monday" /> <span data-i18n="day.mon">Mon</span></label>
+                <label class="day-pill"><input type="checkbox" value="tuesday" /> <span data-i18n="day.tue">Tue</span></label>
+                <label class="day-pill"><input type="checkbox" value="wednesday" /> <span data-i18n="day.wed">Wed</span></label>
+                <label class="day-pill"><input type="checkbox" value="thursday" /> <span data-i18n="day.thu">Thu</span></label>
+                <label class="day-pill"><input type="checkbox" value="friday" /> <span data-i18n="day.fri">Fri</span></label>
+                <label class="day-pill"><input type="checkbox" value="saturday" /> <span data-i18n="day.sat">Sat</span></label>
+                <label class="day-pill"><input type="checkbox" value="sunday" /> <span data-i18n="day.sun">Sun</span></label>
+              </div>
+              <label class="label" for="scheduleWindows" data-i18n="schedule.windows" data-info-key="schedule.windows" data-info-copy="Limit blocking to these daily time ranges. Leave blank for all day; use one range per line, such as 09:00-10:00.">Time windows</label>
+              <textarea
+                id="scheduleWindows"
+                rows="2"
+                placeholder="09:00-10:00&#10;12:00-13:00"
+                data-i18n-placeholder="schedule.windowsPlaceholder"
+                spellcheck="false"
+              ></textarea>
+              <p class="field-help" data-i18n="schedule.help" data-info="schedule.help">
+                Leave blank to apply all day. One range per line, like 09:00-10:00.
+              </p>
+            </section>
           </section>
 
           <section class="section-card snooze-section">
-            <div class="section-header">
-              <div>
-                <h3 data-i18n="snooze.title">Snooze</h3>
-                <p id="snoozeSummary" class="section-copy"></p>
-              </div>
-              <button id="endSnoozeButton" type="button" class="secondary hidden" data-i18n="snooze.endButton">
-                End Snooze
-              </button>
-            </div>
-
-            <label class="checkbox-row compact" for="allowSnooze">
-              <input id="allowSnooze" type="checkbox" />
-              <span data-i18n="snooze.allow" data-info-key="snooze.allow" data-info-copy="Allow temporary relief from this group’s blocking policy through Snooze.">Allow snooze for this group</span>
-            </label>
-
-            <p id="snoozeCustomCopy" class="field-help hidden" data-i18n="snooze.customCopy" data-info="snooze.customCopy">
-              Custom rules don't snooze. Pressing the button fires a snoozePress event so rules can react (e.g. log, redirect, fire other events), but there's no programmatic snooze API.
-            </p>
-
-            <div id="snoozeNumericFields" class="settings-grid">
-              <div>
-                <label class="label" for="snoozeMinutes" data-i18n="snooze.minutes" data-info-key="snooze.minutes" data-info-copy="The size of a snooze: a pause duration, or extra usage allowance when that effect is selected.">Snooze for (minutes)</label>
-                <input
-                  id="snoozeMinutes"
-                  type="number"
-                  min="0.1"
-                  step="0.1"
-                  inputmode="decimal"
-                  placeholder="30"
-                  data-i18n-placeholder="snooze.minutesPlaceholder"
-                />
-              </div>
-              <div>
-                <label class="label" for="snoozeActivationDelay" data-i18n="snooze.activationDelay" data-info-key="snooze.activationDelay" data-info-copy="How long to wait after requesting a snooze before it starts. Zero starts it immediately.">Activation delay (minutes)</label>
-                <input
-                  id="snoozeActivationDelay"
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  inputmode="decimal"
-                  placeholder="0"
-                  data-i18n-placeholder="snooze.activationDelayPlaceholder"
-                />
-              </div>
-              <div>
-                <label class="label" for="snoozeCooldown" data-i18n="snooze.cooldown" data-info-key="snooze.cooldown" data-info-copy="How long to wait after a snooze ends before another can be requested. Zero removes this wait.">Cooldown after snooze (minutes)</label>
-                <input
-                  id="snoozeCooldown"
-                  type="number"
-                  min="0"
-                  max="5"
-                  step="0.1"
-                  inputmode="decimal"
-                  placeholder="0"
-                  data-i18n-placeholder="snooze.cooldownPlaceholder"
-                />
-              </div>
-              <div>
-                <label class="label" for="snoozeConfirmations" data-i18n="snooze.confirmations" data-info-key="snooze.confirmations" data-info-copy="How many confirmation steps are required before a requested snooze starts. Zero requires no extra confirmations.">Required confirmations</label>
-                <input
-                  id="snoozeConfirmations"
-                  type="number"
-                  min="0"
-                  step="1"
-                  inputmode="numeric"
-                  placeholder="0"
-                  data-i18n-placeholder="snooze.confirmationsPlaceholder"
-                />
-              </div>
-            </div>
-
-            <div class="actions">
-              <button id="startSnoozeButton" type="button" data-i18n="snooze.startButton">Start Snooze</button>
+            <div class="block-head">
+              <h3 class="block-title" data-i18n="snooze.title">Snooze</h3>
+              <p id="snoozeSummary" class="block-summary"></p>
+              <button id="startSnoozeButton" type="button" class="primary" data-i18n="snooze.startButton">Start snooze</button>
+              <button id="endSnoozeButton" type="button" class="secondary hidden" data-i18n="snooze.endButton">End snooze</button>
             </div>
             <p id="snoozeWarning" class="inline-warning"></p>
-          </section>
-
-          <section id="connectionGroupSection" class="section-card connection-group-section hidden">
-            <div class="section-header">
-              <div>
-                <h3 data-i18n="connectionGroup.title">Web-app Bridge</h3>
-                <p class="section-copy" data-i18n="connectionGroup.copy" data-info="connectionGroup.copy">
-                  Link this group with a same-named group on another connected program. Linked groups form one shared cluster.
-                </p>
-              </div>
-            </div>
-
-            <p id="connectionGroupHint" class="field-help"></p>
-
-            <div id="connectionGroupDisconnected" class="connection-group-connect hidden">
-              <div class="settings-grid">
+            <p id="snoozeCustomCopy" class="field-help hidden" data-i18n="snooze.customCopy" data-info="snooze.customCopy">
+              Custom rules don't snooze: pressing Snooze sends the rule a "snooze" event, and the rule decides what happens.
+            </p>
+            <div class="block-fields">
+              <label class="checkbox-row compact" for="allowSnooze">
+                <input id="allowSnooze" type="checkbox" />
+                <span data-i18n="snooze.allow" data-info-key="snooze.allow" data-info-copy="Allow temporary relief from this group’s blocking policy through Snooze.">Allow snooze for this group</span>
+              </label>
+              <div id="snoozeNumericFields" class="settings-grid">
                 <div>
-                  <label class="label" for="connectionGroupProgram" data-i18n="connectionGroup.programLabel" data-info-key="connectionGroup.programLabel" data-info-copy="Choose the program used for this connected group.">Designated program</label>
-                  <select id="connectionGroupProgram"></select>
+                  <label class="label" for="snoozeMinutes" data-i18n="snooze.minutes" data-info-key="snooze.minutes" data-info-copy="The size of a snooze: a pause duration, or extra usage allowance when that effect is selected.">Pause duration (minutes)</label>
+                  <input id="snoozeMinutes" class="number-field" type="number" min="0.1" step="0.1" inputmode="decimal" placeholder="30" data-i18n-placeholder="snooze.minutesPlaceholder" />
+                </div>
+                <div>
+                  <label class="label" for="snoozeActivationDelay" data-i18n="snooze.activationDelay" data-info-key="snooze.activationDelay" data-info-copy="How long to wait after requesting a snooze before it starts. Zero starts it immediately.">Activation delay (minutes)</label>
+                  <input id="snoozeActivationDelay" class="number-field" type="number" min="0" step="0.1" inputmode="decimal" placeholder="0" data-i18n-placeholder="snooze.activationDelayPlaceholder" />
+                </div>
+                <div>
+                  <label class="label" for="snoozeCooldown" data-i18n="snooze.cooldown" data-info-key="snooze.cooldown" data-info-copy="How long to wait after a snooze ends before another can be requested. Zero removes this wait.">Cooldown after snooze (minutes)</label>
+                  <input id="snoozeCooldown" class="number-field" type="number" min="0" max="5" step="0.1" inputmode="decimal" placeholder="0" data-i18n-placeholder="snooze.cooldownPlaceholder" />
+                </div>
+                <div>
+                  <label class="label" for="snoozeConfirmations" data-i18n="snooze.confirmations" data-info-key="snooze.confirmations" data-info-copy="How many confirmation steps are required before a requested snooze starts. Zero requires no extra confirmations.">Required confirmations</label>
+                  <input id="snoozeConfirmations" class="number-field" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-i18n-placeholder="snooze.confirmationsPlaceholder" />
                 </div>
               </div>
-              <div class="actions">
-                <button id="connectionGroupConnectButton" type="button" data-i18n="connectionGroup.connect">Connect group</button>
-              </div>
             </div>
+          </section>
 
-            <div id="connectionGroupConnected" class="connection-group-cluster hidden">
-              <p class="field-help" data-i18n="connectionGroup.membersLabel">Connected cluster</p>
-              <div id="connectionGroupMembers" class="connection-peer-list"></div>
-              <div class="actions">
-                <button id="connectionGroupDisconnectButton" type="button" class="secondary" data-i18n="connectionGroup.disconnect">Disconnect</button>
+          <section class="section-card freeze-section">
+            <div class="block-head">
+              <h3 class="block-title" data-i18n="freeze.title">Freeze</h3>
+              <p id="freezeSummary" class="block-summary"></p>
+              <button id="applyFreezeButton" type="button" class="primary" data-i18n="freeze.applyButton">Freeze group</button>
+              <button id="unfreezeButton" type="button" class="secondary hidden" data-i18n="freeze.unfreezeButton">Unfreeze</button>
+            </div>
+            <div id="freezeSetup" class="block-fields freeze-setup">
+              <div class="settings-grid">
+                <div>
+                  <label class="label" for="lockWaitHours" data-i18n="freeze.waitHours" data-info-key="freeze.waitHours" data-info-copy="The wait required before this frozen group can be unfrozen. Zero removes the wait; while frozen it can only be increased.">Wait before unfreezing (hours)</label>
+                  <input id="lockWaitHours" class="number-field" type="number" min="0" max="72" step="0.1" inputmode="decimal" placeholder="0" />
+                  <p class="field-help" data-i18n="freeze.waitHelp" data-info="freeze.waitHelp">0 = no wait. While frozen the wait can only be made longer.</p>
+                </div>
               </div>
             </div>
           </section>
+
+          <details class="vui-expand editor-block editor-more">
+            <summary data-i18n="editor.more">More</summary>
+            <!-- The one place for rarely used settings. A row marked data-follows
+                 shows only while the part it belongs to shows (syncMoreRows). -->
+            <!-- The page action of the entry in view: cover its blocked pages,
+                 or pause first (a countdown, then Continue lets the page through). -->
+            <div id="pageActionRow" class="more-row page-action-row">
+              <label class="label" for="pageAction" data-i18n="scopes.pageAction" data-info-key="scopes.pageAction" data-info-copy="Cover a blocked page, or show a countdown and then let the user continue to it.">When a page of this entry is blocked</label>
+              <select id="pageAction">
+                <option value="block" data-i18n="scopes.pageActionBlock">Cover the page</option>
+                <option value="pause" data-i18n="scopes.pageActionPause">Pause first, then let it through</option>
+              </select>
+              <div id="pauseSecondsRow" class="hidden">
+                <label class="label" for="pauseSeconds" data-i18n="scopes.pauseSeconds" data-info-key="scopes.pauseSeconds" data-info-copy="The countdown length before Continue becomes available on a paused page. Enter 1–600 seconds.">Pause for (seconds)</label>
+                <input id="pauseSeconds" class="number-field" type="number" min="1" max="600" step="1" inputmode="numeric" placeholder="10" />
+              </div>
+            </div>
+            <div class="more-row" data-follows="siteSettingsSection">
+              <label class="checkbox-row compact" for="siteAllowlist">
+                <input id="siteAllowlist" type="checkbox" />
+                <span data-i18n="sites.allowlistLabel" data-info-key="sites.allowlistLabel" data-info-copy="Block websites outside this group’s site list instead of blocking the listed sites.">Block everything except these sites</span>
+              </label>
+              <p class="field-help" data-i18n="sites.allowlistHelp" data-info="sites.allowlistHelp">
+                When on, this group blocks the entire web except the sites listed above
+                (an allowlist). When off, it blocks only the listed sites.
+              </p>
+            </div>
+            <div class="more-row" data-follows="appsSettingsSection">
+              <label class="checkbox-row compact" for="appsAllowlist">
+                <input id="appsAllowlist" type="checkbox" />
+                <span data-i18n="apps.allowlistLabel" data-info-key="apps.allowlistLabel" data-info-copy="Block apps outside this group’s app list instead of blocking the listed apps. System apps, browsers, and Vault are excluded.">Block every app except these</span>
+              </label>
+              <p class="field-help desktop-only" data-i18n="apps.allowlistHelp" data-info="apps.allowlistHelp">
+                When on, this group blocks every app except those listed above. System apps, browsers, and Vault itself are excluded from blocking. When off, it blocks only the listed apps.
+              </p>
+            </div>
+            <div class="more-row" data-follows="platformTagListBlock">
+              <div class="content-tag-row">
+                <label class="label" for="platformTagDefaultConfidence" data-i18n="tagFilter.defaultConfidence" data-info-key="tagFilter.defaultConfidence" data-info-copy="The minimum confidence used when a tag rule has no explicit @ score. Individual rule scores take precedence.">Default minimum confidence</label>
+                <select id="platformTagDefaultConfidence">
+                  <option value="3">&#8805; 3</option>
+                  <option value="4" selected>&#8805; 4</option>
+                  <option value="5">&#8805; 5</option>
+                </select>
+              </div>
+              <label class="checkbox-row compact" for="platformTagCoverUntilTagged">
+                <input id="platformTagCoverUntilTagged" type="checkbox" />
+                <span data-i18n="tagFilter.coverUntilTagged" data-info-key="tagFilter.coverUntilTagged" data-info-copy="Keep content covered while its tagging result is pending.">Cover content until it has been tagged</span>
+              </label>
+              <label id="platformTagBlockUntaggedRow" class="checkbox-row compact" for="platformTagBlockUntagged">
+                <input id="platformTagBlockUntagged" type="checkbox" />
+                <span data-i18n="tagFilter.blockUntagged" data-info-key="tagFilter.blockUntagged" data-info-copy="Block completed results with no tag at the default confidence threshold, including low-confidence results. Explicit listed tag rules are checked first. Pending results use the separate pending-content setting.">Also block content with no confident tag</span>
+              </label>
+            </div>
+            <div class="more-row" data-follows="timedSettings">
+              <label class="checkbox-row compact" for="resetAtMidnight">
+                <input id="resetAtMidnight" type="checkbox" />
+                <span data-i18n="timed.resetAtMidnight" data-info-key="timed.resetAtMidnight" data-info-copy="Also restart the allowance cycle at local midnight. With a rolling limit, usage before midnight no longer counts.">Also restart the reset cycle at midnight</span>
+              </label>
+              <label class="checkbox-row compact" for="rollingLimit">
+                <input id="rollingLimit" type="checkbox" />
+                <span data-i18n="timed.rollingLimit" data-info-key="timed.rollingLimit" data-info-copy="Count usage within the latest reset interval rather than a fixed allowance period. Older usage gradually leaves that window.">Rolling limit: used time comes back once it is older than the reset interval</span>
+              </label>
+            </div>
+            <div id="snoozeKindRow" class="more-row hidden">
+              <label class="label" for="snoozeKind" data-i18n="snooze.kind" data-info-key="snooze.kind" data-info-copy="Pause blocking for a duration, or add extra usage allowance to a group with a time limit.">Snooze effect</label>
+              <select id="snoozeKind">
+                <option value="time" data-i18n="snooze.kind.time">Pause blocking</option>
+                <option value="budget" data-i18n="snooze.kind.budget">Add to the time allowance</option>
+              </select>
+            </div>
+            <div class="more-row" data-follows="freezeSetup">
+              <span class="label" data-i18n="freeze.pinLabel" data-info-key="freeze.pinLabel" data-info-copy="Set an optional PIN that must be entered to unfreeze this group. Forgetting it prevents PIN-based unfreezing.">PIN</span>
+              <p id="lockPinStatus" class="field-help"></p>
+              <button id="parentalSettingsButton" type="button" class="secondary" data-i18n="freeze.parentalSettings">PIN settings</button>
+            </div>
+            <div id="groupLinkSection" class="link-section">
+              <span class="label" data-i18n="link.title" data-info-key="link.title" data-info-copy="Link selected groups across Vault programs to share their name, supported settings, usage, and freeze conditions. Targets remain specific to each program.">Link</span>
+              <p id="groupLinkStatus" class="field-help"></p>
+              <div class="link-row">
+                <select id="groupLinkTarget" aria-label="Group to link with" data-i18n-aria-label="link.pick"></select>
+                <button id="groupLinkButton" type="button" class="secondary" data-i18n="link.link">Link</button>
+                <button id="groupUnlinkButton" type="button" class="secondary" data-i18n="link.unlink">Unlink</button>
+              </div>
+            </div>
+            <div id="fallbackUrlSection" class="browser-only">
+              <label class="label" for="fallbackUrl" data-i18n="filter.fallbackUrl" data-info-key="filter.fallbackUrl" data-info-copy="Choose what happens on a blocked page: leave blank for its cover, enter text for a message, or a web address to redirect.">When blocked: redirect address or message</label>
+              <input id="fallbackUrl" type="text" placeholder="https://example.com — or a message to show" data-i18n-placeholder="filter.fallbackUrlPlaceholder" spellcheck="false" />
+              <p class="field-help" data-i18n="filter.fallbackUrlHelp" data-info="filter.fallbackUrlHelp">
+                Leave empty and a blocked page is covered in place — nothing on it is lost, and it comes back when the block lifts. Any other text is shown on that cover. A web address sends the tab there instead (a pause never redirects).
+              </p>
+            </div>
+            <div class="editor-actions">
+              <button id="clearSitesButton" type="button" class="secondary danger" data-follows="siteSettingsSection" data-i18n="sites.clearButton">Clear websites</button>
+              <button id="clearAppsButton" type="button" class="secondary danger desktop-only" data-follows="appsSettingsSection" data-i18n="apps.clearButton">Clear apps</button>
+              <button id="exportGroupButton" type="button" class="secondary" data-i18n="editor.exportGroupButton">Export</button>
+              <button id="importGroupButton" type="button" class="secondary" data-i18n="editor.importGroupButton">Import</button>
+            </div>
+          </details>
         </section>
       </section>
 
@@ -634,213 +530,25 @@
     </main>
 
     <div id="confirmModal" class="modal hidden">
-      <div class="modal-card">
-        <h3 data-i18n="modal.unfreezeTitle">Unfreeze Group</h3>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="confirmDialogTitle">
+        <h3 id="confirmDialogTitle" data-i18n="modal.unfreezeTitle">Unfreeze Group</h3>
         <p id="confirmMessage" class="modal-copy" data-i18n="modal.unfreezeMessageDefault">
           Are you sure you want to give up your self-discipline?
         </p>
         <p id="confirmProgress" class="modal-copy"></p>
         <div class="modal-actions">
           <button id="confirmCancelButton" type="button" class="secondary" data-i18n="modal.cancel">Cancel</button>
-          <button id="confirmProceedButton" type="button" disabled data-i18n="modal.confirm">Confirm</button>
+          <button id="confirmProceedButton" type="button" class="primary" disabled data-i18n="modal.confirm">Confirm</button>
         </div>
       </div>
     </div>
 
-    <div id="permissionModal" class="modal hidden">
-      <div class="modal-card">
-        <h3 data-i18n="permission.title">Enable necessary control</h3>
-        <p class="modal-copy" data-i18n="permission.message">
-          Grant Accessibility permission so the app can enforce app blocking. Without it, blocking cannot run.
-        </p>
-        <div class="modal-actions">
-          <button id="permissionCancelButton" type="button" class="secondary" data-i18n="permission.cancel">Cancel</button>
-          <button id="permissionGrantButton" type="button" data-i18n="permission.grant">Grant access</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="manualModal" class="modal hidden">
-      <div class="modal-card manual-modal-card">
-        <div class="manual-modal-header">
-          <div>
-            <h3 data-i18n="manual.title">Instruction Manual</h3>
-            <p id="manualStatus" class="modal-copy" data-i18n="manual.loading">
-              Loading manual...
-            </p>
-          </div>
-          <button id="manualCloseButton" type="button" class="secondary" data-i18n="manual.close">
-            Close
-          </button>
-        </div>
-        <div id="manualContent" class="manual-content"></div>
-      </div>
-    </div>
-
-    <div id="settingsModal" class="modal hidden">
-      <div class="modal-card">
-        <div class="manual-modal-header">
-          <div>
-            <h3 data-i18n="settings.title">Global Settings</h3>
-            <p class="modal-copy" data-i18n="settings.copy" data-info="settings.copy">
-              These preferences apply across all block groups.
-            </p>
-          </div>
-          <button id="settingsCloseButton" type="button" class="secondary" data-i18n="manual.close">
-            Close
-          </button>
-        </div>
-
-        <div class="settings-grid">
-          <div>
-            <label class="label" for="settingsAutosaveDebounce" data-i18n="settings.autosaveDebounce" data-info-key="settings.autosaveDebounce" data-info-copy="How many milliseconds to wait after the last edit before saving it.">
-              Autosave debounce (ms)
-            </label>
-            <input
-              id="settingsAutosaveDebounce"
-              type="number"
-              min="0"
-              max="5000"
-              step="50"
-              inputmode="numeric"
-              placeholder="400"
-              data-i18n-placeholder="settings.autosaveDebouncePlaceholder"
-            />
-            <p class="field-help" data-i18n="settings.autosaveDebounceHelp" data-info="settings.autosaveDebounceHelp">
-              How long the popup waits after the last keystroke before persisting your edits.
-            </p>
-          </div>
-          <div>
-            <label class="label" for="settingsDefaultSnoozeMinutes" data-i18n="settings.defaultSnoozeMinutes" data-info-key="settings.defaultSnoozeMinutes" data-info-copy="The initial snooze duration used for newly created groups. Existing groups keep their own duration.">
-              Default snooze duration (minutes)
-            </label>
-            <input
-              id="settingsDefaultSnoozeMinutes"
-              type="number"
-              min="0.1"
-              step="0.1"
-              inputmode="decimal"
-              placeholder="30"
-              data-i18n-placeholder="settings.defaultSnoozeMinutesPlaceholder"
-            />
-            <p class="field-help" data-i18n="settings.defaultSnoozeMinutesHelp" data-info="settings.defaultSnoozeMinutesHelp">
-              Snooze length used when creating new non-custom groups.
-            </p>
-          </div>
-        </div>
-
-        <label class="checkbox-row compact" for="settingsDebugMode">
-          <input id="settingsDebugMode" type="checkbox" />
-          <span data-i18n="settings.debugMode" data-info-key="settings.debugMode" data-info-copy="Enable extra diagnostic console output. Explicit custom-rule log calls are unaffected.">Debug mode</span>
-        </label>
-        <p class="field-help" data-i18n="settings.debugModeHelp" data-info="settings.debugModeHelp">
-          When on, emits verbose [CustomBlocker] / [CustomBlocker:trace] console output. Your own helpers.log() calls always work regardless.
-        </p>
-
-        <section id="connectionSection" class="section-card settings-section-card">
-          <div class="section-header">
-            <div>
-              <h3 data-i18n="connection.title">Web-app bridge</h3>
-              <p class="section-copy" data-i18n="connection.copy" data-info="connection.copy">
-                Link Default and Custom groups between a browser extension and Mac Vault or Windows Vault.
-              </p>
-            </div>
-          </div>
-
-          <div class="connection-status-row">
-            <span id="connectionStatusDot" class="connection-dot off"></span>
-            <span id="connectionStatusText" data-i18n="connection.statusOff">Off</span>
-          </div>
-          <p class="field-help">
-            <span data-i18n="connection.addressLabel">Address</span>:
-            <code id="connectionAddressReadout">—</code>
-          </p>
-
-          <div id="connectionServerControls" class="hidden">
-            <label class="checkbox-row compact" for="connectionServerToggle">
-              <input id="connectionServerToggle" type="checkbox" />
-              <span data-i18n="connection.serverToggle" data-info-key="connection.serverToggle" data-info-copy="Allow local browser extensions to connect to this app using its pairing key.">Run local server (hub)</span>
-            </label>
-            <p class="field-help" data-i18n="connection.serverToggleHelp" data-info="connection.serverToggleHelp">
-              Browser extensions on this computer can connect after you copy the pairing key.
-            </p>
-            <p class="field-help">
-              <span data-i18n="connection.pairingKeyLabel">Pairing key</span>:
-              <code id="connectionPairingKeyReadout">—</code>
-            </p>
-            <div id="connectionPeerList" class="connection-peer-list"></div>
-          </div>
-
-          <div id="connectionClientControls" class="hidden">
-            <p class="field-help" data-i18n="connection.clientHelp" data-info="connection.clientHelp">
-              Use the pairing key shown by Mac Vault or Windows Vault to connect this browser.
-            </p>
-            <div class="field-actions">
-              <button id="connectionConnectButton" type="button" class="secondary" data-i18n="connection.connect">
-                Connect
-              </button>
-              <button id="connectionDisconnectButton" type="button" class="secondary danger hidden" data-i18n="connection.disconnect">
-                Disconnect
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <section class="section-card settings-section-card">
-          <div class="section-header">
-            <div>
-              <h3 data-i18n="settings.localFolderTitle">Local File Folder</h3>
-              <p class="section-copy" data-i18n="settings.localFolderCopy" data-info="settings.localFolderCopy">
-                Grant a folder for custom rules to read and write .txt, .csv, and .json files. Paths stay inside this folder.
-              </p>
-            </div>
-          </div>
-          <div class="field-actions">
-            <button id="localFolderChooseButton" type="button" class="secondary" data-i18n="settings.localFolderChoose">
-              Choose folder
-            </button>
-            <button id="localFolderRevokeButton" type="button" class="secondary danger" data-i18n="settings.localFolderRevoke">
-              Revoke folder
-            </button>
-          </div>
-          <p id="localFolderStatus" class="field-help" data-i18n="settings.localFolderStatusNone">
-            No folder connected.
-          </p>
-        </section>
-
-        <section class="section-card settings-section-card">
-          <div class="section-header">
-            <div>
-              <h3 data-i18n="settings.deviceControlTitle">Device Control</h3>
-              <p id="deviceControlCopy" class="section-copy" data-i18n="settings.deviceControlCopyMissing">
-                App blocking needs Accessibility permission. Grant it so blocking can run.
-              </p>
-            </div>
-          </div>
-          <div class="field-actions">
-            <button id="deviceControlButton" type="button" class="secondary" data-i18n="settings.deviceControlManage">
-              Manage permission
-            </button>
-          </div>
-          <p id="deviceControlStatus" class="field-help" data-i18n="settings.deviceControlStatusMissing">
-            Accessibility permission missing. App blocking cannot run.
-          </p>
-        </section>
-
-        <div class="modal-actions">
-          <button id="settingsResetButton" type="button" class="secondary danger" data-i18n="settings.reset">
-            Reset to defaults
-          </button>
-        </div>
-        <p id="settingsStatus" class="inline-warning"></p>
-      </div>
-    </div>
-
+    <!-- Desktop host only: the app picker. -->
     <div id="appPickerModal" class="modal hidden">
-      <div class="modal-card app-picker-card">
+      <div class="modal-card app-picker-card" role="dialog" aria-modal="true" aria-labelledby="appPickerDialogTitle">
         <div class="manual-modal-header">
           <div>
-            <h3 data-i18n="apps.pickerTitle">Add an app</h3>
+            <h3 data-info-key="appPickerSearch" data-info-copy="Search installed apps by name or identifier, then select an app to add to this group." id="appPickerDialogTitle" data-i18n="apps.pickerTitle">Add an app</h3>
             <p class="modal-copy" data-i18n="apps.pickerCopy" data-info="apps.pickerCopy">
               Choose an installed app for this group.
             </p>
@@ -864,18 +572,142 @@
       </div>
     </div>
 
-    <!--
-      macosBlocker port: chrome-shim.js MUST load first. It defines a minimal
-      chrome.* surface (storage/runtime/permissions/i18n) backed by
-      localStorage and a native WKWebView bridge so the unmodified editor
-      runs outside a Chrome extension.
-    -->
+    <div id="manualModal" class="modal hidden">
+      <div class="modal-card manual-modal-card" role="dialog" aria-modal="true" aria-labelledby="manualDialogTitle">
+        <div class="manual-modal-header">
+          <div>
+            <h3 id="manualDialogTitle" data-i18n="manual.title">User manual</h3>
+            <p id="manualStatus" class="modal-copy" data-i18n="manual.loading">
+              Loading manual...
+            </p>
+          </div>
+          <button id="manualCloseButton" type="button" class="secondary" data-i18n="manual.close">
+            Close
+          </button>
+        </div>
+        <div id="manualContent" class="manual-content"></div>
+      </div>
+    </div>
+
+    <div id="settingsModal" class="modal hidden">
+      <div class="modal-card settings-modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsDialogTitle">
+        <div class="manual-modal-header">
+          <div>
+            <h3 id="settingsDialogTitle" data-i18n="settings.title">Vault settings</h3>
+            <p class="modal-copy" data-i18n="settings.copy" data-info="settings.copy">
+              These settings apply to Vault rather than one blocking group.
+            </p>
+          </div>
+          <button id="settingsCloseButton" type="button" class="secondary" data-i18n="manual.close">
+            Close
+          </button>
+        </div>
+
+        <div class="settings-body">
+          <div class="settings-cols">
+            <section class="settings-col">
+              <h4 class="settings-col-title" data-i18n="settings.colBehavior">Behavior</h4>
+        <div class="settings-grid">
+          <div class="desktop-only">
+            <label class="label" for="settingsQuitRetryMinutes" data-i18n="settings.quitRetryMinutes" data-info-key="settings.quitRetryMinutes" data-info-copy="Ask an app that remains open to quit again at this interval. Zero disables repeated requests; unsaved work is not forcibly discarded.">
+              Ask a blocked app to quit again every (minutes)
+            </label>
+            <input id="settingsQuitRetryMinutes" class="number-field" type="number" min="0" step="1" inputmode="numeric" placeholder="0" />
+            <p class="field-help" data-i18n="settings.quitRetryMinutesHelp" data-info="settings.quitRetryMinutesHelp">
+              A blocked app (or one a custom rule closes) is asked to quit normally, like ⌘Q; if it stays open, for example to keep unsaved work, it is left open. Above 0, it is asked again this often while it stays open.
+            </p>
+          </div>
+          <div>
+            <label class="checkbox-row compact" for="settingsQuickAdd">
+              <input id="settingsQuickAdd" type="checkbox" />
+              <span data-i18n="settings.quickAdd" data-info-key="settings.quickAdd" data-info-copy="Show the quick-add plus button for adding the current site or app to the chosen group.">Show the quick-add "+"</span>
+            </label>
+            <p class="field-help" data-i18n="settings.quickAddHelp" data-info="settings.quickAddHelp">
+              A tiny "+" at the bottom right of every page (and of the desktop) adds the current site or app to the group whose "+" badge you chose in the list.
+            </p>
+          </div>
+
+        </div>
+        <div class="settings-language">
+          <span class="label" data-i18n="language.label" data-info-key="language.label" data-info-copy="Choose the app’s interface language. This does not change stored rules or names.">Language</span>
+          <div class="language-picker">
+            <select id="languageSelect" aria-label="Language" data-i18n-aria-label="language.label" translate="no" class="notranslate">
+                <option value="en">English</option>
+                <option value="zh">简体中文</option>
+                <option value="es">Espanol</option>
+                <option value="hi">हिन्दी</option>
+                <option value="ar">العربية</option>
+                <option value="bn">বাংলা</option>
+                <option value="pt">Portugues</option>
+                <option value="ru">Русский</option>
+                <option value="ja">日本語</option>
+                <option value="pa">ਪੰਜਾਬੀ</option>
+                <option value="de">Deutsch</option>
+                <option value="fr">Francais</option>
+                <option value="ko">한국어</option>
+                <option value="tr">Turkce</option>
+                <option value="vi">Tieng Viet</option>
+                <option value="it">Italiano</option>
+                <option value="th">ไทย</option>
+                <option value="nl">Nederlands</option>
+                <option value="pl">Polski</option>
+                <option value="id">Bahasa Indonesia</option>
+              </select>
+          </div>
+        </div>
+            </section>
+
+            <section class="settings-col">
+              <h4 class="settings-col-title" data-i18n="settings.colConnections">Data &amp; files</h4>
+
+        <section class="settings-group">
+          <span class="label" data-i18n="settings.localFolderTitle" data-info-key="settings.localFolderTitle" data-info-copy="Choose the folder custom rules may read and write. File paths stay within that folder.">Custom-rule folder</span>
+          <p class="field-help" data-i18n="settings.localFolderCopy" data-info="settings.localFolderCopy">
+            Grant a folder for custom rules to read and write .txt, .csv, and .json files. Paths stay inside this folder.
+          </p>
+          <div class="field-actions">
+            <button id="localFolderChooseButton" type="button" class="secondary" data-i18n="settings.localFolderChoose">
+              Choose folder
+            </button>
+            <button id="localFolderRevokeButton" type="button" class="secondary danger" data-i18n="settings.localFolderRevoke">
+              Remove folder access
+            </button>
+          </div>
+          <p id="localFolderStatus" class="field-help" data-i18n="settings.localFolderStatusNone">
+            No folder selected.
+          </p>
+        </section>
+            </section>
+          </div>
+        </div>
+
+
+        <div class="modal-actions">
+          <button id="settingsResetButton" type="button" class="danger" data-i18n="settings.reset">
+            Reset to defaults
+          </button>
+          <button id="deleteAllGroupsButton" type="button" class="danger" data-i18n="groups.deleteAllButton">Delete all groups</button>
+        </div>
+        <p id="settingsStatus" class="inline-warning"></p>
+      </div>
+    </div>
+
+    <script src="vault-ui.js"></script>
+    <!-- Mac Vault: chrome-shim.js provides chrome.* over the native bridge; it must load first. -->
+    <script src="desktop-config.js"></script>
     <script src="chrome-shim.js"></script>
+    <script src="browser-compat.js"></script>
     <script src="bridge-protocol.js"></script>
     <script src="platform-profiles.js"></script>
+    <script src="group-scopes.js"></script>
+    <script src="parental-pin.js"></script>
+    <script src="group-actions.js"></script>
     <script src="translations.js"></script>
     <script src="popup-markdown.js"></script>
+    <script src="rule-core.js"></script>
     <script src="vault-info.js"></script>
     <script src="popup.js"></script>
+    <!-- Mac Vault: the Classifier and Activity scenes, in this same document. -->
+    <script src="scenes.js"></script>
   </body>
 </html>
