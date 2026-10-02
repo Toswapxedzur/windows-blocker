@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using WindowsBlocker.Enforcement;
+using WindowsBlocker.Bridge;
 
 namespace WindowsBlocker.WebUI;
 
@@ -33,6 +34,14 @@ public static class AppInventory
             if(_activityApps.Count>=500) _activityApps.Clear();
             _activityApps[key]=new(key,name,icon ?? ""); return (name,icon);
         }
+    }
+
+    public static string? IconForStoredId(string value)
+    {
+        var id=WindowsAppId.Normalize(value);if(id==null)return null;
+        var identity=Path.IsPathFullyQualified(id) ? new AppIdentity {ExecutablePath=id,ExecutableName=Path.GetFileName(id)} : new AppIdentity {Aumid=id};
+        var icon=DescribeActivity(identity).Icon;
+        return icon?.StartsWith("data:image/",StringComparison.Ordinal)==true && icon.Length<=24_000 ? icon : null;
     }
 
     /// The most recently built inventory JSON (or "[]"). Non-blocking; used as a
@@ -123,6 +132,7 @@ public static class AppInventory
         }
         var json = array.ToJsonString();
         _cachedJson = json;
+        lock(_activityApps) _activityApps.Clear();
         return json;
     }
 
