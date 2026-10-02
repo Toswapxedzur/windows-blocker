@@ -1,9 +1,11 @@
 param(
     [Parameter(Mandatory=$true)][string]$ClassifierWorkerDirectory,
     [string]$Dotnet='C:\dotnet\dotnet.exe',
-    [string]$OutputDirectory=(Join-Path $PSScriptRoot '..\..\dist\WindowsVault-x64')
+    [string]$OutputDirectory=(Join-Path $PSScriptRoot '..\..\dist\WindowsVault-x64'),
+    [switch]$SkipArchive
 )
 $ErrorActionPreference='Stop'
+$ProgressPreference='SilentlyContinue'
 $repo=(Resolve-Path "$PSScriptRoot\..\..").Path
 $worker=(Resolve-Path $ClassifierWorkerDirectory).Path
 $output=[IO.Path]::GetFullPath($OutputDirectory)
@@ -34,12 +36,27 @@ try {
     Copy-Item "$repo\scripts\development\install-native-host.ps1" $stage
     Copy-Item "$PSScriptRoot\install-windows-vault.ps1" "$stage\Install.ps1"
     Copy-Item "$PSScriptRoot\README.md" "$stage\README.md"
+    # Bundle the notices from the exact toolchain/SDK package used to publish,
+    # alongside the worker's independently pinned runtime notices.
+    $notices=(New-Item -ItemType Directory -Force "$stage\RuntimeNotices").FullName
+    $dotnetDirectory=Split-Path (Resolve-Path $Dotnet).Path -Parent
+    foreach($name in @('LICENSE.txt','ThirdPartyNotices.txt')) {
+        if(!(Test-Path "$dotnetDirectory\$name")){throw "Missing .NET runtime notice: $name"}
+        Copy-Item "$dotnetDirectory\$name" "$notices\Dotnet-$name"
+    }
+    [xml]$project=Get-Content "$repo\src\WindowsBlocker\WindowsBlocker.csproj" -Raw
+    $webViewVersion=($project.Project.ItemGroup.PackageReference|Where-Object Include -eq 'Microsoft.Web.WebView2').Version
+    $nugetRoot=if($env:NUGET_PACKAGES){$env:NUGET_PACKAGES}else{Join-Path $env:USERPROFILE '.nuget\packages'}
+    $webViewPackage=Join-Path $nugetRoot "microsoft.web.webview2\$webViewVersion"
+    foreach($name in @('LICENSE.txt','NOTICE.txt')) {
+        if(!(Test-Path "$webViewPackage\$name")){throw "Missing WebView2 SDK notice: $name"}
+        Copy-Item "$webViewPackage\$name" "$notices\WebView2-$name"
+    }
     # No user state, model files, test-only assets or toolchain are packaged.
     Get-ChildItem $stage -Recurse -File -Filter '*.pdb'|Remove-Item -Force
     $files=Get-ChildItem $stage -Recurse -File|Sort-Object FullName|ForEach-Object {
         @{path=$_.FullName.Substring($stage.Length+1).Replace('\','/');sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
     }
-    [xml]$project=Get-Content "$repo\src\WindowsBlocker\WindowsBlocker.csproj" -Raw
     $version=($project.Project.PropertyGroup|Where-Object{$_.Version}|Select-Object -First 1).Version
     if(!$version){throw 'Windows Vault project version is missing.'}
     @{schema=1;product='Windows Vault';architecture='x64';version=$version;files=@($files)}|ConvertTo-Json -Depth 5|Set-Content "$stage\package-manifest.json" -Encoding UTF8
@@ -47,8 +64,10 @@ try {
     if (Test-Path $output) { Move-Item $output $previous }
     try { Move-Item $stage $output } catch { if(Test-Path $previous){Move-Item $previous $output}; throw }
     if (Test-Path $previous) { Remove-Item $previous -Recurse -Force }
-    $zip=$output+'.zip'
-    if (Test-Path $zip) { Remove-Item $zip -Force }
-    Compress-Archive -Path "$output\*" -DestinationPath $zip
-    Write-Output "Packaged Windows Vault: $zip"
+    if(!$SkipArchive) {
+        $zip=$output+'.zip'
+        if (Test-Path $zip) { Remove-Item $zip -Force }
+        Compress-Archive -Path "$output\*" -DestinationPath $zip
+        Write-Output "Packaged Windows Vault: $zip"
+    } else {Write-Output "Packaged Windows Vault directory: $output"}
 } finally { if (Test-Path $stage) { Remove-Item $stage -Recurse -Force } }
