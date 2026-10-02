@@ -38,7 +38,6 @@ public sealed class BlockedAppRegistry
             else if (value.Contains('\\') || value.Contains('/'))
             {
                 paths.Add(value);
-                names.Add(Path.GetFileName(value));
             }
             else
             {

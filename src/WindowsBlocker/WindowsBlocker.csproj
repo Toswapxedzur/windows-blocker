@@ -26,7 +26,7 @@
   <ItemGroup>
     <!-- WebView2 hosts the verbatim customBlocker editor UI. Floating grabs the
          latest 1.0.x runtime package; pin this once you have a build machine. -->
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.*" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
   </ItemGroup>
 
   <ItemGroup>

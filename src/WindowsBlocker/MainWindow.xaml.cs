@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Interop;
@@ -29,6 +30,7 @@ public partial class MainWindow : Window
     private readonly WebStore _store = new();
     private readonly BlockedAppRegistry _registry = new();
     private readonly ConnectionHub _hub = new();
+    private readonly ClassifierWorkerClient _classifier = new();
     private readonly EnforcementEngine _engine;
     private readonly RuleEngine _ruleEngine;
     private readonly SelfPreservationGuard _guard = new();
@@ -54,6 +56,8 @@ public partial class MainWindow : Window
         _engine = new EnforcementEngine(_store, _registry, _hub);
         _ruleEngine = new RuleEngine(_store);
         _store.SeedIfNeeded();
+        _hub.ClassifierRequest = HubClassifierRequest;
+        _classifier.Event += OnClassifierEvent;
         Loaded += OnLoaded;
         Closing += OnClosing;
     }
@@ -85,7 +89,7 @@ public partial class MainWindow : Window
         await Web.EnsureCoreWebView2Async();
         var core = Web.CoreWebView2!;
 
-        core.SetVirtualHostNameToFolderMapping(VirtualHost, assets, CoreWebView2HostResourceAccessKind.Allow);
+        core.SetVirtualHostNameToFolderMapping(VirtualHost, assets, CoreWebView2HostResourceAccessKind.DenyCors);
         core.Settings.AreDefaultContextMenusEnabled = false;
         core.Settings.IsStatusBarEnabled = false;
 
@@ -105,6 +109,7 @@ public partial class MainWindow : Window
         core.AddWebResourceRequestedFilter("*app-inventory.json", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += OnWebResourceRequested;
         core.NewWindowRequested += (_, args) => args.Handled = true;
+        core.NavigationStarting += (_, args) => { if (!TrustedEditorUri(args.Uri)) args.Cancel = true; };
         core.NavigationCompleted += OnNavigationCompleted;
 
         core.Navigate($"https://{VirtualHost}/popup.html");
@@ -122,11 +127,12 @@ public partial class MainWindow : Window
             };
             await RuleWeb.EnsureCoreWebView2Async();
             var core = RuleWeb.CoreWebView2!;
-            core.SetVirtualHostNameToFolderMapping(VirtualHost, assets, CoreWebView2HostResourceAccessKind.Allow);
+            core.SetVirtualHostNameToFolderMapping(VirtualHost, assets, CoreWebView2HostResourceAccessKind.DenyCors);
             core.Settings.AreDefaultContextMenusEnabled = false;
             core.Settings.AreDevToolsEnabled = false;
             core.Settings.IsStatusBarEnabled = false;
             core.NewWindowRequested += (_, args) => args.Handled = true;
+            core.NavigationStarting += (_, args) => { if (!TrustedEditorUri(args.Uri)) args.Cancel = true; };
 
             var navigation = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             void Completed(object? _, CoreWebView2NavigationCompletedEventArgs args)
@@ -199,23 +205,30 @@ public partial class MainWindow : Window
     private static string SeedScript(string storeJson)
     {
         // Encode the store text as a JS string literal.
-        var literal = JsonSerializer.Serialize(storeJson);
-        return $"try{{window.localStorage.setItem(\"{StoreKey}\", {literal});}}catch(e){{}}";
+        return $"window.__cbNativeStoreSeed = {storeJson};";
     }
 
     private const string BridgeShimScript = @"
 (function(){
   window.webkit = window.webkit || {};
   window.webkit.messageHandlers = window.webkit.messageHandlers || {};
+  window.__cbNativeProgramId = 'windowsapp';
+  window.__vaultRuntimeMetadata = { product:'windows-vault', environment:'production' };
+  ['activity','vaultClassifier'].forEach(function(channel){
+    window.webkit.messageHandlers[channel]={postMessage:function(message){window.chrome.webview.postMessage({kind:channel === 'activity' ? 'activity-message' : 'classifier-message',message:message});}};
+  });
   window.webkit.messageHandlers.cbBridge = {
     postMessage: function(msg){ try { window.chrome.webview.postMessage(msg); } catch (e) {} }
   };
 })();";
 
-    private void OnWebMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    private static bool TrustedEditorUri(string uri) => Uri.TryCreate(uri, UriKind.Absolute, out var u) && u.Scheme == "https" && u.Host == VirtualHost;
+
+    private async void OnWebMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
         try
         {
+            if (!TrustedEditorUri(e.Source) || e.WebMessageAsJson.Length > 2 * 1024 * 1024) return;
             using var doc = JsonDocument.Parse(e.WebMessageAsJson);
             var root = doc.RootElement;
             if (!root.TryGetProperty("kind", out var kindEl) || kindEl.ValueKind != JsonValueKind.String)
@@ -224,11 +237,26 @@ public partial class MainWindow : Window
             }
             switch (kindEl.GetString())
             {
-                case "persist-store":
-                    if (root.TryGetProperty("store", out var store))
+                case "classifier-message":
+                    if (root.TryGetProperty("message", out var classifierMessage) && JsonNode.Parse(classifierMessage.GetRawText()) is JsonObject classifierBody)
                     {
-                        _store.SaveRaw(store.GetRawText());
+                        var snapshot = await _classifier.Request("action", classifierBody);
+                        if (snapshot != null) ApplyClassifierSnapshot(snapshot);
                     }
+                    break;
+                case "activity-message":
+                    if (root.TryGetProperty("message", out var activityMessage) && JsonNode.Parse(activityMessage.GetRawText()) is JsonObject activityBody)
+                        ApplyActivity(await _classifier.Request("activity", activityBody));
+                    break;
+                case "scene-shown":
+                    if (root.TryGetProperty("scene", out var scene) && scene.GetString() == "classifier") ApplyClassifierSnapshot(await _classifier.Request("snapshot", new()));
+                    if (root.TryGetProperty("scene", out var activityScene) && activityScene.GetString() == "activity") ApplyActivity(await _classifier.Request("activity", new JsonObject { ["kind"] = "ready" }));
+                    break;
+                case "vault-classifier-tag-names":
+                    NativeReply(root, new JsonObject { ["ok"] = true, ["names"] = await _classifier.Request("tagNames", new JsonObject { ["platform"] = ReadMessageString(root,"platform") }) });
+                    break;
+                case "persist-store":
+                    if (root.TryGetProperty("changes", out var changes) && JsonNode.Parse(changes.GetRawText()) is JsonObject patch) _store.Merge(patch);
                     break;
 
                 // Web-app bridge: the editor drives the local hub through cbBridge,
@@ -248,10 +276,10 @@ public partial class MainWindow : Window
                 case "groups-announce":
                     _hub.AnnounceFromBridge(MessageJson(root));
                     break;
-                case "group-connect":
+                case "group-link":
                     _hub.ConnectFromBridge(MessageJson(root));
                     break;
-                case "group-disconnect":
+                case "group-unlink":
                     _hub.DisconnectFromBridge(MessageJson(root));
                     break;
                 case "group-sync":
@@ -269,7 +297,9 @@ public partial class MainWindow : Window
                     var (gid, src) = ReadGroupSource(root);
                     if (gid.Length > 0)
                     {
-                        _ = RunRuleAndPushLogAsync(gid, src);
+                        var result = await _ruleEngine.RunRuleAsync(gid, src);
+                        NativeReply(root, new JsonObject { ["ok"] = true, ["loadResult"] = result });
+                        PushRuleLog();
                     }
                     break;
                 }
@@ -317,6 +347,11 @@ public partial class MainWindow : Window
                 case "refresh-blocking-rules":
                     // Next tick re-evaluates groups; nothing extra to do here.
                     break;
+                case "clear-rule-log":
+                    _ruleEngine.ClearLog(ReadMessageString(root, "groupId")); NativeReply(root, new JsonObject { ["ok"] = true }); break;
+                case "local-folder-status": PushFolderStatus(); break;
+                case "local-folder-choose": LocalFolderGrant.Choose(); PushFolderStatus(); break;
+                case "local-folder-revoke": LocalFolderGrant.Revoke(); PushFolderStatus(); break;
                 case "local-folder-reveal":
                     RevealLocalFolder();
                     break;
@@ -382,8 +417,10 @@ public partial class MainWindow : Window
             // Resolve the focused app once and share it with both engines: native
             // enforcement consumes last tick's rule-blocked set; the rule engine
             // produces this tick's set for the next pass (≤1s latency).
+            _hub.ReconcileLocal(_store);
             var foreground = ProcessIdentity.ForWindow(NativeMethods.GetForegroundWindow());
             var status = _engine.Tick(foreground, _ruleEngine.BlockedIdentities);
+            _ = RecordActivity(foreground);
 
             PushUsage();
             PushPermission();
@@ -438,6 +475,38 @@ public partial class MainWindow : Window
         {
             // Swallow and continue on the next tick.
         }
+    }
+
+    private async Task<JsonObject> HubClassifierRequest(string operation, JsonObject body)
+    {
+        var result = await _classifier.Request(operation.StartsWith("activity-") ? "activity" : "hub", operation.StartsWith("activity-") ? new JsonObject { ["kind"] = operation == "activity-record" ? "browser-record" : "settings", ["body"] = body.DeepClone() } : new JsonObject { ["sourcePeerID"] = "windowsapp", ["requestID"] = Guid.NewGuid().ToString(), ["operation"] = operation, ["body"] = body.DeepClone() });
+        if (result is JsonObject obj && obj["body"] is JsonObject answer) return (JsonObject)answer.DeepClone();
+        if (result is JsonObject error && error["error"] is JsonNode code) throw new InvalidOperationException(code.GetValue<string>());
+        return result as JsonObject ?? new();
+    }
+    private void OnClassifierEvent(JsonObject evt) => Dispatcher.InvokeAsync(() =>
+    {
+        if (evt["event"]?.GetValue<string>() == "state" && evt["value"] != null) ApplyClassifierSnapshot(evt["value"]);
+        if (evt["event"]?.GetValue<string>() == "activity") ApplyActivity(evt["value"]);
+        if (evt["event"]?.GetValue<string>() == "broadcast") _hub.BroadcastClassifier(evt);
+    });
+    private void ApplyClassifierSnapshot(JsonNode? snapshot)
+    {
+        if (snapshot != null && Web.CoreWebView2 != null) _ = Web.CoreWebView2.ExecuteScriptAsync($"window.VaultClassifier && window.VaultClassifier.receive({snapshot.ToJsonString()});");
+    }
+    private void ApplyActivity(JsonNode? response)
+    {
+        if (response is not JsonObject r || Web.CoreWebView2 == null) return;
+        var kind = r["kind"]?.GetValue<string>();
+        if (kind == "history") { _ = Web.CoreWebView2.ExecuteScriptAsync($"window.activityHistory && window.activityHistory({r["request"]?.ToJsonString() ?? "{}"},{r["value"]?.ToJsonString() ?? "{}"});"); return; }
+        if (kind == "known-items") { _ = Web.CoreWebView2.ExecuteScriptAsync($"window.activityKnownItems && window.activityKnownItems({r["items"]?.ToJsonString() ?? "[]"},{r["icons"]?.ToJsonString() ?? "{}"});"); return; }
+        if (kind == "group-save") { _ = Web.CoreWebView2.ExecuteScriptAsync($"window.activityGroupSaved && window.activityGroupSaved({r["answer"]?.ToJsonString() ?? "{}"});"); ApplyActivity(r["snapshot"]); return; }
+        var args = new[] { "snapshot", "icons", "facts", "collection", "tags", "contentSnapshot" }.Select(k => r[k]?.ToJsonString() ?? (k == "tags" ? "[]" : "{}"));
+        _ = Web.CoreWebView2.ExecuteScriptAsync($"window.activityApply && window.activityApply({string.Join(",", args)});");
+    }
+    private async Task RecordActivity(AppIdentity foreground)
+    {
+        try { await _classifier.Request("activity", new JsonObject { ["kind"] = "native-sample", ["appId"] = foreground.Canonical, ["name"] = foreground.DisplayName, ["elapsedMs"] = 1000, ["atMs"] = DateTimeOffset.Now.ToUnixTimeMilliseconds() }); } catch { }
     }
 
     // ---- Custom-rule helpers ------------------------------------------------
@@ -573,12 +642,19 @@ public partial class MainWindow : Window
         }
     }
 
+    private void NativeReply(JsonElement body, JsonObject reply)
+    {
+        if (body.TryGetProperty("requestId", out var id) && id.ValueKind == JsonValueKind.String)
+            _ = Web.CoreWebView2.ExecuteScriptAsync($"window.__cbNativeReply && window.__cbNativeReply({JsonSerializer.Serialize(id.GetString())},{reply.ToJsonString()});");
+    }
+    private void PushFolderStatus() => _ = Web.CoreWebView2.ExecuteScriptAsync($"window.__cbLocalFolderState && window.__cbLocalFolderState({LocalFolderGrant.Status().ToJsonString()});");
+
     private void RevealLocalFolder()
     {
         try
         {
-            var dir = Path.Combine(Storage.RootDirectory, "LocalFiles");
-            Directory.CreateDirectory(dir);
+            var dir = LocalFolderGrant.Folder;
+            if (dir == null) return;
             Process.Start(new ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true });
         }
         catch
@@ -679,7 +755,7 @@ public partial class MainWindow : Window
             return;
         }
         _ = Web.CoreWebView2.ExecuteScriptAsync(
-            $"window.__cbGroupRejected && window.__cbGroupRejected({json});");
+            $"window.__cbLinkRefused && window.__cbLinkRefused({json});");
     }
 
     private void PushUsage()
@@ -724,6 +800,7 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
+        _classifier.Dispose();
         _timer?.Stop();
         _monitor?.Dispose();
         _hub.Stop();

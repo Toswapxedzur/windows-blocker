@@ -12,64 +12,35 @@ namespace WindowsBlocker.Rules;
 // consumes. Field names match the JS object keys exactly (camelCase), so the
 // same runtime that backs macOS drives the Windows port unchanged.
 
-/// An event handed to MacBlockerRuntime.dispatch(...). Mirrors CustomRuleEvent.
 public sealed class CustomRuleEvent
 {
     [JsonPropertyName("type")] public string Type { get; set; } = "";
-    [JsonPropertyName("groupID")] public string GroupId { get; set; } = "";
-    [JsonPropertyName("target")] public RuleTarget? Target { get; set; }
-    [JsonPropertyName("now")] public string Now { get; set; } = "";
-    [JsonPropertyName("url")] public string Url { get; set; } = "";
-    [JsonPropertyName("hostname")] public string Hostname { get; set; } = "";
-    [JsonPropertyName("data")] public Dictionary<string, string> Data { get; set; } = new();
+    [JsonPropertyName("targetGroupId")] public string GroupId { get; set; } = "";
+    [JsonPropertyName("now")] public long Now { get; set; } = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+    [JsonPropertyName("data")] public object? Data { get; set; }
 }
-
-/// The block target a rule sees as `ev.target` (reads `.id`, `.tags`, `.displayName`).
-public sealed class RuleTarget
-{
-    [JsonPropertyName("id")] public string Id { get; set; } = "";
-    [JsonPropertyName("kind")] public string Kind { get; set; } = "application";
-    [JsonPropertyName("displayName")] public string DisplayName { get; set; } = "";
-    [JsonPropertyName("value")] public string Value { get; set; } = "";
-    [JsonPropertyName("tags")] public List<string> Tags { get; set; } = new();
-}
-
-public sealed class RuleDecision
-{
-    [JsonPropertyName("action")] public string Action { get; set; } = "";
-    [JsonPropertyName("groupID")] public string GroupId { get; set; } = "";
-    [JsonPropertyName("targetIDs")] public List<string> TargetIds { get; set; } = new();
-    [JsonPropertyName("reason")] public string Reason { get; set; } = "";
-    [JsonPropertyName("shieldMessage")] public string ShieldMessage { get; set; } = "";
-    [JsonPropertyName("metadata")] public Dictionary<string, JsonElement> Metadata { get; set; } = new();
-
-    public string MetaString(string key, string fallback = "")
-        => Metadata.TryGetValue(key, out var v) ? RuleJson.AsString(v) : fallback;
-}
-
-public sealed class RuleIntent
-{
-    [JsonPropertyName("kind")] public string Kind { get; set; } = "";
-    [JsonPropertyName("action")] public string Action { get; set; } = "";
-    [JsonPropertyName("target")] public string? Target { get; set; }
-    [JsonPropertyName("pattern")] public string? Pattern { get; set; }
-    [JsonPropertyName("path")] public string? Path { get; set; }
-    [JsonPropertyName("text")] public string? Text { get; set; }
-    [JsonPropertyName("groupId")] public string? GroupId { get; set; }
-    [JsonPropertyName("requestId")] public string? RequestId { get; set; }
-    [JsonPropertyName("browserBundleID")] public string? BrowserBundleId { get; set; }
-    [JsonPropertyName("windowIndex")] public int? WindowIndex { get; set; }
-    [JsonPropertyName("tabIndex")] public int? TabIndex { get; set; }
-}
-
 public sealed class CustomTimer
 {
-    [JsonPropertyName("id")] public string Id { get; set; } = "";
-    [JsonPropertyName("groupId")] public string GroupId { get; set; } = "";
     [JsonPropertyName("displayName")] public string DisplayName { get; set; } = "";
-    [JsonPropertyName("direction")] public string Direction { get; set; } = "";
     [JsonPropertyName("currentMs")] public double CurrentMs { get; set; }
     [JsonPropertyName("isPaused")] public bool IsPaused { get; set; }
+}
+public sealed class RuleAction
+{
+    [JsonPropertyName("groupId")] public string GroupId { get; set; } = "";
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "";
+    [JsonPropertyName("appId")] public string? AppId { get; set; }
+    [JsonPropertyName("on")] public bool? On { get; set; }
+    [JsonPropertyName("op")] public string? Op { get; set; }
+    [JsonPropertyName("path")] public string? Path { get; set; }
+    [JsonPropertyName("payload")] public string? Payload { get; set; }
+    [JsonPropertyName("requestId")] public string? RequestId { get; set; }
+}
+public sealed class RuntimeLog
+{
+    [JsonPropertyName("groupId")] public string GroupId { get; set; } = "";
+    [JsonPropertyName("level")] public string Level { get; set; } = "log";
+    [JsonPropertyName("message")] public string Message { get; set; } = "";
 }
 
 public sealed class PanelOption
@@ -146,23 +117,28 @@ public sealed class PanelSnapshot
 
 public sealed class DispatchResult
 {
-    [JsonPropertyName("decisions")] public List<RuleDecision> Decisions { get; set; } = new();
-    [JsonPropertyName("intents")] public List<RuleIntent> Intents { get; set; } = new();
-    [JsonPropertyName("timers")] public List<CustomTimer> Timers { get; set; } = new();
-    [JsonPropertyName("panels")] public List<PanelSnapshot> Panels { get; set; } = new();
+    [JsonPropertyName("actions")] public List<RuleAction> Actions { get; set; } = new();
+    [JsonPropertyName("logs")] public List<RuntimeLog> Logs { get; set; } = new();
+    [JsonPropertyName("diagnostics")] public List<RuntimeLog> Diagnostics { get; set; } = new();
+    [JsonPropertyName("panels")] public Dictionary<string,List<PanelSnapshot>> Panels { get; set; } = new();
+    [JsonPropertyName("states")] public Dictionary<string,string> States { get; set; } = new();
+    [JsonPropertyName("quarantine")] public JsonElement? Quarantine { get; set; }
 }
-
 public sealed class LoadResult
 {
+    [JsonPropertyName("ok")] public bool Ok { get; set; }
     [JsonPropertyName("handlers")] public int Handlers { get; set; }
-    [JsonPropertyName("decisions")] public List<RuleDecision> Decisions { get; set; } = new();
+    [JsonPropertyName("types")] public List<string> Types { get; set; } = new();
+    [JsonPropertyName("error")] public string? Error { get; set; }
+    [JsonPropertyName("logs")] public List<RuntimeLog> Logs { get; set; } = new();
+    [JsonPropertyName("panels")] public List<PanelSnapshot> Panels { get; set; } = new();
 }
-
-/// One line of the rule log forwarded to the editor via __cbApplyNativeRuleLog.
 public sealed class RuleLogEntry
 {
     [JsonPropertyName("timestamp")] public string Timestamp { get; set; } = "";
     [JsonPropertyName("level")] public string Level { get; set; } = "log";
+    [JsonPropertyName("groupId")] public string GroupId { get; set; } = "";
+    [JsonPropertyName("source")] public string Source { get; set; } = "v.log";
     [JsonPropertyName("group")] public string Group { get; set; } = "";
     [JsonPropertyName("message")] public string Message { get; set; } = "";
 }

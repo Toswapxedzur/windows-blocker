@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0-windows</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup><Compile Include="../WindowsBlocker/Bridge/LocalHubAuthentication.cs" Link="LocalHubAuthentication.cs"/><Compile Include="../WindowsBlocker/WebUI/Storage.cs" Link="Storage.cs"/></ItemGroup>
+</Project>

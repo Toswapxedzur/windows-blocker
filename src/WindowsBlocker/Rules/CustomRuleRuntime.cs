@@ -15,7 +15,7 @@ namespace WindowsBlocker.Rules;
 /// </summary>
 public sealed class CustomRuleRuntime
 {
-    private static readonly TimeSpan ExecutionTimeout = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan ExecutionTimeout = TimeSpan.FromMilliseconds(1200);
     private static readonly TimeSpan StartupTimeout = TimeSpan.FromSeconds(2);
 
     private readonly CoreWebView2 _web;
@@ -45,20 +45,25 @@ public sealed class CustomRuleRuntime
     public async Task<bool> IsReadyAsync()
         => await RequestAsync<object>("ping", "", null, null, StartupTimeout) is not null;
 
-    public Task<LoadResult?> LoadAsync(string groupId, string source)
-        => RequestAsync<LoadResult>("load", groupId, source, null, ExecutionTimeout);
+    public Task<LoadResult?> LoadAsync(string groupId, string source, string stateJSON)
+        => RequestAsync<LoadResult>("load", groupId, source, new { stateJSON }, ExecutionTimeout);
+
+    public async Task SuppressAsync(string groupId, bool on) => _ = await RequestAsync<object>("suppress", groupId, null, new { on }, ExecutionTimeout);
 
     public async Task UnloadAsync(string groupId)
         => _ = await RequestAsync<object>("unload", groupId, null, null, ExecutionTimeout);
 
     public Task<DispatchResult?> DispatchAsync(CustomRuleEvent ev)
-        => RequestAsync<DispatchResult>("dispatch", ev.GroupId, null, ev, ExecutionTimeout);
+        => RequestAsync<DispatchResult>("dispatch", ev.GroupId, null, new { descriptor = ev }, ExecutionTimeout);
+
+    public Task<Dictionary<string,JsonElement>?> PolicyAsync(string module, string method, object?[] args)
+        => RequestAsync<Dictionary<string,JsonElement>>("policy", "", null, new { module, method, args }, TimeSpan.FromSeconds(4));
 
     private async Task<T?> RequestAsync<T>(
         string operation,
         string groupId,
         string? source,
-        CustomRuleEvent? ev,
+        object? ev,
         TimeSpan timeout) where T : class
     {
         var requestId = Guid.NewGuid().ToString("N");
@@ -73,7 +78,13 @@ public sealed class CustomRuleRuntime
             ["operation"] = operation,
             ["groupId"] = groupId,
             ["source"] = source,
-            ["event"] = ev
+            ["event"] = ev,
+            ["stateJSON"] = ev is not null && operation == "load" ? ((dynamic)ev).stateJSON : null,
+            ["descriptor"] = ev is not null && operation == "dispatch" ? ((dynamic)ev).descriptor : null,
+            ["on"] = ev is not null && operation == "suppress" ? ((dynamic)ev).on : null,
+            ["module"] = ev is not null && operation == "policy" ? ((dynamic)ev).module : null,
+            ["method"] = ev is not null && operation == "policy" ? ((dynamic)ev).method : null,
+            ["args"] = ev is not null && operation == "policy" ? ((dynamic)ev).args : null
         };
 
         try
@@ -137,6 +148,7 @@ public sealed class CustomRuleRuntime
     {
         try
         {
+            if (!e.Source.StartsWith("https://appassets.windowsblocker/", StringComparison.OrdinalIgnoreCase)) return;
             var messageJson = e.WebMessageAsJson;
             if (messageJson.Length > 2 * 1024 * 1024)
             {
