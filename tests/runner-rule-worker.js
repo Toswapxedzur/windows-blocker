@@ -20,6 +20,8 @@ function createRuleWorker() {
       if (type === "message") parentPort.on("message", (data) => handler({ data }));
     };
     globalThis.removeEventListener = () => {};
+    globalThis.navigator = { storage: { getDirectory() { return {}; } } };
+    globalThis.chrome = { webview: { postMessage() {} } };
     globalThis.importScripts = (...names) => names.forEach(name => vm.runInThisContext(
       fs.readFileSync(require("path").join(${JSON.stringify(assetsPath)}, name), "utf8"),
       { filename: name }
@@ -71,12 +73,14 @@ async function main() {
         () => fetch("https://example.com"),
         () => postMessage({ kind: "spoof" }),
         () => new Worker("other.js"),
-        () => indexedDB.open("shared")
+        () => indexedDB.open("shared"),
+        () => navigator.storage.getDirectory(),
+        () => chrome.webview.postMessage({kind:"persist-store"})
       ]) {
         try { probe(); } catch (_) { unavailable += 1; }
       }
       on("tick", (ev) => {
-        if (unavailable === 4) v.block(ev.data.appId);
+        if (unavailable === 6) v.block(ev.data.appId);
       });
     }`
   });
