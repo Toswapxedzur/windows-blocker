@@ -42,4 +42,4 @@ The [release scripts](scripts/release/README.md) create a self-contained x64 pac
 
 ## Documentation and translations
 
-English documents remain canonical. UI labels use the complete JSON catalogs in `src/WindowsBlocker/WebAssets/translation/`; translated manuals live beside `manual/en.md`, and translated copies of the remaining maintained documents are under `i18n-docs/<locale>/`.
+English documents remain canonical. UI labels use the complete JSON catalogs in `src/WindowsBlocker/WebAssets/translation/`. Native manuals use the current English fallback until the separate translation batch regenerates references for the current API. Translated copies of the remaining maintained documents are under `i18n-docs/<locale>/`.
