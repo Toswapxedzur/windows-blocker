@@ -37,7 +37,7 @@ public static class ChromeExtensionImporter
             Id = Str(obj, "id") ?? Guid.NewGuid().ToString(), Name = Str(obj, "name") ?? "Block Group",
             GroupType = Str(obj, "groupType") == "custom" ? BlockGroupType.Custom : BlockGroupType.Site,
             Enabled = Bool(obj, "enabled") && Str(obj, "effect") != "allow",
-            Mode = Str(obj, "mode") is "after-minutes" or "timer" ? BlockingMode.AfterMinutes : BlockingMode.Instant,
+            Mode = Str(obj, "mode") == "after-minutes" ? BlockingMode.AfterMinutes : BlockingMode.Instant,
             AllowedMinutes = Positive(obj, "allowedMinutes", 15), ResetIntervalHours = Positive(obj, "resetIntervalHours", 24),
             ResetAtMidnight = Bool(obj, "resetAtMidnight"), RollingLimit = Bool(obj, "rollingLimit"), ActiveDays = days,
             TimeWindows = ScheduleParser.ParseWindows(Str(obj, "timeWindowsText") ?? ""),
@@ -49,5 +49,5 @@ public static class ChromeExtensionImporter
     internal static string? Str(JsonElement obj, string key) => obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
     internal static bool Bool(JsonElement obj, string key) => obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.True;
     internal static IEnumerable<JsonElement> Array(JsonElement obj, string key) => obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Array ? v.EnumerateArray() : Enumerable.Empty<JsonElement>();
-    private static double Positive(JsonElement obj, string key, double fallback) => obj.TryGetProperty(key, out var v) && v.TryGetDouble(out var n) && double.IsFinite(n) && n > 0 ? n : fallback;
+    private static double Positive(JsonElement obj, string key, double fallback) => obj.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetDouble(out var n) && double.IsFinite(n) && n > 0 ? n : fallback;
 }

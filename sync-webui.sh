@@ -61,6 +61,7 @@ def windows_metadata(value):
     if isinstance(value, dict): return {key: windows_metadata(item) for key, item in value.items()}
     if not isinstance(value, str): return value
     return (value.replace("Mac Vault", "Windows Vault").replace("macapp", "windowsapp")
+        .replace("chrome, edge, safari", "chrome, edge")
         .replace("macOS application (by bundle identifier)", "Windows application (by full executable path or application user model ID)")
         .replace("by bundle identifier", "by full executable path or application user model ID")
         .replace("The application's bundle identifier.", "The application's full executable path or application user model ID.")

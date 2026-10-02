@@ -10,7 +10,6 @@ namespace WindowsBlocker.Rules;
 
 public sealed class RuleTickOutput
 {
-    public List<TimerDisplayItem> CustomTimers { get; } = new();
     public List<(string Message, string Level)> HudLogs { get; } = new();
     public List<string> CloseOnce { get; } = new();
 }
@@ -21,6 +20,7 @@ public sealed class RuleEngine(WebStore store)
 {
     public const string SystemGroupId = "__system__";
     private CustomRuleRuntime? _runtime;
+    private readonly SemaphoreSlim _operations=new(1);
     private readonly Dictionary<string,string> _loaded = new();
     private readonly Dictionary<string,string> _quarantined = new();
     private readonly Dictionary<string,HashSet<string>> _blocks = new();
@@ -37,13 +37,15 @@ public sealed class RuleEngine(WebStore store)
         _runtime = runtime;
         runtime.GroupReset += (id, error) => { _quarantined[id] = _loaded.GetValueOrDefault(id, ""); _loaded.Remove(id); _blocks.Remove(id); _panels.Remove(id); Trace.WriteLine($"Rule {id}: {error}"); };
     }
-    public async Task<RuleTickOutput> TickAsync(AppIdentity foreground, List<AppIdentity> running)
+    public async Task<RuleTickOutput> TickAsync(AppIdentity foreground,List<AppIdentity> running)
+    { await _operations.WaitAsync(); try { return await TickCore(foreground,running); } finally { _operations.Release(); } }
+    private async Task<RuleTickOutput> TickCore(AppIdentity foreground, List<AppIdentity> running)
     {
         var output = new RuleTickOutput();
         if (_runtime == null) return output;
         var groups = store.ImportedGroups()?.Groups ?? new();
         var wanted = groups.Where(g => g.GroupType == BlockGroupType.Custom && g.CustomRuleSource.Length > 0).ToDictionary(g => g.Id);
-        foreach (var id in _loaded.Keys.Concat(_quarantined.Keys).Distinct().Where(id => !wanted.ContainsKey(id)).ToList()) await UnloadGroupAsync(id);
+        foreach (var id in _loaded.Keys.Concat(_quarantined.Keys).Distinct().Where(id => !wanted.ContainsKey(id)).ToList()) await UnloadCore(id);
         foreach (var (id, group) in wanted)
         {
             if (_loaded.GetValueOrDefault(id) != group.CustomRuleSource && _quarantined.GetValueOrDefault(id) != group.CustomRuleSource) await Load(group, group.CustomRuleSource);
@@ -70,11 +72,14 @@ public sealed class RuleEngine(WebStore store)
         var raw = JsonNode.Parse(store.LoadRawJson() ?? "{}");
         var state = raw?["cbRuleState"]?[group.Id]?.ToJsonString() ?? "{}";
         var result = _runtime == null ? null : await _runtime.LoadAsync(group.Id, source, state);
+        if (result != null) AppendLogs(result.Logs);
         if (result == null || !result.Ok) return result;
         _loaded[group.Id] = source; _quarantined.Remove(group.Id); _blocks.Remove(group.Id); _panels[group.Id] = result.Panels;
-        AppendLogs(result.Logs); return result;
+        return result;
     }
-    public async Task<JsonObject> RunRuleAsync(string groupId, string source)
+    public async Task<JsonObject> RunRuleAsync(string groupId,string source)
+    { await _operations.WaitAsync(); try { return await RunCore(groupId,source); } finally { _operations.Release(); } }
+    private async Task<JsonObject> RunCore(string groupId, string source)
     {
         var raw = JsonNode.Parse(store.LoadRawJson() ?? "{}");
         var g = (raw?["blockedGroups"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault(g => g["id"]?.GetValue<string>() == groupId);
@@ -84,17 +89,21 @@ public sealed class RuleEngine(WebStore store)
         var result = await Load(group, source);
         if (result?.Ok == true)
         {
-            store.Update(root => { var native = (root["blockedGroups"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault(g => g["id"]?.GetValue<string>() == groupId); if (native != null) { native["activeEventSource"] = source; native["blockingRulesText"] = source; native["enabled"] = true; } });
+            store.Update(root => { var native = (root["blockedGroups"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault(g => g["id"]?.GetValue<string>() == groupId); if (native != null) { native["activeEventSource"] = source; native["blockingRulesText"] = source; native["enabled"] = true; native["lastAbortReason"]=null; } });
             _suppressed.Remove(groupId); if (_runtime != null) await _runtime.SuppressAsync(groupId, false);
         }
         return new() { ["ok"] = result?.Ok == true, ["handlers"] = result?.Handlers ?? 0, ["error"] = result?.Error ?? (result == null ? "rules-not-running" : null) };
     }
     public async Task UnloadGroupAsync(string groupId)
+    { await _operations.WaitAsync(); try { await UnloadCore(groupId); } finally { _operations.Release(); } }
+    private async Task UnloadCore(string groupId)
     {
         if (_runtime != null) await _runtime.UnloadAsync(groupId);
         _loaded.Remove(groupId); _quarantined.Remove(groupId); _blocks.Remove(groupId); _panels.Remove(groupId); _suppressed.Remove(groupId);
     }
-    public async Task<RuleTickOutput> FireUserEventAsync(string type, string groupId, Dictionary<string,string> data, AppIdentity foreground)
+    public async Task<RuleTickOutput> FireUserEventAsync(string type,string groupId,Dictionary<string,string> data,AppIdentity foreground)
+    { await _operations.WaitAsync(); try { return await FireCore(type,groupId,data,foreground); } finally { _operations.Release(); } }
+    private async Task<RuleTickOutput> FireCore(string type, string groupId, Dictionary<string,string> data, AppIdentity foreground)
     {
         var output = new RuleTickOutput();
         var evData = data.ToDictionary(k => k.Key, k => (object?)k.Value);
@@ -124,12 +133,12 @@ public sealed class RuleEngine(WebStore store)
                     case "file": await Dispatch("file", LocalFolderGrant.Handle(action), action.GroupId, output, depth + 1); break;
                 }
             }
-            if (result.Quarantine.HasValue && result.Quarantine.Value.ValueKind == JsonValueKind.Object) { var source = _loaded.GetValueOrDefault(id, ""); await UnloadGroupAsync(id); _quarantined[id] = source; }
+            if (result.Quarantine.HasValue && result.Quarantine.Value.ValueKind == JsonValueKind.Object) { var source = _loaded.GetValueOrDefault(id, ""); await UnloadCore(id); _quarantined[id] = source; }
         }
     }
     private static void OpenApp(string? appId)
     {
-        if (string.IsNullOrEmpty(appId)) return;
+        appId=WindowsAppId.Normalize(appId ?? ""); if(appId==null) return;
         try
         {
             if (appId.Contains('!')) Process.Start(new ProcessStartInfo("explorer.exe", $"shell:AppsFolder\\{appId}") { UseShellExecute = true });
@@ -141,7 +150,7 @@ public sealed class RuleEngine(WebStore store)
     {
         foreach (var log in logs)
         {
-            if (!_loaded.ContainsKey(log.GroupId)) continue;
+            if (store.ImportedGroups()?.Groups.Any(g=>g.Id==log.GroupId)!=true) continue;
             var name = store.ImportedGroups()?.Groups.FirstOrDefault(g => g.Id == log.GroupId)?.Name ?? "";
             _logs.Add(new() { Timestamp = DateTimeOffset.Now.ToString("o"), GroupId = log.GroupId, Group = name, Message = log.Message });
             while (_logs.Count(l => l.GroupId == log.GroupId) > 200) _logs.RemoveAt(_logs.FindIndex(l => l.GroupId == log.GroupId));

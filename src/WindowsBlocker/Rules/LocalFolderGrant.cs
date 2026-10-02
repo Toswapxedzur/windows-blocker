@@ -15,7 +15,7 @@ public static class LocalFolderGrant
         if (picker.ShowDialog() == true) File.WriteAllText(GrantPath, picker.FolderName);
     }
     public static void Revoke() { if (File.Exists(GrantPath)) File.Delete(GrantPath); }
-    public static JsonObject Status() => new() { ["available"] = Folder != null, ["name"] = Folder == null ? "" : Path.GetFileName(Folder) };
+    public static JsonObject Status() => new() { ["connected"] = Folder != null, ["name"] = Folder == null ? "" : Path.GetFileName(Folder) };
     public static JsonObject Handle(RuleAction action)
     {
         var result = new JsonObject { ["requestId"] = action.RequestId, ["op"] = action.Op, ["path"] = action.Path, ["ok"] = false };
