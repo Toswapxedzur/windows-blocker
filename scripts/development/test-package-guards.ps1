@@ -18,6 +18,7 @@ try {
     Set-Content "$unrelated\keep.txt" 'keep existing files'
     Refuses { & "$fixture\Install.ps1" -Environment development -Destination $unrelated } 'unrelated application folder' 'Installer preserves unrelated destination'
     Refuses { & "$fixture\Install.ps1" -Environment development -Destination $temporary } 'separate application folder' 'Installer refuses source ancestor'
+    Refuses { & "$fixture\Install.ps1" -Environment development -Destination (Join-Path $fixture 'nested-install') } 'separate application folder' 'Installer refuses destination inside its payload'
     $target=Join-Path $temporary 'install'
     Set-Content "$fixture\WindowsBlocker.exe" 'fixture'
     @{schema=1;product='Windows Vault';architecture='x64';files=@(@{path='WindowsBlocker.exe';sha256=('0'*64)})}|ConvertTo-Json -Depth 5|Set-Content "$fixture\package-manifest.json"
@@ -30,6 +31,7 @@ try {
     @{product='Other product';environment='development'}|ConvertTo-Json|Set-Content "$unrelated\.vault-install.json"
     Refuses { & "$fixture\Install.ps1" -Environment development -Destination $unrelated } 'unrelated application folder' 'Installer refuses another product marker'
     Refuses { & "$Repository\scripts\release\package-windows-vault.ps1" -ClassifierWorkerDirectory $worker -OutputDirectory (Split-Path $Repository) } 'dedicated package output folder' 'Packager refuses repository ancestor'
+    Refuses { & "$Repository\scripts\release\package-windows-vault.ps1" -ClassifierWorkerDirectory $worker -OutputDirectory (Join-Path $worker 'nested-package') } 'separate from the Classifier worker' 'Packager refuses output inside the worker payload'
     if((Get-Content "$unrelated\keep.txt" -Raw).Trim() -ne 'keep existing files' -or (Test-Path $target)){throw 'Refused operation mutated fixture destination'}
     Write-Output "$count package/installer guards passed"
 } finally { Remove-Item $temporary -Recurse -Force }

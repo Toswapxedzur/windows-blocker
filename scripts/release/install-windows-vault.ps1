@@ -5,7 +5,7 @@ if ([Environment]::OSVersion.Version.Build -lt 19045) { throw 'Use Windows 10 22
 $source=$PSScriptRoot
 if (!$Destination) { $Destination=Join-Path $env:LOCALAPPDATA ('Programs\AdamanciaVault\'+$Environment) }
 $Destination=[IO.Path]::GetFullPath($Destination)
-if ($Destination -eq [IO.Path]::GetPathRoot($Destination) -or $Destination -eq $source -or $source.StartsWith($Destination.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Choose a separate application folder.' }
+if ($Destination -eq [IO.Path]::GetPathRoot($Destination) -or $Destination -eq $source -or $source.StartsWith($Destination.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase) -or $Destination.StartsWith($source.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Choose a separate application folder.' }
 if ((Test-Path $Destination) -and @(Get-ChildItem $Destination -Force).Count -gt 0) {
     $previousInstall=$null
     try { $previousInstall=Get-Content "$Destination\.vault-install.json" -Raw|ConvertFrom-Json } catch { }
