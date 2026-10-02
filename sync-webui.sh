@@ -26,6 +26,10 @@ for name in ["translation", "icons", "code-manual", "manual"]:
     if target.exists(): shutil.rmtree(target)
     source = editor / name if name in ["code-manual", "manual"] else ext / name
     shutil.copytree(source, target)
+# Windows editor branding is generated from the selected Windows master.
+for icon in (root / "src/WindowsBlocker/Assets/BrowserIcons").iterdir():
+    if icon.suffix not in (".png", ".svg"): continue
+    shutil.copy2(icon, dest / "icons" / icon.name)
 # Native API differences are kept explicit in English; locale catalogs remain
 # the same canonical assets for the separate translation batch.
 for folder in ["manual", "code-manual"]:
