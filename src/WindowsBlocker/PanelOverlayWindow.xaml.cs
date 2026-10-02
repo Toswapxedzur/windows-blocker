@@ -33,6 +33,7 @@ public sealed class PanelOverlay
         {
             foreach (var panel in panelsByGroup[groupId])
             {
+                panel.GroupId = groupId; // The controller map owns routing identity.
                 if (panel.Visible == false)
                 {
                     continue;
@@ -99,11 +100,13 @@ public partial class PanelOverlayWindow : Window
     private const double Inset = 16;
 
     public PanelEventHandler? OnEvent { get; set; }
-    private readonly Dictionary<string, PanelCard> _cards = new();
+    private readonly Dictionary<(string GroupId, string PanelId), PanelCard> _cards = new();
+    private static (string GroupId, string PanelId) Identity(PanelSnapshot panel) => (panel.GroupId ?? "", panel.Id);
 
     public PanelOverlayWindow()
     {
         InitializeComponent();
+        System.Windows.Automation.AutomationProperties.SetAutomationId(this, "VaultRulePanels");
         SourceInitialized += OnSourceInitialized;
         SizeChanged += (_, _) => RepositionFor(_position);
     }
@@ -121,7 +124,7 @@ public partial class PanelOverlayWindow : Window
 
     public void SetCards(List<PanelSnapshot> panels)
     {
-        var keep = new HashSet<string>(panels.Select(p => p.Id));
+        var keep = panels.Select(Identity).ToHashSet();
         foreach (var id in _cards.Keys.ToList())
         {
             if (!keep.Contains(id))
@@ -133,14 +136,14 @@ public partial class PanelOverlayWindow : Window
 
         foreach (var panel in panels)
         {
-            if (_cards.TryGetValue(panel.Id, out var card))
+            if (_cards.TryGetValue(Identity(panel), out var card))
             {
                 card.Update(panel);
             }
             else
             {
                 var newCard = new PanelCard(panel, (g, pid, cid, ev, val, vals) => OnEvent?.Invoke(g, pid, cid, ev, val, vals));
-                _cards[panel.Id] = newCard;
+                _cards[Identity(panel)] = newCard;
                 Stack.Children.Add(newCard.Root);
             }
         }
@@ -148,7 +151,7 @@ public partial class PanelOverlayWindow : Window
         // Order cards to match the incoming order.
         for (var i = 0; i < panels.Count; i++)
         {
-            if (_cards.TryGetValue(panels[i].Id, out var card))
+            if (_cards.TryGetValue(Identity(panels[i]), out var card))
             {
                 var current = Stack.Children.IndexOf(card.Root);
                 if (current != i && current >= 0)

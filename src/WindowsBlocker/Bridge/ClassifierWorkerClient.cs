@@ -57,7 +57,16 @@ public sealed class ClassifierWorkerClient : IDisposable
             {
                 if (Encoding.UTF8.GetByteCount(line) > 16 * 1024 * 1024) throw new InvalidDataException("Worker response too large");
                 if (JsonNode.Parse(line) is not JsonObject message) continue;
-                if (message["event"] != null) { bool active; lock(_gate) active=_process==process; if(active) Event?.Invoke(message); continue; }
+                if (message["event"] != null)
+                {
+                    bool active; lock(_gate) active=_process==process;
+                    if(active)
+                    {
+                        if(message["event"]?.GetValue<string>()=="error") Trace.WriteLine("Classifier background error: "+message["error"]?.GetValue<string>()+" ("+message["sourceEvent"]?.GetValue<string>()+")");
+                        Event?.Invoke(message);
+                    }
+                    continue;
+                }
                 var id = message["id"]?.GetValue<string>() ?? "";
                 if (!_pending.TryGetValue(id,out var pending) || pending.Process!=process || !_pending.TryRemove(id,out _)) continue;
                 var completion=pending.Completion;

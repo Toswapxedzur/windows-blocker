@@ -44,6 +44,7 @@ public partial class MainWindow : Window
     private QuickAddWindow? _quickAdd;
     private CustomRuleRuntime? _runtime;
     private bool _ruleBusy;
+    private bool _folderChooserOpen;
     private IntPtr _selfHwnd;
 
     // Leading-edge throttle for high-frequency panel change events (slider drag,
@@ -251,6 +252,8 @@ public partial class MainWindow : Window
                     {
                         var answer = await _classifier.Request("action", classifierBody);
                         if (answer?["snapshot"] != null) ApplyClassifierSnapshot(answer["snapshot"]);
+                        if (answer?["list"] != null) _ = Web.CoreWebView2.ExecuteScriptAsync($"window.VaultClassifier && window.VaultClassifier.receiveList({answer["list"]!.ToJsonString()});");
+                        if (answer?["knowledgeRow"] != null) _ = Web.CoreWebView2.ExecuteScriptAsync($"window.VaultClassifier && window.VaultClassifier.receiveKnowledgeRow({answer["knowledgeRow"]!.ToJsonString()});");
                     }
                     break;
                 case "activity-message":
@@ -366,7 +369,18 @@ public partial class MainWindow : Window
                 case "clear-rule-log":
                     _ruleEngine.ClearLog(ReadMessageString(root, "groupId")); NativeReply(root, new JsonObject { ["ok"] = true }); break;
                 case "local-folder-status": PushFolderStatus(); break;
-                case "local-folder-choose": LocalFolderGrant.Choose(); PushFolderStatus(); break;
+                case "local-folder-choose":
+                    // WebView2 callbacks cannot run the nested message loop of a
+                    // native modal dialog. Open it after this callback returns.
+                    if (_folderChooserOpen) break;
+                    _folderChooserOpen = true;
+                    _ = Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        try { LocalFolderGrant.Choose(this); }
+                        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException) { }
+                        finally { _folderChooserOpen = false; PushFolderStatus(); }
+                    }));
+                    break;
                 case "local-folder-revoke": LocalFolderGrant.Revoke(); PushFolderStatus(); break;
                 case "local-folder-reveal":
                     RevealLocalFolder();
@@ -574,6 +588,7 @@ public partial class MainWindow : Window
     {
         if (response is not JsonObject r || Web.CoreWebView2 == null) return;
         var kind = r["kind"]?.GetValue<string>();
+        if (kind is "snapshot" or "known-items") ActivityNativeIcons.Enrich(r,AppInventory.IconForStoredId);
         if (kind == "history") { _ = Web.CoreWebView2.ExecuteScriptAsync($"window.activityHistory && window.activityHistory({r["request"]?.ToJsonString() ?? "{}"},{r["value"]?.ToJsonString() ?? "{}"});"); return; }
         if (kind == "known-items") { _ = Web.CoreWebView2.ExecuteScriptAsync($"window.activityKnownItems && window.activityKnownItems({r["items"]?.ToJsonString() ?? "[]"},{r["icons"]?.ToJsonString() ?? "{}"});"); return; }
         if (kind == "group-save") { _ = Web.CoreWebView2.ExecuteScriptAsync($"window.activityGroupSaved && window.activityGroupSaved({r["answer"]?.ToJsonString() ?? "{}"});"); ApplyActivity(r["snapshot"]); return; }
