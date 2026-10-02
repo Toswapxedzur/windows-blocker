@@ -18,6 +18,7 @@ subprocess.run(["tar", "-czf", str(archive), "--exclude=.git", "--exclude=bin", 
 subprocess.run(["scp", str(archive), "mini:winvm/windows-port-host.tar.gz"], check=True)
 subprocess.run(["ssh", "mini", "scp -P2222 -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -oLogLevel=ERROR ~/winvm/windows-port-host.tar.gz vault@127.0.0.1:C:/windows-port-host.tar.gz"], check=True)
 scripts = ["build-and-test.ps1"]
+scripts.append("test-folder-broker.ps1")
 if args.suite == "all":
     scripts.append("test-native-live.ps1")
 if args.suite in ("ui", "all"):

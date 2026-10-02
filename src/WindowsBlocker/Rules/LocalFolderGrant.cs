@@ -34,8 +34,12 @@ public static class LocalFolderGrant
             {
                 case "read": case "readJson":
                     var bytes = ReadLimited(full);
-                    result["text"] = Utf8.GetString(bytes);
-                    if (action.Op == "readJson") using (JsonDocument.Parse(bytes)) { }
+                    // Browser File.text() treats an initial UTF-8 BOM as an
+                    // encoding marker. PowerShell 5.1 commonly creates it.
+                    var text = Utf8.GetString(bytes);
+                    if (text.StartsWith('\uFEFF')) text = text[1..];
+                    result["text"] = text;
+                    if (action.Op == "readJson") using (JsonDocument.Parse(text)) { }
                     break;
                 case "write": case "writeJson": case "append":
                     var data = Utf8.GetBytes(action.Payload ?? "");
