@@ -19,12 +19,6 @@ public sealed class CustomRuleEvent
     [JsonPropertyName("now")] public long Now { get; set; } = DateTimeOffset.Now.ToUnixTimeMilliseconds();
     [JsonPropertyName("data")] public object? Data { get; set; }
 }
-public sealed class CustomTimer
-{
-    [JsonPropertyName("displayName")] public string DisplayName { get; set; } = "";
-    [JsonPropertyName("currentMs")] public double CurrentMs { get; set; }
-    [JsonPropertyName("isPaused")] public bool IsPaused { get; set; }
-}
 public sealed class RuleAction
 {
     [JsonPropertyName("groupId")] public string GroupId { get; set; } = "";
@@ -66,6 +60,7 @@ public sealed class PanelControl
     [JsonPropertyName("type")] public string Type { get; set; } = "";
     [JsonPropertyName("label")] public string? Label { get; set; }
     [JsonPropertyName("text")] public string? Text { get; set; }
+    [JsonPropertyName("html")] public string? Html { get; set; }
     [JsonPropertyName("value")] public JsonElement? Value { get; set; }
     [JsonPropertyName("disabled")] public bool? Disabled { get; set; }
     [JsonPropertyName("placeholder")] public string? Placeholder { get; set; }
@@ -74,10 +69,6 @@ public sealed class PanelControl
     [JsonPropertyName("max")] public double? Max { get; set; }
     [JsonPropertyName("step")] public double? Step { get; set; }
     [JsonPropertyName("action")] public string? Action { get; set; }
-    [JsonPropertyName("timerId")] public string? TimerId { get; set; }
-    [JsonPropertyName("timer")] public CustomTimer? Timer { get; set; }
-    [JsonPropertyName("format")] public string? Format { get; set; }
-    [JsonPropertyName("showExpired")] public bool? ShowExpired { get; set; }
     [JsonPropertyName("controls")] public List<PanelControl>? Controls { get; set; }
     [JsonPropertyName("layout")] public string? Layout { get; set; }
     [JsonPropertyName("align")] public string? Align { get; set; }

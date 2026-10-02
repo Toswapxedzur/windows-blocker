@@ -68,7 +68,7 @@ public sealed class WebStore
     {
         lock (_gate) { var root = LoadObject() ?? new JsonObject(); var before = root.ToJsonString(); mutation(root); if (root.ToJsonString() != before) Write(root); }
     }
-    private static readonly HashSet<string> PerGroupKeys = new() { "usageTimersMs", "usageResetAtMs", "usageBucketsMs", "groupSnoozes", "groupSnoozeTotalMs", "customRuleStates", "groupRuleState", "ruleLogByGroup", "cbRuleState" };
+    private static readonly HashSet<string> PerGroupKeys = new() { "usageTimersMs", "usageResetAtMs", "usageBucketsMs", "groupSnoozes", "groupSnoozeTotalsMs", "cbRuleLog", "cbRuleQuarantine", "cbRuleState" };
     private void Write(JsonObject root)
     {
         var tmp = FilePath + ".tmp";
@@ -146,10 +146,11 @@ public sealed class WebStore
     public void WriteUsage(
         Dictionary<string, double> timersMs,
         Dictionary<string, double> resetAtMs,
-        Dictionary<string, Dictionary<double, double>>? bucketsMs = null)
+        Dictionary<string, Dictionary<double, double>>? bucketsMs = null,
+        Dictionary<string,double>? snoozeGivenMs = null)
     {
-        bucketsMs ??= new();
-        if (timersMs.Count == 0 && resetAtMs.Count == 0 && bucketsMs.Count == 0)
+        bucketsMs ??= new(); snoozeGivenMs ??= new();
+        if (timersMs.Count == 0 && resetAtMs.Count == 0 && bucketsMs.Count == 0 && snoozeGivenMs.Count == 0)
         {
             return;
         }
@@ -179,6 +180,7 @@ public sealed class WebStore
                     all[groupId] = obj;
                 }
             }
+            if(snoozeGivenMs.Count>0) { var totals=root["groupSnoozeTotalsMs"] as JsonObject ?? new(); root["groupSnoozeTotalsMs"]=totals; foreach(var (id,delta) in snoozeGivenMs) totals[id]=Number(totals[id])+Math.Max(0,delta); }
             var tmp = FilePath + ".tmp";
             File.WriteAllText(tmp, root.ToJsonString());
             File.Move(tmp, FilePath, overwrite: true);
@@ -229,13 +231,10 @@ public sealed class WebStore
 
     private JsonObject? LoadObject()
     {
-        var json = LoadRawJson();
-        if (json is null)
-        {
-            return null;
-        }
         try
         {
+            var json = LoadRawJson();
+            if(json==null) return null;
             return JsonNode.Parse(json) as JsonObject;
         }
         catch
@@ -268,7 +267,7 @@ public sealed class WebStore
             {
                 if (v is not null && v.GetValueKind() == JsonValueKind.Number)
                 {
-                    result[k] = v.GetValue<double>();
+                    result[k] = Math.Max(0,Number(v));
                 }
             }
         }
@@ -284,7 +283,7 @@ public sealed class WebStore
         {
             return null;
         }
-        var ms = node.GetValue<double>();
-        return ms > 0 ? DateTimeOffset.FromUnixTimeMilliseconds((long)ms) : null;
+        var ms = Number(node);
+        return ms > 0 && ms <= DateTimeOffset.MaxValue.ToUnixTimeMilliseconds() ? DateTimeOffset.FromUnixTimeMilliseconds((long)ms) : null;
     }
 }

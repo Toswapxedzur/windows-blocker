@@ -39,8 +39,7 @@ public static class LocalHubAuthentication
                 acl.SetAccessRuleProtection(true, false);
                 acl.SetOwner(sid);
                 acl.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.FullControl, AccessControlType.Allow));
-                using var file = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
-                file.SetAccessControl(acl);
+                using var file = new FileInfo(path).Create(FileMode.CreateNew, FileSystemRights.FullControl, FileShare.None, 4096, FileOptions.WriteThrough, acl);
                 file.Write(RandomNumberGenerator.GetBytes(32));
                 file.Flush(true);
             }
