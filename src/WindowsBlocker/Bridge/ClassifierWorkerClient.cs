@@ -27,7 +27,7 @@ public sealed class ClassifierWorkerClient : IDisposable
             await _write.WaitAsync();
             try { await process.StandardInput.WriteLineAsync(new JsonObject { ["id"] = id, ["operation"] = operation, ["data"] = data.DeepClone() }.ToJsonString()); await process.StandardInput.FlushAsync(); }
             finally { _write.Release(); }
-            return await completion.Task.WaitAsync(TimeSpan.FromSeconds(operation is "action" or "mcp" ? 120 : 20));
+            return await completion.Task.WaitAsync(TimeSpan.FromSeconds(operation is "action" or "mcp" ? 120 : operation=="hub" ? 30 : 20));
         }
         finally { _pending.TryRemove(id, out _); }
     }

@@ -23,6 +23,7 @@ public sealed class ConnectionHub
     private readonly Dictionary<string, string> _seenDefinitions = new();
     private readonly Dictionary<string, PendingBrowserRequest> _browserRequests = new();
     private readonly HashSet<string> _unlinkedLocal = new();
+    private readonly Dictionary<(Guid Peer,string Request),Guid> _classifierRequests = new();
     private WebApplication? _listener;
     private string _error = "";
     private JsonObject? _rejection;
@@ -144,16 +145,37 @@ public sealed class ConnectionHub
     }
     internal static readonly HashSet<string> ClassifierOperations = new() { "bridge-info","collection-info","diagnostic","collect","video-tags","video-tags-batch","classifier-taxonomy","submit-correction","dev-log","activity-record","activity-settings" };
     internal static bool ValidClassifierRequest(string requestId,string operation,JsonNode? body) => requestId.Length is >0 and <=128 && requestId.All(c=>c is >= '!' and <= '~') && ClassifierOperations.Contains(operation) && body is JsonObject && Encoding.UTF8.GetByteCount(body.ToJsonString())<=88_000;
+    internal string? BeginClassifierRequest(Guid peerId,string requestId,out Guid lease)
+    {
+        lock(_gate)
+        {
+            lease=Guid.Empty;
+            if(_classifierRequests.ContainsKey((peerId,requestId))) return "duplicate-classifier-request";
+            if(_classifierRequests.Count>=32) return "classifier-busy";
+            lease=Guid.NewGuid();_classifierRequests[(peerId,requestId)]=lease;
+            return null;
+        }
+    }
+    internal void EndClassifierRequest(Guid peerId,string requestId,Guid lease)
+    {
+        lock(_gate) if(_classifierRequests.TryGetValue((peerId,requestId),out var current) && current==lease) _classifierRequests.Remove((peerId,requestId));
+    }
+    internal void RemoveClassifierRequests(Guid peerId)
+    {
+        lock(_gate) foreach(var key in _classifierRequests.Keys.Where(k=>k.Peer==peerId).ToArray()) _classifierRequests.Remove(key);
+    }
     private async Task RouteClassifierAsync(Peer peer, JsonObject message)
     {
-        var requestId = Text(message["requestID"]); var operation = Text(message["operation"]);
+        var requestId = Text(message["requestID"]); var operation = Text(message["operation"]); var lease=Guid.Empty;
         var reply = new JsonObject { ["kind"] = "classifier-response", ["requestID"] = requestId, ["operation"] = operation };
         try
         {
             if (!ValidClassifierRequest(requestId,operation,message["body"])) throw new InvalidDataException("invalid-classifier-request");
-            reply["body"] = ClassifierRequest != null ? await ClassifierRequest(peer.Program, requestId, operation, (JsonObject)message["body"]!).WaitAsync(TimeSpan.FromSeconds(20)) : throw new InvalidOperationException("classifier-unavailable");
+            if(BeginClassifierRequest(peer.Id,requestId,out lease) is { } refusal) throw new InvalidOperationException(refusal);
+            reply["body"] = ClassifierRequest != null ? await ClassifierRequest(peer.Program, requestId, operation, (JsonObject)message["body"]!).WaitAsync(TimeSpan.FromSeconds(30)) : throw new InvalidOperationException("classifier-unavailable");
         }
         catch (Exception ex) { reply["error"] = ex is TimeoutException ? "classifier-timeout" : ex.Message; }
+        finally { if(lease!=Guid.Empty) EndClassifierRequest(peer.Id,requestId,lease); }
         await SendAsync(peer, reply);
     }
     public async Task<JsonObject> SendBrowserRequest(string operation, JsonObject body, string? target = null)
@@ -199,13 +221,24 @@ public sealed class ConnectionHub
         lock (_gate)
         {
             if (!_peers.Remove(peer.Id)) return;
+            RemoveClassifierRequests(peer.Id);
             _rosters.Remove(peer.Program);
             foreach (var pending in _browserRequests.Values.Where(p => p.PeerId == peer.Id)) pending.Reply.TrySetException(new InvalidOperationException("browser-unavailable"));
         }
         peer.Socket.Dispose(); Broadcast(new() { ["kind"] = "peers", ["peers"] = PeerList() }); BroadcastRosters(); BroadcastClusters();
     }
     private void Broadcast(JsonObject frame) { List<Peer> peers; lock (_gate) peers = _peers.Values.Where(p => p.Connected).ToList(); foreach (var p in peers) _ = SendAsync(p, frame); }
-    private JsonArray PeerList() { lock (_gate) return new(_peers.Values.Where(p => p.Connected).Select(p => (JsonNode)new JsonObject { ["id"] = p.Id.ToString(), ["program"] = p.Program, ["connected"] = true }).ToArray()); }
+    private JsonArray PeerList()
+    {
+        lock (_gate)
+        {
+            var peers=new JsonArray(_peers.Values.Where(p=>p.Connected).Select(p=>(JsonNode)new JsonObject { ["id"]=p.Id.ToString(),["program"]=p.Program,["connected"]=true }).ToArray());
+            // The shared worker is embedded behind this authenticated hub;
+            // browsers still discover its route through the canonical roster.
+            if(ClassifierRequest!=null) peers.Add(new JsonObject { ["id"]="windows-vault-classifier",["program"]="classifier",["connected"]=true });
+            return peers;
+        }
+    }
     public string CurrentStatusJson() => new JsonObject { ["running"] = _listener != null, ["state"] = _error.Length > 0 ? "error" : _listener != null ? "running" : "off", ["address"] = $"ws://127.0.0.1:{Storage.HubPort}", ["peers"] = PeerList(), ["error"] = _error, ["hubProgram"] = LocalProgram }.ToJsonString();
     public void BroadcastClassifier(JsonObject evt) { if(Text(evt["operation"]) is not ("video-tags-updated" or "classifier-state-updated") || evt["body"] is not JsonObject body || Encoding.UTF8.GetByteCount(body.ToJsonString())>88_000) return; Broadcast(new JsonObject { ["kind"] = "classifier-broadcast", ["operation"] = evt["operation"]?.DeepClone(), ["body"] = body.DeepClone() }); }
     public int ActiveClusterCount() { lock (_gate) return _clusters.Count; }
