@@ -6,6 +6,8 @@ $repo = (Resolve-Path "$PSScriptRoot\..\..").Path
 if ($LASTEXITCODE -ne 0) { throw 'Windows build failed' }
 & $Dotnet build "$repo\src\VaultNativeHost\VaultNativeHost.csproj" -c Release
 if ($LASTEXITCODE -ne 0) { throw 'Native messaging host build failed' }
+& $Dotnet run --project "$repo\tests\NativeHostContracts\NativeHostContracts.csproj" -c Release -- "$repo\src\VaultNativeHost\bin\Release\net8.0-windows\VaultNativeHost.exe"
+if ($LASTEXITCODE -ne 0) { throw 'Native browser authentication contracts failed' }
 & $Dotnet run --project "$repo\tests\NativeContracts\NativeContracts.csproj" -c Release
 if ($LASTEXITCODE -ne 0) { throw 'Native contracts failed' }
 

@@ -11,6 +11,8 @@ var sourceSeed = "{\"blockedGroups\":[]}";
 var seed = NativeEditorContract.SeedScript(sourceSeed);
 using (var seeded = System.Text.Json.JsonDocument.Parse(seed["window.__cbNativeStoreSeed = ".Length..^1])) Check(seeded.RootElement.ValueKind == System.Text.Json.JsonValueKind.String && seeded.RootElement.GetString() == sourceSeed, "canonical editor seed is JSON string literal");
 Check(NativeEditorContract.TrustedUri("https://appassets.windowsblocker/popup.html") && !NativeEditorContract.TrustedUri("https://appassets.windowsblocker.evil/popup.html") && !NativeEditorContract.TrustedUri("https://appassets.windowsblocker:444/popup.html"), "native bridge accepts only exact local editor origin");
+Check(NativeEditorContract.ExternalLink("https://example.com/source", true) && NativeEditorContract.ExternalLink("http://example.com/help",true) && !NativeEditorContract.ExternalLink("https://example.com/source",false), "External source and help links require a user gesture");
+Check(!NativeEditorContract.ExternalLink("file:///C:/Windows/cmd.exe",true) && !NativeEditorContract.ExternalLink("javascript:alert(1)",true) && !NativeEditorContract.ExternalLink("https://user:pass@example.com/",true) && !NativeEditorContract.ExternalLink("https://appassets.windowsblocker/popup.html",true), "External link policy rejects unsafe schemes, credentials and embedded editor URLs");
 var groups = ChromeExtensionImporter.ImportGroups("""
 {"blockedGroups":[{"id":"a","enabled":true,"groupType":"site","activeDays":[],"scopes":[{"surface":"apps","appsExcept":true,"apps":[{"id":"C:\\Apps\\editor.exe","name":"Editor"}]}]},{"id":"b","enabled":true,"groupType":"custom","activeEventSource":"(on,v)=>{}","blockingRulesText":"retired helper","apps":[{"id":"stale.exe"}]}]}
 """).Groups;
