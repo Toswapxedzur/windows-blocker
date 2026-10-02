@@ -56,4 +56,13 @@ Check(lines[0]["id"]!.GetValue<int>() == 1 && lines[0]["result"]!["name"]!.GetVa
 Check(lines[1]["id"]!.GetValue<int>() == 2 && lines[1]["error"] != null, "Stdio bridge rejects mismatched HTTP reply IDs");
 Check(lines[2]["error"]!["code"]!.GetValue<int>() == -32700, "Invalid stdio JSON receives a parse error");
 await server.StopAsync();
-Console.WriteLine($"{count} MCP connector/proxy contracts passed");
+Check(ClassifierMcpRequest.Create("classifier_state",new JsonObject { ["section"]="assets.classifierTypes" })["section"]!.GetValue<string>()=="assets.classifierTypes", "Classifier state selector reaches the shared worker rather than returning an unrelated overview");
+Check(ClassifierMcpRequest.Create("classifier_actions",new())["kind"]!.GetValue<string>()=="actions", "Classifier action catalog requests the shared action descriptors");
+var actionArguments=new JsonObject { ["action"]="setClassifierTypePaused",["data"]=new JsonObject { ["typeID"]="Group 中文",["paused"]=true,["position"]=0 } };
+var mappedAction=ClassifierMcpRequest.Create("classifier_action",actionArguments);
+Check(mappedAction["kind"]!.GetValue<string>()=="action" && mappedAction["action"]!.GetValue<string>()=="setClassifierTypePaused" && mappedAction["data"]!["paused"]!.GetValue<bool>() && mappedAction["data"]!["position"]!.GetValue<int>()==0 && mappedAction["data"]!["typeID"]!.GetValue<string>()=="Group 中文", "Classifier tool dispatch preserves action, UTF-8, booleans and numeric zero for Swift validation");
+mappedAction["data"]!["paused"]=false;
+Check(actionArguments["data"]!["paused"]!.GetValue<bool>() && ClassifierMcpRequest.Create("classifier_action",new JsonObject{["action"]="state"})["data"] is JsonObject {Count:0}, "Classifier mapping leaves caller arguments intact and supplies omitted action data");
+var unknownRefused=false;try {ClassifierMcpRequest.Create("unknown-tool",new());}catch(InvalidOperationException ex){unknownRefused=ex.Message=="unknown-tool";}
+Check(unknownRefused,"Unknown Classifier tools cannot silently return a successful state response");
+Console.WriteLine($"{count} MCP connector/proxy/Classifier contracts passed");

@@ -3,7 +3,8 @@
 Build and verify on mini1's Windows VM. `package-windows-vault.ps1` requires the
 bundled shared Classifier worker produced by `scripts/classifier-worker/` and
 checks its dependency hashes before publishing a self-contained x64 .NET app
-and native authentication/MCP helper. End users need no .NET SDK, Swift, Node or
+and native authentication/MCP helper. Exact .NET, WebView2 and worker dependency
+notices are included in the hashed payload. End users need no .NET SDK, Swift, Node or
 compiler. This is a development package; no public release or signed installer
 is claimed.
 
