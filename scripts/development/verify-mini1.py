@@ -22,6 +22,7 @@ if args.suite == "all":
     scripts.append("test-native-live.ps1")
 if args.suite in ("ui", "all"):
     scripts.append("test-windows-ui.ps1")
+    scripts.append("test-external-links.ps1")
 commands = [r"tar -xzf C:\windows-port-host.tar.gz -C C:\vault-porting-host"]
 for script in scripts:
     commands += [rf"powershell -NoProfile -ExecutionPolicy Bypass -File C:\vault-porting-host\scripts\development\{script}", "if($LASTEXITCODE -ne 0){exit 1}"]

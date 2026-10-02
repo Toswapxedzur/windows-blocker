@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework><UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup><Using Include="System.IO"/><PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31"/><Compile Include="../../src/WindowsBlocker/WebUI/ExternalLinkHandler.cs;../../src/WindowsBlocker/WebUI/NativeEditorContract.cs" Link="%(Filename)%(Extension)"/></ItemGroup>
+</Project>

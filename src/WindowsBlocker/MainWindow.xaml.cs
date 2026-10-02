@@ -122,8 +122,7 @@ public partial class MainWindow : Window
         core.AddWebResourceRequestedFilter("*app-inventory.json", CoreWebView2WebResourceContext.All);
         core.AddWebResourceRequestedFilter("https://appassets.windowsblocker/worker-resource*", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += OnWebResourceRequested;
-        core.NewWindowRequested += (_, args) => args.Handled = true;
-        core.NavigationStarting += (_, args) => { if (!TrustedEditorUri(args.Uri)) args.Cancel = true; };
+        ExternalLinkHandler.Attach(core);
         core.NavigationCompleted += OnNavigationCompleted;
 
         core.Navigate($"https://{VirtualHost}/popup.html");
@@ -530,7 +529,7 @@ public partial class MainWindow : Window
             var body = (JsonObject)args.DeepClone(); body.Remove("browser");
             return await BrowserTool(operation,body,args["browser"]?.GetValue<string>());
         }
-        return await _classifier.Request("mcp",new JsonObject { ["name"] = name,["arguments"] = args.DeepClone() });
+        return await _classifier.Request("mcp",ClassifierMcpRequest.Create(name,args));
     }
     private async Task<JsonNode?> BrowserTool(string operation,JsonObject body,string? browser) => await _hub.SendBrowserRequest(operation,body,browser);
     private Task<JsonArray> McpTools()

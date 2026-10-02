@@ -53,7 +53,7 @@ public sealed class EnforcementEngine
     /// exactly like macOS, which gates both on the frontmost application.
     ///
     /// <paramref name="ruleBlockedIdentities"/> are app identities a custom rule
-    /// asked to block/shield (from the previous tick's async rule dispatch); they
+    /// asked to block (from the previous tick's async rule dispatch); they
     /// are unioned into the group-derived blocked set so rule-driven app blocks
     /// drive the same WM_CLOSE sweep + re-close path.
     public EnforcementStatus Tick(AppIdentity? foreground = null, IReadOnlySet<string>? ruleBlockedIdentities = null)
@@ -133,7 +133,7 @@ public sealed class EnforcementEngine
             }
         }
 
-        // Union in identities a custom rule asked to block (rule shield/blockApp
+        // Union in identities a custom rule asked to block (rule block action
         // decisions from the previous tick's async dispatch).
         if (ruleBlockedIdentities != null)
         {
@@ -319,7 +319,7 @@ public sealed class EnforcementEngine
     }
 
     /// Close every open top-level window whose owning app matches one of the
-    /// given target identities (rule close()/shield on the current tick). One-shot
+    /// given target identities (rule quit/block actions on the current tick). One-shot
     /// — does not add to the persistent registry.
     public int CloseMatching(IEnumerable<string> identities)
     {
