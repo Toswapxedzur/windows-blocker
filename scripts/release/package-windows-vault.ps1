@@ -1,0 +1,54 @@
+param(
+    [Parameter(Mandatory=$true)][string]$ClassifierWorkerDirectory,
+    [string]$Dotnet='C:\dotnet\dotnet.exe',
+    [string]$OutputDirectory=(Join-Path $PSScriptRoot '..\..\dist\WindowsVault-x64')
+)
+$ErrorActionPreference='Stop'
+$repo=(Resolve-Path "$PSScriptRoot\..\..").Path
+$worker=(Resolve-Path $ClassifierWorkerDirectory).Path
+$output=[IO.Path]::GetFullPath($OutputDirectory)
+if ($output -eq [IO.Path]::GetPathRoot($output) -or $repo.StartsWith($output.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase) -or $output -eq $repo) { throw 'Choose a dedicated package output folder.' }
+if ((Test-Path $output) -and @(Get-ChildItem $output -Force).Count -gt 0) {
+    $previousPackage=$null
+    try { $previousPackage=Get-Content "$output\package-manifest.json" -Raw|ConvertFrom-Json } catch { }
+    if($previousPackage.product -ne 'Windows Vault' -or $previousPackage.schema -ne 1) { throw 'Refusing to replace an unrelated output directory.' }
+}
+if (!(Test-Path "$worker\VaultClassifierWorker.exe") -or !(Test-Path "$worker\bundle-manifest.json")) { throw 'A verified bundled Classifier worker is required.' }
+$manifest=Get-Content "$worker\bundle-manifest.json" -Raw|ConvertFrom-Json
+if ($manifest.architecture -ne 'x64' -or $manifest.schema -ne 1 -or @($manifest.files).Count -eq 0) { throw 'Expected the verified x64 Classifier worker manifest.' }
+foreach ($file in $manifest.files) {
+    $relative=$file.path.Replace('/','\')
+    $path=[IO.Path]::GetFullPath((Join-Path $worker $relative))
+    if (!$path.StartsWith($worker.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase) -or !(Test-Path $path -PathType Leaf)) { throw 'Invalid Classifier manifest path.' }
+    if ((Get-FileHash $path -Algorithm SHA256).Hash -ne $file.sha256) { throw "Classifier dependency hash mismatch: $relative" }
+}
+# Stage first so a failed publish cannot replace the last usable package.
+$stage=$output+'.staging-'+[Guid]::NewGuid().ToString('N')
+New-Item -ItemType Directory -Force $stage|Out-Null
+try {
+    & $Dotnet publish "$repo\src\WindowsBlocker\WindowsBlocker.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o $stage
+    if ($LASTEXITCODE -ne 0) { throw 'Windows Vault publish failed.' }
+    & $Dotnet publish "$repo\src\VaultNativeHost\VaultNativeHost.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o "$stage\NativeHost"
+    if ($LASTEXITCODE -ne 0) { throw 'Native helper publish failed.' }
+    Copy-Item $worker "$stage\ClassifierWorker" -Recurse
+    Copy-Item "$repo\scripts\development\install-native-host.ps1" $stage
+    Copy-Item "$PSScriptRoot\install-windows-vault.ps1" "$stage\Install.ps1"
+    Copy-Item "$PSScriptRoot\README.md" "$stage\README.md"
+    # No user state, model files, test-only assets or toolchain are packaged.
+    Get-ChildItem $stage -Recurse -File -Filter '*.pdb'|Remove-Item -Force
+    $files=Get-ChildItem $stage -Recurse -File|Sort-Object FullName|ForEach-Object {
+        @{path=$_.FullName.Substring($stage.Length+1).Replace('\','/');sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
+    }
+    [xml]$project=Get-Content "$repo\src\WindowsBlocker\WindowsBlocker.csproj" -Raw
+    $version=($project.Project.PropertyGroup|Where-Object{$_.Version}|Select-Object -First 1).Version
+    if(!$version){throw 'Windows Vault project version is missing.'}
+    @{schema=1;product='Windows Vault';architecture='x64';version=$version;files=@($files)}|ConvertTo-Json -Depth 5|Set-Content "$stage\package-manifest.json" -Encoding UTF8
+    $previous=$output+'.previous-'+[Guid]::NewGuid().ToString('N')
+    if (Test-Path $output) { Move-Item $output $previous }
+    try { Move-Item $stage $output } catch { if(Test-Path $previous){Move-Item $previous $output}; throw }
+    if (Test-Path $previous) { Remove-Item $previous -Recurse -Force }
+    $zip=$output+'.zip'
+    if (Test-Path $zip) { Remove-Item $zip -Force }
+    Compress-Archive -Path "$output\*" -DestinationPath $zip
+    Write-Output "Packaged Windows Vault: $zip"
+} finally { if (Test-Path $stage) { Remove-Item $stage -Recurse -Force } }
