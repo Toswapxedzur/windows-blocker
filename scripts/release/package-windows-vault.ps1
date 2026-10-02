@@ -29,9 +29,9 @@ foreach ($file in $manifest.files) {
 $stage=$output+'.staging-'+[Guid]::NewGuid().ToString('N')
 New-Item -ItemType Directory -Force $stage|Out-Null
 try {
-    & $Dotnet publish "$repo\src\WindowsBlocker\WindowsBlocker.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o $stage
+    & $Dotnet publish "$repo\src\WindowsBlocker\WindowsBlocker.csproj" -c Release -r win-x64 --self-contained true -m:1 -p:PublishSingleFile=false -o $stage
     if ($LASTEXITCODE -ne 0) { throw 'Windows Vault publish failed.' }
-    & $Dotnet publish "$repo\src\VaultNativeHost\VaultNativeHost.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o "$stage\NativeHost"
+    & $Dotnet publish "$repo\src\VaultNativeHost\VaultNativeHost.csproj" -c Release -r win-x64 --self-contained true -m:1 -p:PublishSingleFile=false -o "$stage\NativeHost"
     if ($LASTEXITCODE -ne 0) { throw 'Native helper publish failed.' }
     Copy-Item $worker "$stage\ClassifierWorker" -Recurse
     Copy-Item "$repo\scripts\development\install-native-host.ps1" $stage
