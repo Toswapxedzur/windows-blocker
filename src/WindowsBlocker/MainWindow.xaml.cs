@@ -82,6 +82,10 @@ public partial class MainWindow : Window
         _hub.Start();
         _mcp.Start();
         if(_mcp.LastError==null) McpConnectorRegistry.ApplyDefaultConnections();
+        // Show the first-launch choice even when the editor opens before Classifier.
+        try { PromptDictionaryContribution(await _classifier.Request("snapshot", new())); }
+        catch (Exception ex) { System.Diagnostics.Trace.WriteLine("Dictionary startup snapshot unavailable: " + ex.Message); }
+
 
         // Bring the bridge up if the user previously enabled it (same as macOS,
         // which auto-starts the hub on launch from the persisted setting).
