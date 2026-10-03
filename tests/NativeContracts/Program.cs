@@ -66,9 +66,26 @@ Check(hub.SharedUsage("Same") == null, "display name never identifies a link");
 hub.ApplySync("windowsapp","local",new JsonObject { ["scalars"]=new JsonObject { ["name"]="Chosen",["allowedMinutes"]=10,["resetIntervalHours"]=24 },["scopes"]=new JsonArray(new JsonObject { ["id"]="apps-1",["surface"]="apps",["apps"]=new JsonArray() }),["ts"]=1 });
 hub.ApplySync("chrome","browser",new JsonObject { ["scalars"]=new JsonObject { ["name"]="Browser" },["scopes"]=new JsonArray(new JsonObject { ["id"]="site-1",["surface"]="site",["sites"]=new JsonArray("example.com") }),["usageMs"]=5000,["ts"]=1 });
 Check(hub.SharedUsage("local")?.Ms == 5000, "linked usage seeds once");
+
 hub.ReportLocalUsage("local",1000,now.ToUnixTimeMilliseconds()); Check(hub.SharedUsage("local")?.Ms == 6000, "linked usage accumulates deltas");
 hub.SetRoster("chrome",new JsonArray(new JsonObject { ["id"]="replacement",["name"]="Different" }));
 Check(hub.ActiveClusterCount()==0, "delete and recreate does not rejoin by name");
+var repeatedHub = new ConnectionHub();
+repeatedHub.SetRoster("chrome",new JsonArray(new JsonObject { ["id"]="browser",["name"]="Chrome" }));
+repeatedHub.SetRoster("windowsapp",new JsonArray(new JsonObject { ["id"]="local",["name"]="Native" }));
+repeatedHub.Link("windowsapp","local","chrome","browser");
+// A second browser's first contribution replaces only its matching entry,
+// keeping a separately configured Shorts entry for the same website.
+repeatedHub.ApplySync("chrome","browser",new JsonObject { ["scopes"]=new JsonArray(
+    new JsonObject { ["surface"]="items",["platform"]="youtube",["entryID"]="youtube:shorts",["form"]="short" },
+    new JsonObject { ["surface"]="items",["platform"]="youtube",["entryID"]="youtube:creator",["sources"]=new JsonArray("old") }),["ts"]=2 });
+repeatedHub.SetRoster("edge",new JsonArray(new JsonObject { ["id"]="edge-browser",["name"]="Edge",["frozen"]=false }));
+Check(repeatedHub.Link("chrome","browser","edge","edge-browser")==null,"another browser joins the linked group");
+repeatedHub.ApplySync("edge","edge-browser",new JsonObject { ["scopes"]=new JsonArray(
+    new JsonObject { ["surface"]="items",["platform"]="youtube",["entryID"]="youtube:creator",["sources"]=new JsonArray("new") }),["ts"]=3 });
+var repeatedScopes=(JsonNode.Parse(repeatedHub.ClustersJson())?["clusters"]?[0]?["shared"]?["scopes"] as JsonArray)!.OfType<JsonObject>().ToList();
+Check(repeatedScopes.Any(line=>line["entryID"]?.GetValue<string>()=="youtube:shorts" && line["form"]?.GetValue<string>()=="short") && repeatedScopes.Count(line=>line["entryID"]?.GetValue<string>()=="youtube:creator")==1 && repeatedScopes.Single(line=>line["entryID"]?.GetValue<string>()=="youtube:creator")["sources"]?[0]?.GetValue<string>()=="new","linked repeated websites merge independently by stable entry ID");
+
 var budgets=new ConnectionHub(); budgets.SetRoster("windowsapp",new JsonArray(new JsonObject { ["id"]="fixed",["name"]="Fixed" },new JsonObject { ["id"]="rolling",["name"]="Rolling" })); budgets.SetRoster("chrome",new JsonArray(new JsonObject { ["id"]="fixed-web",["name"]="Fixed" },new JsonObject { ["id"]="rolling-web",["name"]="Rolling" }));
 budgets.Link("windowsapp","fixed","chrome","fixed-web"); budgets.Link("windowsapp","rolling","chrome","rolling-web");
 var localUsage=new WebStore.UsageTimers(); localUsage.TimersMs["fixed"]=12_000;localUsage.ResetAtMs["fixed"]=now.ToUnixTimeMilliseconds();
