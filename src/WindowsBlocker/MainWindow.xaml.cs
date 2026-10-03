@@ -267,7 +267,7 @@ public partial class MainWindow : Window
                         ApplyActivity(await _classifier.Request("activity", activityBody));
                     break;
                 case "scene-shown":
-                    if (root.TryGetProperty("scene", out var scene) && scene.GetString() == "classifier") ApplyClassifierSnapshot(await _classifier.Request("snapshot", new()));
+                    if (root.TryGetProperty("scene", out var scene) && (scene.GetString() == "classifier" || scene.GetString() == "settings")) ApplyClassifierSnapshot(await _classifier.Request("snapshot", new()));
                     if (root.TryGetProperty("scene", out var activityScene) && activityScene.GetString() == "activity") ApplyActivity(await _classifier.Request("activity", new JsonObject { ["kind"] = "ready" }));
                     break;
                 case "vault-classifier-tag-names":
