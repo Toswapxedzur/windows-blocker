@@ -15,3 +15,5 @@
 - **Field Info (2026-10-02):** 10px blue-gray icons retain a 24px invisible hit area. English field explanations are explicit; built-in settings, names, switches, searches and picker fields use the shared component. Other locales retain inline help.
 
 - **Compact Info (2026-10-02):** 10px icons retain a 24px click area; explanations use 12px text in a softly shaded, 260px-wide popup with tighter padding. English search copy is concise.
+
+- Official dictionaries use the shared Swift service and generated Classifier controls. The WPF host presents the first-launch contribution choice. `LEGAL/` contains current English privacy and dictionary terms.
