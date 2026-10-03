@@ -222,7 +222,10 @@ try
         var files=await Tool("create_group",new(){["groupType"]="custom",["patch"]=new JsonObject{["name"]="Chosen folder rule fixture"}});var fileId=files!["group"]!["id"]!.GetValue<string>();
         var fileRule="(on,v)=>{on('tick',()=>{if(v.state.started)return;v.state.started=true;v.file('write','nested/facts.json','plain text 中文');v.file('exists','cloud/cloud.txt');v.file('read','cloud/hydrated.txt');v.file('readJson','bom.json');for(const path of ['../outside.txt','C:/outside.txt','CON.txt','.hidden.txt','escape/secret.txt','dangling/secret.txt','bom.txt','invalid-utf8.txt','too-large.txt','locked.txt'])v.file('read',path);});on('file',ev=>{const a=ev.data;v.state.answers=v.state.answers||{};v.state.answers[a.op+':'+a.path]=a;if(a.path==='nested/facts.json'&&a.ok){if(a.op==='write')v.file('append',a.path,' appended');else if(a.op==='append')v.file('read',a.path);else if(a.op==='read')v.file('exists',a.path);else if(a.op==='exists')v.file('list','nested');}});}";
         Check((await Tool("run_custom_rule",new(){["id"]=fileId,["source"]=fileRule}))?["ran"]?.GetValue<bool>()==true,"Selected-folder rule loads in the actual isolated WebView worker");
-        var fileDeadline=DateTimeOffset.UtcNow.AddSeconds(15);JsonNode? answers;
+        // The VM may share mini1 with the second OS runtime test. Wait for the
+        // complete asynchronous write/append/read/exists/list chain without
+        // changing the required results.
+        var fileDeadline=DateTimeOffset.UtcNow.AddSeconds(45);JsonNode? answers;
         do {answers=ReadStore()?["cbRuleState"]?[fileId]?["answers"];if(answers?["list:nested"]?["ok"]?.GetValue<bool>()==true && answers?["read:locked.txt"]!=null)break;await Task.Delay(100);}while(DateTimeOffset.UtcNow<fileDeadline);
         Check(answers?["read:nested/facts.json"]?["text"]?.GetValue<string>()=="plain text 中文 appended" && answers?["exists:nested/facts.json"]?["exists"]?.GetValue<bool>()==true,"Native v.file creates parents, writes plain .json text, appends and reads exact UTF-8");
         Check(answers?["list:nested"]?["entries"]?[0]?["extension"]?.GetValue<string>()==".json" && File.ReadAllText(Path.Combine(folder,"nested","facts.json"))=="plain text 中文 appended","Native list returns canonical relative paths and file extensions");
