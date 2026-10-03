@@ -9,6 +9,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using WindowsBlocker.Enforcement;
 using WindowsBlocker.Rules;
+using WindowsBlocker.WebUI;
 
 namespace WindowsBlocker;
 
@@ -281,7 +282,7 @@ internal sealed class PanelCard
 
             case "button":
             {
-                var b = new Button { Content = c.Label ?? "Button", Padding = new Thickness(14, 6, 14, 6), IsEnabled = c.Disabled != true };
+                var b = new Button { Content = c.Label ?? NativeLanguage.Text("contentPage.button", "Button"), Padding = new Thickness(14, 6, 14, 6), IsEnabled = c.Disabled != true };
                 b.Click += (_, _) => Fire("click", c.Action ?? "");
                 return b;
             }

@@ -3,7 +3,7 @@
 All suites run on mini1, with native .NET/WebView2 suites in its Windows VM.
 
 - `runner-custom-rule-stress.js`, `runner-rule-worker.js`, `runner-editor-syntax.js` — canonical JS rule engine, disposable worker isolation and document-start native bridge/storage.
-- `NativeContracts/` — source-only native policy, authentication, identity and editor contract fixtures.
+- `NativeContracts/` — source-only native policy, authentication, identity and editor contract fixtures, plus all20 bundled native-language preferences/messages and literal state preservation.
 - `NativeHostContracts/` — actual signed browser/system intermediary verification and denial of nonbrowser proof callers.
 - `browser-native-host.py` — genuine guest Edge/Chrome proof, program binding, frame bounds, process ancestry and authenticated extension tunnel through the canonical CDP driver.
 - `browser-worker-parity.py` — actual YouTube collector/private pill/pending cover, production model, correction, ordinary app outage/reconnect and native Activity privacy through that driver.

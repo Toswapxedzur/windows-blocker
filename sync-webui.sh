@@ -56,7 +56,7 @@ for folder in ["manual", "code-manual"]:
     source = root / "localization" / folder
     if source.exists():
         for page in source.glob("*.md"):
-            if page.stem != "en": shutil.copy2(page, dest / folder / page.name)
+            if page.stem not in {"en", "package-info"}: shutil.copy2(page, dest / folder / page.name)
 target = dest / "classifier"
 if target.exists(): shutil.rmtree(target)
 shutil.copytree(mac / "classifier/Sources/VaultClassifierApp/WebAssets", target)
