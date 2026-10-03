@@ -58,6 +58,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         McpConnectionsMenu.Header = NativeLanguage.Text("windows.connections.menu", "AI connections…");
+        NativeMenu.FlowDirection = NativeLanguage.Language == "ar" ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         _engine = new EnforcementEngine(_store, _registry, _hub);
         _ruleEngine = new RuleEngine(_store);
         _policy = new NativePolicyTools(_store,_hub,_ruleEngine);
@@ -472,6 +473,7 @@ public partial class MainWindow : Window
             _hub.ReconcileLocal(_store);
             if(_runtime!=null && await _policy.SettleSnoozesAsync()) { _hub.ReconcileLocal(_store); PushNativeStore(); }
             McpConnectionsMenu.Header = NativeLanguage.Text("windows.connections.menu", "AI connections…");
+            NativeMenu.FlowDirection = NativeLanguage.Language == "ar" ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
             if (JsonNode.Parse(_store.LoadRawJson() ?? "{}") is JsonObject quickAddStore) _quickAdd?.Reload(quickAddStore);
             var foreground = ProcessIdentity.ForWindow(NativeMethods.GetForegroundWindow());
             var status = _engine.Tick(foreground, _ruleEngine.BlockedIdentities);
@@ -600,8 +602,9 @@ public partial class MainWindow : Window
         try
         {
             var answer = MessageBox.Show(this,
-                "Vault can occasionally send public creator IDs and their displayed subscriber/follower counts to customblocker.com to expand the creator dictionary. No term names, titles, browsing history or personal definitions are sent. Contributions are capped at 50 per day and retained for 7 days. You can disable this anytime in Classifier → Knowledge.\n\nShare creator IDs and subscriber counts?",
-                "Help improve the creator dictionary", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.Yes);
+                NativeLanguage.Text("native.dictionary.windowsBody", "Vault can occasionally send public creator IDs and their displayed subscriber/follower counts to customblocker.com to expand the creator dictionary. No term names, titles, browsing history or personal definitions are sent. Contributions are capped at 50 per day and retained for 7 days. You can disable this anytime in Classifier → Knowledge.\n\nShare creator IDs and subscriber counts?"),
+                NativeLanguage.Text("native.dictionary.title", "Help improve the creator dictionary"), MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.Yes,
+                NativeLanguage.Language == "ar" ? MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign : MessageBoxOptions.None);
             var response = await _classifier.Request("action", new JsonObject {
                 ["action"] = "completeDictionaryOnboarding", ["data"] = new JsonObject { ["enabled"] = answer == MessageBoxResult.Yes }
             });
@@ -923,7 +926,8 @@ public partial class MainWindow : Window
         {
             e.Cancel = true;
             MessageBox.Show(this, NativeLanguage.Text("windows.quit.body", _guard.WarningMessage), NativeLanguage.Text("windows.quit.title", _guard.WarningTitle),
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBoxButton.OK, MessageBoxImage.Warning, MessageBoxResult.OK,
+                NativeLanguage.Language == "ar" ? MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign : MessageBoxOptions.None);
             return;
         }
         if (!_flushedForClosing)
