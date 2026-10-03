@@ -57,6 +57,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        McpConnectionsMenu.Header = NativeLanguage.Text("windows.connections.menu", "AI connections…");
         _engine = new EnforcementEngine(_store, _registry, _hub);
         _ruleEngine = new RuleEngine(_store);
         _policy = new NativePolicyTools(_store,_hub,_ruleEngine);
@@ -466,6 +467,7 @@ public partial class MainWindow : Window
             // produces this tick's set for the next pass (≤1s latency).
             _hub.ReconcileLocal(_store);
             if(_runtime!=null && await _policy.SettleSnoozesAsync()) { _hub.ReconcileLocal(_store); PushNativeStore(); }
+            McpConnectionsMenu.Header = NativeLanguage.Text("windows.connections.menu", "AI connections…");
             if (JsonNode.Parse(_store.LoadRawJson() ?? "{}") is JsonObject quickAddStore) _quickAdd?.Reload(quickAddStore);
             var foreground = ProcessIdentity.ForWindow(NativeMethods.GetForegroundWindow());
             var status = _engine.Tick(foreground, _ruleEngine.BlockedIdentities);
@@ -895,7 +897,7 @@ public partial class MainWindow : Window
         if (_guard.ShouldCancelClose())
         {
             e.Cancel = true;
-            MessageBox.Show(this, _guard.WarningMessage, _guard.WarningTitle,
+            MessageBox.Show(this, NativeLanguage.Text("windows.quit.body", _guard.WarningMessage), NativeLanguage.Text("windows.quit.title", _guard.WarningTitle),
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }

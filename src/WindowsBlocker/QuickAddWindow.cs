@@ -6,6 +6,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using WindowsBlocker.Bridge;
+using WindowsBlocker.WebUI;
 using WindowsBlocker.Enforcement;
 
 namespace WindowsBlocker;
@@ -28,8 +29,8 @@ public sealed class QuickAddWindow : Window
         {
             var app=ProcessIdentity.ForWindow(NativeMethods.GetForegroundWindow()); bool ok=false;
             try { if(_groupId.Length>0 && NativeAppSafety.CanControl(app)){await _add(_groupId,app);ok=true;} } catch { }
-            var revision=++_revision; _button.Content=ok ? "✓" : "!"; Label(ok ? $"Added to {_groupName}" : $"Could not add the front app to {_groupName}");
-            var timer=new DispatcherTimer {Interval=TimeSpan.FromMilliseconds(1200)}; timer.Tick += (_,_)=>{timer.Stop();if(_revision==revision){_button.Content="+";Label($"Add the front app to {_groupName}");}};timer.Start();
+            var revision=++_revision; _button.Content=ok ? "✓" : "!"; Label(ok ? NativeLanguage.Text("native.quickAdded", "Added to {group}", ("group",_groupName)) : NativeLanguage.Text("native.quickFailed", "Could not add the front app to {group}", ("group",_groupName)));
+            var timer=new DispatcherTimer {Interval=TimeSpan.FromMilliseconds(1200)}; timer.Tick += (_,_)=>{timer.Stop();if(_revision==revision){_button.Content="+";Label(NativeLanguage.Text("native.quickAdd", "Add the front app to {group}", ("group",_groupName)));}};timer.Start();
         };
         SourceInitialized += (_,_) =>
         {
@@ -51,7 +52,7 @@ public sealed class QuickAddWindow : Window
         if(id==null){_groupId="";_revision++;Hide();return;}
         if(_groupId!=id){_button.Content="+";_revision++;}
         _groupId=id;_groupName=(document["blockedGroups"] as JsonArray)?.OfType<JsonObject>().First(g=>g["id"]?.GetValue<string>()==id)["name"]?.GetValue<string>()??id;
-        Label($"Add the front app to {_groupName}");var area=SystemParameters.WorkArea;Left=area.Right-Width-8;Top=area.Bottom-Height-8;if(!IsVisible)Show();
+        Label(NativeLanguage.Text("native.quickAdd", "Add the front app to {group}", ("group",_groupName)));var area=SystemParameters.WorkArea;Left=area.Right-Width-8;Top=area.Bottom-Height-8;if(!IsVisible)Show();
     }
     private void Label(string label){_button.ToolTip=label;AutomationProperties.SetName(_button,label);}
 }
