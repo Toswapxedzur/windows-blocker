@@ -83,6 +83,10 @@ public partial class MainWindow : Window
         _hub.Start();
         _mcp.Start();
         if(_mcp.LastError==null) McpConnectorRegistry.ApplyDefaultConnections();
+        // Show the first-launch choice even when the editor opens before Classifier.
+        try { PromptDictionaryContribution(await _classifier.Request("snapshot", new())); }
+        catch (Exception ex) { System.Diagnostics.Trace.WriteLine("Dictionary startup snapshot unavailable: " + ex.Message); }
+
 
         // Bring the bridge up if the user previously enabled it (same as macOS,
         // which auto-starts the hub on launch from the persisted setting).
@@ -584,8 +588,29 @@ public partial class MainWindow : Window
     });
     private void ApplyClassifierSnapshot(JsonNode? snapshot)
     {
+        PromptDictionaryContribution(snapshot);
         if (snapshot != null && Web.CoreWebView2 != null) _ = Web.CoreWebView2.ExecuteScriptAsync($"window.VaultClassifier && window.VaultClassifier.receive({snapshot.ToJsonString()});");
     }
+    private bool _dictionaryContributionPromptShowing;
+    private async void PromptDictionaryContribution(JsonNode? snapshot)
+    {
+        var settings = snapshot?["settings"]?["dictionaries"];
+        if (!IsLoaded || _dictionaryContributionPromptShowing || settings is null || settings["contributionChoiceMade"]?.GetValue<bool>() != false) return;
+        _dictionaryContributionPromptShowing = true;
+        try
+        {
+            var answer = MessageBox.Show(this,
+                "Vault can occasionally send public creator IDs and their displayed subscriber/follower counts to customblocker.com to expand the creator dictionary. No term names, titles, browsing history or personal definitions are sent. Contributions are capped at 50 per day and retained for 7 days. You can disable this anytime in Classifier → Knowledge.\n\nShare creator IDs and subscriber counts?",
+                "Help improve the creator dictionary", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.Yes);
+            var response = await _classifier.Request("action", new JsonObject {
+                ["action"] = "completeDictionaryOnboarding", ["data"] = new JsonObject { ["enabled"] = answer == MessageBoxResult.Yes }
+            });
+            if (response?["snapshot"] is JsonNode updated) ApplyClassifierSnapshot(updated);
+        }
+        catch (Exception ex) { System.Diagnostics.Trace.WriteLine("Dictionary first-launch choice could not be saved: " + ex.Message); }
+        finally { _dictionaryContributionPromptShowing = false; }
+    }
+
     private void ApplyActivity(JsonNode? response)
     {
         if (response is not JsonObject r || Web.CoreWebView2 == null) return;
