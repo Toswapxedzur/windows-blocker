@@ -2,6 +2,7 @@
 
 - `build-and-test.ps1` builds the native products and runs screen-free contract suites on mini1's Windows VM.
 - `test-native-live.ps1` verifies graceful quit/retry with a harmless normal-user fixture.
+- `test-dictionary-ui.ps1` verifies first-launch default/opt-out and persistent choice in an isolated normal-user Windows app, then closes its app normally.
 - `test-windows-ui.ps1` verifies the actual normal-user editor/MCP host.
 - `test-folder-broker.ps1` runs the production folder broker against owned Windows files as an Interactive/Limited user.
 - `start-browser-fixture.ps1`, `browser-fixture-session.ps1`, `stop-browser-fixture.ps1` own a disposable signed-browser/production-worker session and ordinary app outage/reconnect; `load-browser-extension-fixture.ps1` uses Chrome's supported isolated Developer mode sideload UI, following its broker dialogs by window ownership. Start creates the model hardlink as the Limited user; stop restores registration and removes only its GUID browser profile.
