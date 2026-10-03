@@ -3,13 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using WindowsBlocker.Core;
 using WindowsBlocker.Enforcement;
 
 namespace WindowsBlocker;
 
 // The Windows analog of macOS's TimerOverlayPanel: a borderless, always-on-top,
-// click-through HUD that floats the live "Name: MM:SS" countdown over whatever
+// click-through HUD that floats the live "Name: HH:MM:SS" countdown over whatever
 // app is frontmost. It never steals focus and passes all input through to the
 // window beneath it (WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE), and
 // is hidden from Alt-Tab (WS_EX_TOOLWINDOW). Pixels float over other apps;
@@ -23,11 +24,19 @@ public partial class TimerOverlayWindow : Window
     private const int WS_EX_TOOLWINDOW = 0x80;
     private const double Inset = 16;
 
+    private readonly DispatcherTimer _rotation;
+    private IReadOnlyList<TimerDisplayItem> _active=Array.Empty<TimerDisplayItem>();
+    private int _page;
+    private int _revision;
+
     public TimerOverlayWindow()
     {
         InitializeComponent();
         SourceInitialized += OnSourceInitialized;
         SizeChanged += (_, _) => Reposition();
+        _rotation=new DispatcherTimer {Interval=TimeSpan.FromSeconds(5)};
+        _rotation.Tick+=(_,_)=>{_page++;RenderPage();};
+        Closed+=(_,_)=>{_revision++;_rotation.Stop();};
     }
 
     private void OnSourceInitialized(object? sender, EventArgs e)
@@ -38,30 +47,39 @@ public partial class TimerOverlayWindow : Window
             ex | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
     }
 
-    // Replaces the visible rows. An empty set hides the HUD entirely.
-    public void UpdateRows(IReadOnlyList<TimerDisplayItem> timers)
+    // Keep roster processing off the UI thread for large active-group sets;
+    // the screen realizes a single bounded page, never one widget per group.
+    public async void UpdateRows(IReadOnlyList<TimerDisplayItem> timers)
     {
-        var rows = timers
-            .Where(t => t.RemainingSeconds > 0)
-            .Select(t => $"{t.Name}: {Format(t.RemainingSeconds)}")
-            .ToList();
-
-        if (rows.Count == 0)
-        {
-            Rows.ItemsSource = null;
-            if (IsVisible)
-            {
-                Hide();
+        var revision=System.Threading.Interlocked.Increment(ref _revision);
+        var snapshot=timers.ToArray();
+        var active=snapshot.Length>40
+            ? await System.Threading.Tasks.Task.Run(()=>snapshot.Where(t=>t.RemainingSeconds>0).ToArray())
+            : snapshot.Where(t=>t.RemainingSeconds>0).ToArray();
+        await Dispatcher.InvokeAsync(()=> {
+            if(revision!=_revision)return;
+            _active=active;
+            if(active.Length==0) {
+                _page=0; _rotation.Stop(); Rows.Text="";
+                if(IsVisible)Hide();
+                return;
             }
-            return;
-        }
+            RenderPage();
+            if(!IsVisible)Show();
+            Reposition();
+        });
+    }
 
-        Rows.ItemsSource = rows;
-        if (!IsVisible)
-        {
-            Show();
-        }
-        Reposition();
+    private void RenderPage()
+    {
+        var area=SystemParameters.WorkArea;
+        var capacity=Math.Max(1,(int)Math.Floor((area.Height-2*Inset-16)/18));
+        var pages=Math.Max(1,(_active.Count+capacity-1)/capacity);
+        _page%=pages;
+        Rows.MaxWidth=Math.Max(1,area.Width-2*Inset-20);
+        Rows.MaxHeight=Math.Max(1,area.Height-2*Inset-16);
+        Rows.Text=string.Join("\n",_active.Skip(_page*capacity).Take(capacity).Select(t=>$"{t.Name}: {Format(t.RemainingSeconds)}"));
+        if(pages>1) {if(!_rotation.IsEnabled)_rotation.Start();} else _rotation.Stop();
     }
 
     private void Reposition()
@@ -72,16 +90,10 @@ public partial class TimerOverlayWindow : Window
         Top = area.Top + Inset;
     }
 
-    // H:MM:SS once an hour is involved, otherwise M:SS — matching the macOS
-    // overlay's TimerOverlayRow.formattedRemaining.
-    private static string Format(double seconds)
+    // Match the shared HUD: round remaining time up and always show HH:MM:SS.
+    internal static string Format(double seconds)
     {
-        var total = (int)Math.Round(seconds);
-        var hours = total / 3600;
-        var minutes = (total % 3600) / 60;
-        var secs = total % 60;
-        return hours > 0
-            ? $"{hours}:{minutes:D2}:{secs:D2}"
-            : $"{minutes}:{secs:D2}";
+        var total = double.IsFinite(seconds) ? (long)Math.Min(int.MaxValue,Math.Ceiling(Math.Max(0,seconds))) : 0;
+        return $"{total/3600:D2}:{total/60%60:D2}:{total%60:D2}";
     }
 }

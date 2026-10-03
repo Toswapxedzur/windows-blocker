@@ -19,3 +19,6 @@ if (Test-Path "$repo\tests\McpConnectorContracts\McpConnectorContracts.csproj") 
   & $Dotnet run --project "$repo\tests\McpConnectorContracts\McpConnectorContracts.csproj" -c Release
   if ($LASTEXITCODE -ne 0) { throw 'MCP connector contracts failed' }
 }
+
+& $Dotnet run --project "$repo\tests\OverlayContracts\OverlayContracts.csproj" -c Release
+if ($LASTEXITCODE -ne 0) { throw 'Native overlay contracts failed' }

@@ -14,6 +14,8 @@ public sealed class McpConnectionsWindow : Window
     private readonly TextBlock _status=new() { TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,8,0,0) };
     public McpConnectionsWindow(Window owner)
     {
+        Resources.MergedDictionaries.Add(new ResourceDictionary {Source=new Uri("/WindowsBlocker;component/NativeControls.xaml",UriKind.Relative)});
+        FontFamily=new FontFamily("Arial"); Background=new SolidColorBrush(Color.FromRgb(248,250,252));
         FlowDirection=NativeLanguage.Language=="ar" ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         Owner=owner; Title=NativeLanguage.Text("windows.connections.title", "AI connections"); Width=480; Height=570; MinWidth=400; MinHeight=320; WindowStartupLocation=WindowStartupLocation.CenterOwner;
         AutomationProperties.SetAutomationId(this,"McpConnectionsWindow");
