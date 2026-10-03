@@ -6,13 +6,6 @@
         ResizeMode="NoResize" SizeToContent="WidthAndHeight"
         Focusable="False" IsHitTestVisible="False">
     <Border CornerRadius="10" Padding="10,8" Background="#DB0F172A" SnapsToDevicePixels="True">
-        <ItemsControl x:Name="Rows">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <TextBlock Text="{Binding}" Foreground="#F8FAFC"
-                               FontFamily="Consolas" FontSize="13" Margin="0,1"/>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
+        <TextBlock x:Name="Rows" Foreground="#F8FAFC" FontFamily="Arial" FontSize="13" Typography.NumeralAlignment="Tabular" LineHeight="18" TextTrimming="CharacterEllipsis"/>
     </Border>
 </Window>
