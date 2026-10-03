@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
@@ -101,12 +102,22 @@ public partial class PanelOverlayWindow : Window
     private const double Inset = 16;
 
     public PanelEventHandler? OnEvent { get; set; }
-    private readonly Dictionary<(string GroupId, string PanelId), PanelCard> _cards = new();
-    private static (string GroupId, string PanelId) Identity(PanelSnapshot panel) => (panel.GroupId ?? "", panel.Id);
+    private readonly ObservableCollection<NativePanelItem> _panels=new();
+    private readonly Dictionary<(string?,string),NativePanelItem> _items=new();
 
     public PanelOverlayWindow()
     {
         InitializeComponent();
+        Resources.MergedDictionaries.Add(new ResourceDictionary { Source=new Uri("/WindowsBlocker;component/NativeControls.xaml",UriKind.Relative) });
+        Resources["VaultText"]=new SolidColorBrush(Color.FromRgb(248,250,252));
+        Resources["VaultField"]=new SolidColorBrush(Color.FromRgb(51,65,85));
+        FontFamily=new FontFamily("Arial");
+        FontSize=13;
+        Cards.ItemsSource=_panels;
+        MaxWidth=Math.Max(1,SystemParameters.WorkArea.Width-2*Inset);
+        MaxHeight=Math.Max(1,SystemParameters.WorkArea.Height-2*Inset);
+        Cards.MaxHeight=MaxHeight; Cards.MaxWidth=MaxWidth;
+        FlowDirection=NativeLanguage.Language=="ar" ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         System.Windows.Automation.AutomationProperties.SetAutomationId(this, "VaultRulePanels");
         SourceInitialized += OnSourceInitialized;
         SizeChanged += (_, _) => RepositionFor(_position);
@@ -125,49 +136,43 @@ public partial class PanelOverlayWindow : Window
 
     public void SetCards(List<PanelSnapshot> panels)
     {
-        var keep = panels.Select(Identity).ToHashSet();
-        foreach (var id in _cards.Keys.ToList())
-        {
-            if (!keep.Contains(id))
-            {
-                Stack.Children.Remove(_cards[id].Root);
-                _cards.Remove(id);
-            }
+        var keep=panels.Select(p=>(p.GroupId,p.Id)).ToHashSet();
+        var desired=new List<NativePanelItem>(panels.Count);
+        foreach(var panel in panels) {
+            var id=(panel.GroupId,panel.Id);
+            if(!_items.TryGetValue(id,out var item)) {
+                item=new NativePanelItem(panel,Emit);_items[id]=item;
+            } else item.Update(panel);
+            desired.Add(item);
         }
-
-        foreach (var panel in panels)
-        {
-            if (_cards.TryGetValue(Identity(panel), out var card))
-            {
-                card.Update(panel);
-            }
-            else
-            {
-                var newCard = new PanelCard(panel, (g, pid, cid, ev, val, vals) => OnEvent?.Invoke(g, pid, cid, ev, val, vals));
-                _cards[Identity(panel)] = newCard;
-                Stack.Children.Add(newCard.Root);
-            }
-        }
-
-        // Order cards to match the incoming order.
-        for (var i = 0; i < panels.Count; i++)
-        {
-            if (_cards.TryGetValue(Identity(panels[i]), out var card))
-            {
-                var current = Stack.Children.IndexOf(card.Root);
-                if (current != i && current >= 0)
-                {
-                    Stack.Children.Remove(card.Root);
-                    Stack.Children.Insert(Math.Min(i, Stack.Children.Count), card.Root);
-                }
+        foreach(var id in _items.Keys.Where(id=>!keep.Contains(id)).ToList())_items.Remove(id);
+        var differences=Math.Abs(_panels.Count-desired.Count);
+        for(var i=0;i<Math.Min(_panels.Count,desired.Count);i++)if(_panels[i]!=desired[i])differences++;
+        // Routine ticks keep the same item/container and its focused controls.
+        // Large topology changes rebuild the source in linear time; only
+        // viewport cards are realized. Small changes preserve neighboring cards.
+        if(differences>40) {
+            _panels.Clear();foreach(var item in desired)_panels.Add(item);
+        } else {
+            foreach(var item in _panels.Where(item=>!keep.Contains((item.Snapshot.GroupId,item.Snapshot.Id))).ToList())_panels.Remove(item);
+            for(var i=0;i<desired.Count;i++) {
+                if(i<_panels.Count && _panels[i]==desired[i])continue;
+                var index=_panels.IndexOf(desired[i]);
+                if(index>=0)_panels.Move(index,i);else _panels.Insert(i,desired[i]);
             }
         }
     }
+
+    internal void Emit(string groupId,string panelId,string controlId,string eventName,string value,string valuesJson)
+        =>OnEvent?.Invoke(groupId,panelId,controlId,eventName,value,valuesJson);
 
     public void RepositionFor(string position)
     {
         _position = position;
         var area = SystemParameters.WorkArea;
+        MaxWidth=Math.Max(1,area.Width-2*Inset);
+        MaxHeight=Math.Max(1,area.Height-2*Inset);
+        Cards.MaxHeight=MaxHeight; Cards.MaxWidth=MaxWidth;
         switch (position)
         {
             case "top-left":
@@ -188,6 +193,37 @@ public partial class PanelOverlayWindow : Window
     }
 }
 
+internal sealed class NativePanelItem
+{
+    public PanelSnapshot Snapshot {get;private set;}
+    public PanelEventHandler OnEvent {get;}
+    public event Action? Changed;
+    public NativePanelItem(PanelSnapshot snapshot,PanelEventHandler onEvent) {Snapshot=snapshot;OnEvent=onEvent;}
+    public void Update(PanelSnapshot snapshot) {Snapshot=snapshot;Changed?.Invoke();}
+}
+
+// Viewport hosts subscribe only while mounted. Routine ticks update the card
+// without recreating its controls, preserving drafts and click attribution.
+public sealed class NativePanelCardHost : ContentControl
+{
+    private PanelCard? _card;
+    private NativePanelItem? _item;
+    private void Refresh() {
+        if(_item==null)return;
+        if(_card==null) {_card=new PanelCard(_item.Snapshot,_item.OnEvent);Content=_card.Root;}
+        else _card.Update(_item.Snapshot);
+    }
+    public NativePanelCardHost() {
+        DataContextChanged+=(_,_)=> {
+            if(_item!=null)_item.Changed-=Refresh;
+            _item=DataContext as NativePanelItem;_card=null;Content=null;
+            if(_item!=null){_item.Changed+=Refresh;Refresh();}
+        };
+        Unloaded+=(_,_)=>{if(_item!=null)_item.Changed-=Refresh;};
+        Loaded+=(_,_)=>{if(_item!=null){_item.Changed-=Refresh;_item.Changed+=Refresh;Refresh();}};
+    }
+}
+
 // Renders one PanelSnapshot into a themed card. Rebuilds when the snapshot
 // changes, but defers a rebuild while any of its inputs hold keyboard focus so
 // in-progress typing (e.g. a PIN) is never wiped — the Windows counterpart of
@@ -198,20 +234,17 @@ internal sealed class PanelCard
     private readonly PanelEventHandler _onEvent;
     private string _lastJson = "";
     private PanelSnapshot? _pending;
+    private readonly List<NativePanelSelect> _selects=new();
+    private bool IsEditing=>Root.IsKeyboardFocusWithin || _selects.Any(select=>select.IsOpen);
+    private void ApplyPending() {
+        if(_pending!=null && !IsEditing) {var snapshot=_pending;_pending=null;Rebuild(snapshot);}
+    }
 
     public PanelCard(PanelSnapshot snapshot, PanelEventHandler onEvent)
     {
         _onEvent = onEvent;
         Root = new Border { Margin = new Thickness(0, 0, 0, 8) };
-        Root.LostKeyboardFocus += (_, _) =>
-        {
-            if (_pending != null && !Root.IsKeyboardFocusWithin)
-            {
-                var p = _pending;
-                _pending = null;
-                Rebuild(p);
-            }
-        };
+        Root.LostKeyboardFocus += (_, _) =>ApplyPending();
         Rebuild(snapshot);
     }
 
@@ -222,7 +255,7 @@ internal sealed class PanelCard
         {
             return;
         }
-        if (Root.IsKeyboardFocusWithin)
+        if (IsEditing)
         {
             _pending = snapshot;
             return;
@@ -232,17 +265,16 @@ internal sealed class PanelCard
 
     private void Rebuild(PanelSnapshot snapshot)
     {
+        _selects.Clear();
         _lastJson = JsonSerializer.Serialize(snapshot);
-        var theme = snapshot.Theme;
-        Root.Background = Brush(theme?.Background, "#f50f172a");
-        Root.BorderBrush = Brush(theme?.Border, "#73808080");
-        Root.BorderThickness = new Thickness(1);
+        Root.Background = Brush(null, "#db0f172a");
+        Root.BorderThickness = new Thickness(0);
         Root.CornerRadius = new CornerRadius(14);
         Root.Padding = new Thickness(12);
-        Root.Width = PanelWidth(snapshot.Width);
+        Root.Width = Math.Min(PanelWidth(snapshot.Width), Math.Max(1,SystemParameters.WorkArea.Width-2*16));
         Root.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 14, ShadowDepth = 5, Opacity = 0.32, Color = Colors.Black };
 
-        var fg = Brush(theme?.Foreground, "#f8fafc");
+        var fg = Brush(null, "#f8fafc");
         var stack = new StackPanel();
 
         if (!string.IsNullOrEmpty(snapshot.Title))
@@ -256,7 +288,7 @@ internal sealed class PanelCard
 
         var groupId = snapshot.GroupId ?? "";
         var valuesJson = CollectValuesJson(snapshot);
-        var accent = Brush(theme?.Accent, "#2563eb");
+        var accent = Brush(null, "#1e3a8a");
         foreach (var control in snapshot.Controls ?? new List<PanelControl>())
         {
             var el = BuildControl(control, snapshot.Id, groupId, valuesJson, fg, accent);
@@ -331,20 +363,13 @@ internal sealed class PanelCard
 
             case "select":
             {
-                var combo = new ComboBox { IsEnabled = c.Disabled != true };
-                foreach (var opt in c.Options ?? new List<PanelOption>())
-                {
-                    combo.Items.Add(new ComboBoxItem { Content = opt.Label, Tag = opt.Value, IsSelected = opt.Value == c.ValueString });
-                }
-                combo.SelectionChanged += (_, _) =>
-                {
-                    if (combo.SelectedItem is ComboBoxItem item && item.Tag is string v) Fire("change", v);
-                };
-                return Labeled(c.Label, combo, fg);
+                var select = Select(c,value=>Fire("change",value));
+                return Labeled(c.Label, select, fg);
             }
 
             case "radio":
             {
+                if ((c.Options?.Count ?? 0)>=6) return Labeled(c.Label, Select(c,value=>Fire("change",value)),fg);
                 var panel = new StackPanel();
                 var gn = $"{panelId}:{c.Id}:{Guid.NewGuid():N}";
                 foreach (var opt in c.Options ?? new List<PanelOption>())
@@ -384,36 +409,21 @@ internal sealed class PanelCard
                 var length = Math.Max(3, Math.Min(12, c.Length ?? 6));
                 var masked = c.Masked ?? true;
                 var autoSubmit = c.AutoSubmit ?? false;
-                FrameworkElement field;
-                if (masked)
-                {
-                    var pb = new PasswordBox { MaxLength = length, FontFamily = new FontFamily("Consolas"), FontSize = 18, IsEnabled = c.Disabled != true, Width = length * 26 };
-                    pb.PasswordChanged += (_, _) =>
-                    {
-                        var digits = new string(pb.Password.Where(char.IsDigit).ToArray());
-                        Fire("change", digits);
-                        if (autoSubmit && digits.Length == length) Fire("submit", digits);
-                    };
-                    field = pb;
-                }
-                else
-                {
-                    var tb = new TextBox { MaxLength = length, FontFamily = new FontFamily("Consolas"), FontSize = 18, Text = c.ValueString, IsEnabled = c.Disabled != true, Width = length * 26 };
-                    tb.TextChanged += (_, _) =>
-                    {
-                        var digits = new string(tb.Text.Where(char.IsDigit).ToArray());
-                        if (digits != tb.Text) { tb.Text = digits; return; }
-                        Fire("change", digits);
-                        if (autoSubmit && digits.Length == length) Fire("submit", digits);
-                    };
-                    field = tb;
-                }
+                var field=new NativePinField(length,masked,c.ValueString,value=> {
+                    Fire("change",value);
+                    if(autoSubmit && value.Length==length)Fire("submit",value);
+                }) { IsEnabled=c.Disabled!=true };
                 return Labeled(c.Label, field, fg);
             }
 
             default:
                 return new TextBlock { Text = c.Label ?? c.Text ?? "", FontSize = 13, Foreground = fg };
         }
+    }
+
+    private NativePanelSelect Select(PanelControl control,Action<string> changed) {
+        var select=new NativePanelSelect(control.Options ?? new List<PanelOption>(),control.ValueString,changed) {IsEnabled=control.Disabled!=true};
+        select.EditingEnded+=ApplyPending; _selects.Add(select); return select;
     }
 
     private static FrameworkElement Labeled(string? label, FrameworkElement control, Brush fg)

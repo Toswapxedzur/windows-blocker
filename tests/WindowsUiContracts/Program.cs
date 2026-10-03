@@ -180,7 +180,7 @@ try
         NativeInteraction.BringToFront(new IntPtr(editor.Current.NativeWindowHandle));
         NativeInteraction.SetForegroundWindow(new IntPtr(editor.Current.NativeWindowHandle));
         ((InvokePattern)choose!.GetCurrentPattern(InvokePattern.Pattern)).Invoke();
-        var picker=await WaitElement(()=>{var hwnd=NativeInteraction.NamedWindow(appPid,"Choose the folder custom rules may use");return hwnd==IntPtr.Zero ? null : AutomationElement.FromHandle(hwnd);},20);
+        var picker=await WaitElement(()=>{var hwnd=NativeInteraction.NamedWindow(appPid,"Choose folder");return hwnd==IntPtr.Zero ? null : AutomationElement.FromHandle(hwnd);},20);
         if(picker==null)foreach(var hwnd in NativeInteraction.Windows(appPid)){var window=AutomationElement.FromHandle(hwnd);Console.WriteLine("Native window: "+window.Current.Name+" / "+window.Current.AutomationId);}
         Check(picker!=null,"Choose folder opens the normal native folder dialog");
         var folder=Path.Combine(args[0],"chosen-rule-folder");Directory.CreateDirectory(folder);File.WriteAllBytes(Path.Combine(folder,"invalid-utf8.txt"),new byte[]{0xff,0xfe});File.WriteAllText(Path.Combine(folder,"hidden.txt"),"hidden");File.SetAttributes(Path.Combine(folder,"hidden.txt"),FileAttributes.Hidden);
@@ -196,7 +196,7 @@ try
         using var cloud=new CloudFolderFixture(Path.Combine(folder,"cloud"));cloudPlaceholderVerified=(cloud.ReparseTag & 0xffff0fff)==0x9000001a;
         if(cloudPlaceholderVerified)Check(true,"Normal user creates an owned actual cloud placeholder");
         else Console.WriteLine("LIMIT Cloud Files API accepted this owned fixture but exposed no cloud reparse tag; live placeholder coverage is unavailable on this rig.");
-        var folderField=await WaitElement(()=>{var hwnd=NativeInteraction.NamedWindow(appPid,"Choose the folder custom rules may use");return hwnd==IntPtr.Zero ? null : AutomationElement.FromHandle(hwnd).FindFirst(TreeScope.Descendants,new AndCondition(new PropertyCondition(AutomationElement.AutomationIdProperty,"1152"),new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Edit)));},20);
+        var folderField=await WaitElement(()=>{var hwnd=NativeInteraction.NamedWindow(appPid,"Choose folder");return hwnd==IntPtr.Zero ? null : AutomationElement.FromHandle(hwnd).FindFirst(TreeScope.Descendants,new AndCondition(new PropertyCondition(AutomationElement.AutomationIdProperty,"1152"),new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Edit)));},20);
         if(folderField==null)foreach(AutomationElement element in picker!.FindAll(TreeScope.Descendants,Condition.TrueCondition))Console.WriteLine("Picker: "+element.Current.Name+" / "+element.Current.AutomationId+" / "+element.Current.ControlType.ProgrammaticName);
         Check(folderField!=null,"Native folder dialog exposes its path field");
         ((ValuePattern)folderField!.GetCurrentPattern(ValuePattern.Pattern)).SetValue(selectedAlias);
@@ -207,7 +207,7 @@ try
         {
             try
             {
-                var pickerHandle=NativeInteraction.NamedWindow(appPid,"Choose the folder custom rules may use");
+                var pickerHandle=NativeInteraction.NamedWindow(appPid,"Choose folder");
                 if(pickerHandle!=IntPtr.Zero)
                 {
                     var activePicker=AutomationElement.FromHandle(pickerHandle);

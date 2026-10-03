@@ -43,17 +43,6 @@ public sealed class PanelOption
     [JsonPropertyName("label")] public string Label { get; set; } = "";
 }
 
-public sealed class PanelTheme
-{
-    [JsonPropertyName("background")] public string? Background { get; set; }
-    [JsonPropertyName("foreground")] public string? Foreground { get; set; }
-    [JsonPropertyName("accent")] public string? Accent { get; set; }
-    [JsonPropertyName("border")] public string? Border { get; set; }
-    [JsonPropertyName("muted")] public string? Muted { get; set; }
-    [JsonPropertyName("fontSize")] public string? FontSize { get; set; }
-    [JsonPropertyName("titleSize")] public string? TitleSize { get; set; }
-}
-
 public sealed class PanelControl
 {
     [JsonPropertyName("id")] public string Id { get; set; } = "";
@@ -101,7 +90,6 @@ public sealed class PanelSnapshot
     [JsonPropertyName("textSize")] public string? TextSize { get; set; }
     [JsonPropertyName("role")] public string? Role { get; set; }
     [JsonPropertyName("autoFocus")] public bool? AutoFocus { get; set; }
-    [JsonPropertyName("theme")] public PanelTheme? Theme { get; set; }
     [JsonPropertyName("controls")] public List<PanelControl>? Controls { get; set; }
     [JsonPropertyName("visible")] public bool? Visible { get; set; }
 }
