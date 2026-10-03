@@ -10,5 +10,7 @@
     <Compile Include="../../src/WindowsBlocker/WebUI/NativeEditorContract.cs" Link="NativeEditorContract.cs" />
     <Compile Include="../../src/WindowsBlocker/WebUI/Storage.cs" Link="Storage.cs" />
     <Compile Include="../../src/WindowsBlocker/WebUI/WebStore.cs" Link="WebStore.cs" />
+    <Compile Include="../../src/WindowsBlocker/WebUI/NativeLanguage.cs" Link="NativeLanguage.cs" />
+    <Content Include="../../src/WindowsBlocker/WebAssets/translation/*.json" Link="WebAssets/translation/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

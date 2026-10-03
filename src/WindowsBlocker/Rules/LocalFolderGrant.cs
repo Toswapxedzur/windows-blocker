@@ -16,7 +16,7 @@ public static class LocalFolderGrant
     public static string? Folder { get { try { var p = Path.GetFullPath(File.ReadAllText(GrantPath)); return Directory.Exists(p) && !LocalFolderPathPolicy.RedirectsPath(p) ? p : null; } catch { return null; } } }
     public static void Choose(System.Windows.Window owner)
     {
-        var picker = new Microsoft.Win32.OpenFolderDialog { Title = "Choose the folder custom rules may use", Multiselect = false };
+        var picker = new Microsoft.Win32.OpenFolderDialog { Title = NativeLanguage.Text("settings.localFolderChoose", "Choose folder"), Multiselect = false };
         if (picker.ShowDialog(owner) == true) File.WriteAllText(GrantPath, LocalFolderPathPolicy.CanonicalRoot(picker.FolderName), Utf8);
     }
     public static void Revoke() { if (File.Exists(GrantPath)) File.Delete(GrantPath); }

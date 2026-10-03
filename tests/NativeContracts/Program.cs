@@ -7,6 +7,7 @@ using WindowsBlocker.WebUI;
 Environment.SetEnvironmentVariable("VAULT_ENVIRONMENT", "development");
 Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT", Path.Combine(Path.GetTempPath(), "vault-contracts-" + Guid.NewGuid()));
 static void Check(bool passed, string description) { if (!passed) throw new Exception(description); Console.WriteLine("PASS " + description); }
+NativeLanguageContracts.Run(Check);
 var sourceSeed = "{\"blockedGroups\":[]}";
 var seed = NativeEditorContract.SeedScript(sourceSeed);
 using (var seeded = System.Text.Json.JsonDocument.Parse(seed["window.__cbNativeStoreSeed = ".Length..^1])) Check(seeded.RootElement.ValueKind == System.Text.Json.JsonValueKind.String && seeded.RootElement.GetString() == sourceSeed, "canonical editor seed is JSON string literal");
