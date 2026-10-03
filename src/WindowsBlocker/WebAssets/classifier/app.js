@@ -60,6 +60,7 @@
   let utilityPanel = null;
   let researchSetupRequested = false;
   let researchSetupFocusPending = false;
+  let dictionarySetupFocusPending = false;
   let researchModelQuery = "";
   let researchModelQueryProvider = null;
   let releaseDialogFocus = null;
@@ -72,6 +73,8 @@
   // next snapshot can open the freshly created type.
   let pendingSelectNewType = null;
   let selectedLanguage = "en";
+  let languageMessages = {};
+  let languageRevision = 0;
   let navigationPanelWidth = navigationWidthRange.fallback;
   let navigationResize = null;
   const workspaceNames = new Set(["browserBridge", "knowledge"]);
@@ -89,6 +92,7 @@
     }
   } catch (_) {}
   root.lang = selectedLanguage;
+  root.dir = selectedLanguage === "ar" ? "rtl" : "ltr";
 
   function applyNavigationPanelWidth() {
     root.style.setProperty("--navigation-panel-width", `${navigationPanelWidth}px`);
@@ -138,12 +142,36 @@
   }
 
   function t(key, values = {}) {
-    const template = strings[key];
+    const template = languageMessages["classifier." + key] ?? strings[key];
     if (typeof template !== "string") return key;
     return template.replace(/\{([a-zA-Z0-9_]+)\}/g, (_, name) => String(values[name] ?? ""));
   }
 
+  async function loadSelectedLanguage() {
+    const revision = ++languageRevision;
+    const language = selectedLanguage;
+    let messages = {};
+    try {
+      if (window.VaultLoadMessages) messages = await window.VaultLoadMessages(language);
+      else {
+        const response = await fetch(`translation/${language}.json`);
+        if (response.ok) messages = await response.json();
+      }
+    } catch (_) {}
+    if (revision !== languageRevision) return;
+    languageMessages = messages;
+    root.lang = language;
+    root.dir = language === "ar" ? "rtl" : "ltr";
+    render();
+    window.VaultInfo.refresh(scope);
+  }
+
+  window.VaultClassifierTranslate = (key, values = {}) => {
+    const template = languageMessages[key];
+    return template ? template.replace(/\{([a-zA-Z0-9_]+)\}/g, (_, name) => String(values[name] ?? "")) : key;
+  };
   const tx = (key, values = {}) => esc(t(key, values));
+  const sx = (key, fallback) => esc(languageMessages[key] ?? fallback);
   const percent = (value) => `${Math.round(Number(value || 0) * 100)}%`;
   const modelSizeGB = (bytes) => {
     const gigabytes = Math.max(0, Number(bytes) || 0) / 1_000_000_000;
@@ -415,11 +443,11 @@
     "tree.tagName": "The name of the tag to add to this Classifier group’s taxonomy."
   });
   function infoAttrs(labelKey, hintKey = "") {
-    const text = fieldInfo[labelKey] || strings[hintKey] || "";
+    const text = languageMessages["classifierInfo." + labelKey] || fieldInfo[labelKey] || (hintKey ? t(hintKey) : "");
     if (!text) return "";
     const target = labelKey === "bridge.typeName" ? ".classifier-name-row .field"
       : labelKey === "llm.providerType" ? ".provider-create .field" : "";
-    return `data-info-label="${esc(strings[labelKey] || labelKey)}" data-info-key="${esc(labelKey)}" data-info-copy="${esc(text)}"${target ? ` data-info-target="${target}"` : ""}`;
+    return `data-info-label="${esc(t(labelKey))}" data-info-key="${esc(labelKey)}" data-info-copy="${esc(text)}"${target ? ` data-info-target="${target}"` : ""}`;
   }
 
   function field(labelKey, hintKey, key, value, type = "text", extra = "") {
@@ -458,7 +486,7 @@
   }
 
   function notice(text, tone = "navy") {
-    return text ? `<div class="notice ${esc(tone)}">${esc(text)}</div>` : "";
+    return text ? `<div class="notice ${esc(tone)}">${esc(window.VaultNoticeLanguage ? window.VaultNoticeLanguage(text, t) : text)}</div>` : "";
   }
 
   // Every elapsed or remaining duration uses HH:MM:SS.
@@ -569,10 +597,30 @@
 
   function openResearchSetup() {
     utilityPanel = "settings";
+    dictionarySetupFocusPending = false;
     researchSetupRequested = true;
     researchSetupFocusPending = true;
     render();
     window.requestAnimationFrame(placeResearchSetup);
+  }
+
+  function openDictionarySetup() {
+    utilityPanel = "settings";
+    researchSetupRequested = false;
+    researchSetupFocusPending = false;
+    dictionarySetupFocusPending = true;
+    render();
+    window.requestAnimationFrame(placeDictionarySetup);
+  }
+
+  function placeDictionarySetup() {
+    if (!dictionarySetupFocusPending || utilityPanel !== "settings") return;
+    const target = root.querySelector(".utility-dictionary-section h3");
+    if (!target) return;
+    dictionarySetupFocusPending = false;
+    target.tabIndex = -1;
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ block: "center" });
   }
 
   function placeResearchSetup() {
@@ -627,7 +675,7 @@
     const expandKey = `research-model:${providerID}`;
     const unavailable = fetched && current && !models.includes(current);
     const choices = models.map((model) => `<button type="button" class="vui-menu-item research-model-option${model === current ? " is-selected" : ""}" data-model-pick="${esc(model)}" aria-pressed="${model === current}">${esc(model)}</button>`).join("");
-    const picker = fetched ? `<details class="research-model-picker" data-expand="${esc(expandKey)}"${openExpands.has(expandKey) ? " open" : ""}><summary class="vui-select-button" tabindex="0" data-model-selector aria-label="${tx("research.model")}: ${current ? esc(current) : tx("research.chooseModel")}"><span class="vui-select-label">${current ? esc(current) : tx("research.chooseModel")}</span></summary><div class="research-model-menu vui-menu"><div class="vui-info-field" data-info-label="Search models" ${infoAttrs("research.modelSearch")}><input type="search" data-model-search value="${esc(researchModelQuery)}" aria-label="${tx("research.modelSearch")}" placeholder="${tx("research.modelSearch")}" autocomplete="off" spellcheck="false"></div><div class="research-model-list vui-list-box" data-list-key="${esc(expandKey)}" tabindex="0" aria-label="${tx("research.model")}">${choices}</div><p class="small-copy" data-model-no-matches hidden>${tx("research.noMatchingModels")}</p>${models.length ? "" : `<p class="small-copy">${tx("research.noModels")}</p>`}</div></details>` : current ? `<p class="small-copy">${tx("research.savedModel", { model: current })}</p>` : "";
+    const picker = fetched ? `<details class="research-model-picker" data-expand="${esc(expandKey)}"${openExpands.has(expandKey) ? " open" : ""}><summary class="vui-select-button" tabindex="0" data-model-selector aria-label="${tx("research.model")}: ${current ? esc(current) : tx("research.chooseModel")}"><span class="vui-select-label">${current ? esc(current) : tx("research.chooseModel")}</span></summary><div class="research-model-menu vui-menu"><div class="vui-info-field" ${infoAttrs("research.modelSearch")}><input type="search" data-model-search value="${esc(researchModelQuery)}" aria-label="${tx("research.modelSearch")}" placeholder="${tx("research.modelSearch")}" autocomplete="off" spellcheck="false"></div><div class="research-model-list vui-list-box" data-list-key="${esc(expandKey)}" tabindex="0" aria-label="${tx("research.model")}">${choices}</div><p class="small-copy" data-model-no-matches hidden>${tx("research.noMatchingModels")}</p>${models.length ? "" : `<p class="small-copy">${tx("research.noModels")}</p>`}</div></details>` : current ? `<p class="small-copy">${tx("research.savedModel", { model: current })}</p>` : "";
     return `<div class="field research-model-field"><span class="field-label" ${infoAttrs("research.model")}>${tx("research.model")}</span><input type="hidden" data-field="llmModelIdentifier" value="${esc(current)}">${picker}${unavailable ? `<p class="small-copy research-model-unavailable">${tx("research.modelUnavailable")}</p>` : ""}<div class="action-row"><button type="button" class="secondary" data-action="probeProviderModelCatalog" data-profile-id="${esc(providerID)}" data-model-fetch${disabled(!canFetch || loading)}>${tx(loading ? "research.fetchingModels" : error ? "research.retryModels" : fetched ? "research.refreshModels" : "research.fetchModels")}</button></div>${!canFetch ? `<p class="small-copy">${tx(profile ? "research.modelKeyRequired" : "research.modelProviderRequired")}</p>` : ""}${loading ? `<p class="small-copy" role="status">${tx("research.fetchingModels")}</p>` : ""}${error ? `<div role="alert">${notice(error, "red")}</div>` : ""}</div>`;
   }
 
@@ -710,7 +758,7 @@
         researchModelPicker()
       }</div><p class="small-copy" data-info="research.constantsNote" data-info-target=".utility-research-section h3">${tx("research.constantsNote")}</p><p class="small-copy">${tx("research.usageToday", { used: research.tokensUsedToday ?? 0, limit: research.dailyTokenLimit ?? 10000 })}</p>${researchStatusBlock(research.status)}</section>`;
       const packageSection = `<section class="utility-settings-section utility-resource-section" data-form-id="utility-package-form" data-autosave-action="savePackageSettings"><h3 class="utility-settings-section-title">${tx("settings.packageUpdates")}</h3><div class="utility-settings-fields">${selectField("settings.packageUpdates", "settings.packageUpdatesCopy", "packageUpdateMode", settings.packageUpdateMode, [["automatic", "enum.update.automatic"], ["downloadThenAsk", "enum.update.downloadThenAsk"], ["manual", "enum.update.manual"]])}</div></section>`;
-      content = `<section class="utility-panel utility-settings-modal"><div class="utility-panel-head"><div><h2>${tx("utility.settings.title")}</h2><p class="section-copy" data-info>${tx("utility.settings.copy")}</p></div><button class="secondary utility-close" data-action="closeUtilityPanel">${tx("utility.close")}</button></div><div class="utility-settings-body">${notice(state.issue, "red")}${classificationSection}${apiKeySettings()}${researchSection}${packageSection}<section class="utility-settings-section"><h3 class="utility-settings-section-title">${tx("language.label")}</h3>${languageSelection()}</section></div></section>`;
+      content = `<section class="utility-panel utility-settings-modal"><div class="utility-panel-head"><div><h2>${tx("utility.settings.title")}</h2><p class="section-copy" data-info>${tx("utility.settings.copy")}</p></div><button class="secondary utility-close" data-action="closeUtilityPanel">${tx("utility.close")}</button></div><div class="utility-settings-body">${notice(state.issue, "red")}${classificationSection}${apiKeySettings()}${researchSection}${dictionaryControls()}${packageSection}<section class="utility-settings-section"><h3 class="utility-settings-section-title">${tx("language.label")}</h3>${languageSelection()}</section></div></section>`;
     }
     if (!content) return "";
     return `<div class="utility-popover-layer" role="presentation"><button class="utility-popover-dismiss" data-action="closeUtilityPanel" aria-label="${tx("utility.close")}"></button><div class="utility-popover" data-list-key="settings" role="dialog" aria-modal="true" aria-label="${esc(tx("utility.settings.title"))}">${content}</div></div>`;
@@ -754,8 +802,8 @@
   function shell(content) {
     return `<div class="popup">
       <header class="vui-topbar">
-        <nav class="vui-tabs" aria-label="Scene"><button type="button" class="vui-tab" data-scene="vault">Vault</button><button type="button" class="vui-tab is-active" data-scene="classifier">Classifier</button><button type="button" class="vui-tab" data-scene="activity">Activity</button></nav>
-        <div class="vui-topbar-links"><button type="button" class="secondary" data-action="openManual">User manual</button><span class="settings-popover-anchor"><button type="button" class="secondary" data-action="openUtilityPanel" data-utility-panel="settings" aria-haspopup="dialog" aria-expanded="${utilityPanel ? "true" : "false"}">${tx("utility.settings.button")}</button>${utilityPanelContent()}</span></div>
+        <nav class="vui-tabs" aria-label="${sx("activity.scene", "Scene")}"><button type="button" class="vui-tab" data-scene="vault">${sx("scene.vault", "Vault")}</button><button type="button" class="vui-tab is-active" data-scene="classifier">${sx("scene.classifier", "Classifier")}</button><button type="button" class="vui-tab" data-scene="activity">${sx("scene.activity", "Activity")}</button></nav>
+        <div class="vui-topbar-links"><button type="button" class="secondary" data-action="openManual">${sx("manual.title", "User manual")}</button><span class="settings-popover-anchor"><button type="button" class="secondary" data-action="openUtilityPanel" data-utility-panel="settings" aria-haspopup="dialog" aria-expanded="${utilityPanel ? "true" : "false"}">${tx("utility.settings.button")}</button>${utilityPanelContent()}</span></div>
       </header>
       <div class="layout">
         <aside class="navigation-panel" aria-label="${tx("navigation.aria")}">
@@ -771,7 +819,7 @@
   function initialShell() {
     // Native state arrives asynchronously. Keep navigation available from the
     // first paint rather than replacing the whole scene with a loading screen.
-    return `<div class="popup"><header class="vui-topbar"><nav class="vui-tabs" aria-label="Scene"><button type="button" class="vui-tab" data-scene="vault">Vault</button><button type="button" class="vui-tab is-active" data-scene="classifier">Classifier</button><button type="button" class="vui-tab" data-scene="activity">Activity</button></nav></header><div class="layout" aria-busy="true"></div></div>`;
+    return `<div class="popup"><header class="vui-topbar"><nav class="vui-tabs" aria-label="${sx("activity.scene", "Scene")}"><button type="button" class="vui-tab" data-scene="vault">${sx("scene.vault", "Vault")}</button><button type="button" class="vui-tab is-active" data-scene="classifier">${sx("scene.classifier", "Classifier")}</button><button type="button" class="vui-tab" data-scene="activity">${sx("scene.activity", "Activity")}</button></nav></header><div class="layout" aria-busy="true"></div></div>`;
   }
 
   function syncDialogFocus(previousControl) {
@@ -1213,19 +1261,19 @@
     const packs = d.packs || [];
     const pack = (kind, label) => {
       const row = packs.find(item => item.kind === kind) || {};
-      return `<div class="dictionary-pack"><div><strong>${label}</strong><p class="small-copy">${row.entryCount || 0} entries · ${esc(row.installedVersion || "Not downloaded")}${row.updateAvailable ? " · Update available" : ""}</p></div><button class="secondary" data-action="downloadDictionary" data-kind="${kind}" ${d.busy ? "disabled" : ""}>${kind === "creator" && d.creatorMode !== "full" ? "Update cache version" : "Download / Update"}</button></div>`;
+      return `<div class="dictionary-pack"><div><strong>${label}</strong><p class="small-copy">${tx("dictionary.entries", { count: row.entryCount || 0, version: row.installedVersion || t("dictionary.notDownloaded"), update: row.updateAvailable ? t("dictionary.updateAvailable") : "" })}</p></div><button class="secondary" data-action="downloadDictionary" data-kind="${kind}" ${d.busy ? "disabled" : ""}>${tx(kind === "creator" && d.creatorMode !== "full" ? "dictionary.updateCache" : "dictionary.download")}</button></div>`;
     };
-    return `<section class="knowledge-group dictionary-controls"><div class="section-header"><div><h3>Official dictionaries</h3><p class="section-copy">Your own descriptions and AI-researched descriptions always take priority.</p></div><button class="secondary" data-action="checkDictionaryUpdates" ${d.busy ? "disabled" : ""}>${d.busy ? "Working…" : "Check for updates"}</button></div>
-      ${pack("term", "Terms")}${pack("creator", "Creators")}
+    return `<section class="utility-settings-section utility-dictionary-section dictionary-controls"><div class="section-header"><div><h3 class="utility-settings-section-title">${tx("dictionary.title")}</h3><p class="section-copy">${tx("dictionary.priority")}</p></div><button class="secondary" data-action="checkDictionaryUpdates" ${d.busy ? "disabled" : ""}>${tx(d.busy ? "dictionary.working" : "dictionary.checkUpdates")}</button></div>
+      ${pack("term", tx("dictionary.terms"))}${pack("creator", tx("dictionary.creators"))}
       <div data-form-id="dictionary-settings" data-autosave-action="saveDictionarySettings" class="form-stack">
-        <label class="field"><span class="field-label">Creator dictionary</span><select data-field="creatorMode"><option value="cache" ${selected(d.creatorMode || "cache", "cache")}>Cache + online lookup</option><option value="full" ${selected(d.creatorMode, "full")}>Full download · offline lookup</option></select></label>
-        <label class="field"><span class="field-label">Maximum cached creators</span><input type="number" data-field="creatorCacheSize" min="1" max="100000" step="1" value="${d.creatorCacheSize || 10000}" ${d.creatorMode === "full" ? "readonly" : ""}></label>
-        <label class="field wide"><span><input type="checkbox" data-field="contributionEnabled" ${d.contributionEnabled !== false ? "checked" : ""}> Help improve the creator dictionary</span><span class="small-copy">Occasionally send missing public creator IDs and available subscriber/follower counts. No term names, titles, history or personal descriptions. Maximum 50 submissions/day; server retention 7 days. Turn this off anytime.</span></label>
+        <label class="field"><span class="field-label">${tx("dictionary.creatorMode")}</span><select data-field="creatorMode"><option value="cache" ${selected(d.creatorMode || "cache", "cache")}>${tx("dictionary.cacheMode")}</option><option value="full" ${selected(d.creatorMode, "full")}>${tx("dictionary.fullMode")}</option></select></label>
+        <label class="field"><span class="field-label">${tx("dictionary.cacheMaximum")}</span><input type="number" data-field="creatorCacheSize" min="1" max="100000" step="1" value="${d.creatorCacheSize || 10000}" ${d.creatorMode === "full" ? "readonly" : ""}></label>
+        <label class="field wide dictionary-contribution"><span class="toggle-row"><input type="checkbox" data-field="contributionEnabled" ${d.contributionEnabled !== false ? "checked" : ""}> ${tx("dictionary.helpImprove")}</span><span class="small-copy">${tx("dictionary.sharingExplanation")}</span></label>
         <input type="checkbox" data-field="choiceMade" checked hidden>
       </div>
-      <p class="small-copy">${d.cachedCreators || 0} creators cached. Full packs stay indexed on disk; only matching descriptions enter tagging. ${d.creatorMode === "full" && !d.fullCreatorReady ? "Download Creators to enable full offline lookup." : ""}</p>
+      <p class="small-copy">${tx("dictionary.cacheSummary", { count: d.cachedCreators || 0, guidance: d.creatorMode === "full" && !d.fullCreatorReady ? t("dictionary.fullDownloadRequired") : "" })}</p>
       ${notice(d.notice, "navy")}
-      <details class="dictionary-personal"><summary>Import / export your dictionary</summary><div data-form-id="dictionary-import" class="form-stack"><label class="field wide"><span class="field-label">Personal dictionary JSON</span><textarea data-field="json" data-personal-import rows="5" maxlength="8388608" placeholder='{"schemaVersion":1,"entries":[{"kind":"term","subject":"Example","meaning":"Description"}]}'>${esc(personalDictionaryImportDraft)}</textarea></label><label class="field">Open JSON file<input type="file" accept=".json,application/json" data-personal-file></label><div class="action-row"><button class="secondary" data-action="importPersonalDictionary" data-form="dictionary-import">Import</button><button class="secondary" data-action="exportPersonalDictionary">Export JSON</button></div></div>${d.personalJSON ? `<textarea class="dictionary-export" data-personal-export readonly rows="6" aria-label="Exported personal dictionary">${esc(d.personalJSON)}</textarea><button class="secondary" data-action="copyPersonalDictionary">Copy JSON</button>` : ""}</details></section>`;
+      <details class="dictionary-personal" data-expand="dictionary-personal"${openExpands.has("dictionary-personal") ? " open" : ""}><summary>${tx("dictionary.importExport")}</summary><div data-form-id="dictionary-import" class="form-stack"><label class="field wide"><span class="field-label">${tx("dictionary.personalJSON")}</span><textarea data-field="json" data-personal-import rows="5" maxlength="8388608" placeholder='{"schemaVersion":1,"entries":[{"kind":"term","subject":"Example","meaning":"Description"}]}'>${esc(personalDictionaryImportDraft)}</textarea></label><label class="field">${tx("dictionary.openJSON")}<input type="file" accept=".json,application/json" data-personal-file></label><div class="action-row"><button class="secondary" data-action="importPersonalDictionary" data-form="dictionary-import">${tx("dictionary.import")}</button><button class="secondary" data-action="exportPersonalDictionary">${tx("dictionary.export")}</button></div></div>${d.personalJSON ? `<textarea class="dictionary-export" data-personal-export readonly rows="6" aria-label="${tx("dictionary.exported")}">${esc(d.personalJSON)}</textarea><button class="secondary" data-action="copyPersonalDictionary">${tx("dictionary.copy")}</button>` : ""}</details></section>`;
   }
   scope.addEventListener("change", async event => {
     if (!event.target.matches("[data-personal-file]")) return;
@@ -1241,7 +1289,23 @@
   function dictionaryOnboarding() {
     const d = state.settings?.dictionaries;
     if (!d || d.contributionChoiceMade || d.nativePrompt) return "";
-    return `<div class="utility-popover-layer" role="presentation"><div class="deletion-dialog" role="dialog" aria-modal="true" aria-label="Creator dictionary contribution"><h3>Help improve the creator dictionary</h3><p>Vault can occasionally send public creator IDs and their available subscriber/follower counts to our server. No titles, term names, browsing history or personal definitions are sent. You can disable this anytime in Knowledge.</p><label><input type="checkbox" data-contribution-first checked> Share creator IDs and subscriber counts</label><p class="small-copy">Maximum 50/day; retained for 7 days. See the Privacy Policy for details.</p><div class="action-row"><button class="primary" data-action="saveDictionaryFirstChoice">Save choice</button><button class="secondary" data-action="declineDictionaryContribution">Don't share</button></div></div></div>`;
+    return `<div class="utility-popover-layer" role="presentation"><div class="deletion-dialog" role="dialog" aria-modal="true" aria-label="${tx("dictionary.contributionTitle")}"><h3>${tx("dictionary.helpImprove")}</h3><p>${tx("dictionary.webContributionBody")}</p><label><input type="checkbox" data-contribution-first checked> ${tx("dictionary.share")}</label><p class="small-copy">${tx("dictionary.retention")}</p><div class="action-row"><button class="primary" data-action="saveDictionaryFirstChoice">${tx("dictionary.saveChoice")}</button><button class="secondary" data-action="declineDictionaryContribution">${tx("dictionary.decline")}</button></div></div></div>`;
+  }
+
+  function dictionaryConnection() {
+    const d = state.settings?.dictionaries || {};
+    const packs = d.packs || [];
+    const term = packs.find(item => item.kind === "term") || {};
+    const creator = packs.find(item => item.kind === "creator") || {};
+    const version = pack => pack.installedVersion || t("dictionary.notDownloaded");
+    const creatorSummary = d.creatorMode === "full"
+      ? t("dictionary.fullSummary", {count: creator.entryCount || 0})
+      : t("dictionary.lookupSummary", {count: d.cachedCreators || 0});
+    const updating = packs.some(pack => pack.updateAvailable);
+    const creatorReady = creator.installedVersion && (d.creatorMode !== "full" || d.fullCreatorReady);
+    const complete = term.installedVersion && creatorReady;
+    const status = t(d.busy ? "dictionary.working" : updating ? "dictionary.updateStatus" : complete ? "dictionary.installed" : "dictionary.notDownloaded");
+    return `<section class="knowledge-dictionary-connection"><div><h3>${tx("dictionary.connectionTitle")}</h3><p class="small-copy">${tx("dictionary.termSummary", {count: term.entryCount || 0, version: version(term)})}</p><p class="small-copy">${tx("dictionary.creatorSummary", {summary: creatorSummary, version: creatorReady ? version(creator) : t("dictionary.notDownloaded")})}</p>${statusPill(esc(status), d.busy || updating || !complete ? "gold" : "cyan")}</div><button class="secondary" data-action="openDictionarySetup">${tx("dictionary.configure")}</button></section>`;
   }
 
   function knowledgeWorkspace() {
@@ -1282,7 +1346,7 @@
     const creatorGroups = KNOWLEDGE_PLATFORMS.map(([platformID, label]) =>
       group(t("knowledge.creatorsOn", { platform: label }), "", creators.filter((entry) => entry.platformID === platformID), "creator", platformID)).join("");
 
-    return `<div class="workspace knowledge-workspace">${header("knowledge.title", "knowledge.copy", tx("knowledge.badge"), "gold")}<div class="notice navy" data-info="knowledge.disclosure">${tx("knowledge.disclosure")}</div>${dictionaryControls()}${connection}${notice(state.notices?.knowledge, "navy")}${notice(state.issue, "red")}${addTerm}${addCreator}${group(t("knowledge.terms"), t("knowledge.termsHint"), terms, "term")}<p class="small-copy" data-info="knowledge.creatorsHint">${tx("knowledge.creatorsHint")}</p>${creatorGroups}</div>`;
+    return `<div class="workspace knowledge-workspace">${header("knowledge.title", "knowledge.copy", tx("knowledge.badge"), "gold")}<div class="notice navy" data-info="knowledge.disclosure">${tx("knowledge.disclosure")}</div>${dictionaryConnection()}${connection}${notice(state.notices?.knowledge, "navy")}${notice(state.issue, "red")}${addTerm}${addCreator}${group(t("knowledge.terms"), t("knowledge.termsHint"), terms, "term")}<p class="small-copy" data-info="knowledge.creatorsHint">${tx("knowledge.creatorsHint")}</p>${creatorGroups}</div>`;
   }
 
   // Each platform and Terms share the standard per-list search. Keep names,
@@ -1577,6 +1641,7 @@
       drawTreeConnections();
       placeTreePopovers();
       placeResearchSetup();
+      placeDictionarySetup();
       placeResearchModelMenu();
       placeKnowledgeSuggestions();
     });
@@ -1712,12 +1777,14 @@
       return;
     }
 
+    if (action === "openDictionarySetup") { openDictionarySetup(); return; }
     if (action === "openResearchSetup") { openResearchSetup(); return; }
     if (action === "openManual") { window.VaultManual?.open("user", "Classifier"); return; }
     if (action === "openUtilityPanel") {
       closeKnowledgeSuggestions();
       researchSetupRequested = false;
       researchSetupFocusPending = false;
+      dictionarySetupFocusPending = false;
       const nextPanel = data.utilityPanel === "settings" ? "settings" : null;
       utilityPanel = utilityPanel === nextPanel ? null : nextPanel;
       render();
@@ -1727,6 +1794,7 @@
       utilityPanel = null;
       researchSetupRequested = false;
       researchSetupFocusPending = false;
+      dictionarySetupFocusPending = false;
       render();
       return;
     }
@@ -1805,6 +1873,7 @@
     utilityPanel = null;
     researchSetupRequested = false;
     researchSetupFocusPending = false;
+    dictionarySetupFocusPending = false;
     render();
   }
 
@@ -1869,6 +1938,7 @@
       selectedLanguage = languageControl.value;
       root.lang = selectedLanguage;
       try { window.localStorage.setItem("vaultClassifier.language", selectedLanguage); } catch (_) {}
+      void loadSelectedLanguage();
       return;
     }
     // Preserve creation choices across page re-renders.
@@ -1905,7 +1975,7 @@
     const layout = root.querySelector(".layout");
     if (!layout) return;
     const bounds = layout.getBoundingClientRect();
-    const width = Math.round(event.clientX - bounds.left);
+    const width = Math.round(root.dir === "rtl" ? bounds.right - event.clientX : event.clientX - bounds.left);
     navigationPanelWidth = Math.min(navigationWidthRange.maximum, Math.max(navigationWidthRange.minimum, width));
     applyNavigationPanelWidth();
     event.preventDefault();
@@ -2090,8 +2160,8 @@
     const resizer = event.target.closest?.("[data-navigation-resizer]");
     if (!resizer) return;
     let nextWidth = navigationPanelWidth;
-    if (event.key === "ArrowLeft") nextWidth -= 16;
-    else if (event.key === "ArrowRight") nextWidth += 16;
+    if (event.key === "ArrowLeft") nextWidth += root.dir === "rtl" ? 16 : -16;
+    else if (event.key === "ArrowRight") nextWidth += root.dir === "rtl" ? -16 : 16;
     else if (event.key === "Home") nextWidth = navigationWidthRange.minimum;
     else if (event.key === "End") nextWidth = navigationWidthRange.maximum;
     else return;
@@ -2311,7 +2381,12 @@
 
   window.addEventListener("resize", () => window.requestAnimationFrame(drawTreeConnections));
   window.VaultUI.observe(scope);
-  window.VaultInfo.watch(scope, { enabled: () => selectedLanguage === "en" });
+  window.VaultInfo.watch(scope, { enabled: () => true, translate: (key, values = {}) => {
+    const template = languageMessages[key];
+    if (!template) return null;
+    return template.replace(/\{([a-zA-Z0-9_]+)\}/g, (_, name) => String(values[name] ?? ""));
+  } });
   render();
+  void loadSelectedLanguage();
   send("state", {});
 })();

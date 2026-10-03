@@ -602,7 +602,7 @@ public partial class MainWindow : Window
         try
         {
             var answer = MessageBox.Show(this,
-                NativeLanguage.Text("native.dictionary.windowsBody", "Vault can occasionally send public creator IDs and their displayed subscriber/follower counts to customblocker.com to expand the creator dictionary. No term names, titles, browsing history or personal definitions are sent. Contributions are capped at 50 per day and retained for 7 days. You can disable this anytime in Classifier → Knowledge.\n\nShare creator IDs and subscriber counts?"),
+                NativeLanguage.Text("native.dictionary.windowsBody", "Vault can occasionally send public creator IDs and their displayed subscriber/follower counts to customblocker.com to expand the creator dictionary. No term names, titles, browsing history or personal definitions are sent. Contributions are capped at 50 per day and retained for 7 days. You can disable this anytime in Classifier → Settings.\n\nShare creator IDs and subscriber counts?"),
                 NativeLanguage.Text("native.dictionary.title", "Help improve the creator dictionary"), MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.Yes,
                 NativeLanguage.Language == "ar" ? MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign : MessageBoxOptions.None);
             var response = await _classifier.Request("action", new JsonObject {
