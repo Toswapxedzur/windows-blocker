@@ -25,7 +25,11 @@ for name in ["translation", "code-manual", "manual"]:
     target = dest / name
     if target.exists(): shutil.rmtree(target)
     source = editor / name if name in ["code-manual", "manual"] else ext / name
-    shutil.copytree(source, target)
+    if name in ["manual", "code-manual"]:
+        target.mkdir(parents=True)
+        shutil.copy2(source / "en.md", target / "en.md")
+    else:
+        shutil.copytree(source, target)
 # Windows editor branding comes solely from the selected Windows master.
 # Browser-only master previews must not leak into the desktop payload.
 icons = dest / "icons"
@@ -48,6 +52,11 @@ for folder in ["manual", "code-manual"]:
     text = text.replace("Safari rules use the browser code manual and run in Safari Vault's own containing app.", "Browser rules use the browser extension's code manual.")
     text = text.replace("not the system Keychain", "with access restricted to the current Windows user")
     page.write_text(text, encoding="utf-8")
+for folder in ["manual", "code-manual"]:
+    source = root / "localization" / folder
+    if source.exists():
+        for page in source.glob("*.md"):
+            if page.stem != "en": shutil.copy2(page, dest / folder / page.name)
 target = dest / "classifier"
 if target.exists(): shutil.rmtree(target)
 shutil.copytree(mac / "classifier/Sources/VaultClassifierApp/WebAssets", target)
