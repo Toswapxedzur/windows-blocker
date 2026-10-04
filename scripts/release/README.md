@@ -5,10 +5,13 @@ bundled shared Classifier worker produced by `scripts/classifier-worker/` and
 checks its dependency hashes before publishing a self-contained x64 .NET app
 and native authentication/MCP helper. Exact .NET, WebView2 and worker dependency
 notices are included in the hashed payload. End users need no .NET SDK, Swift, Node or
-compiler. This is a development package; no public release or signed installer
-is claimed.
+compiler. The current alpha build is distributed as an unsigned Setup.exe;
+Windows can show an unknown-publisher or SmartScreen warning.
 
-Extract the package, open PowerShell in its folder, and run as your normal user:
+Open Setup.exe as your normal user. It installs for your account and then offers
+to open Windows Vault. No extraction or terminal command is required.
+
+For an internal ZIP build, extract it and run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1
@@ -39,3 +42,10 @@ VS Code, Zed and Windsurf/Devin configuration references were checked on
 - <https://github.com/zed-industries/zed/blob/main/crates/paths/src/paths.rs>
 - <https://docs.devin.ai/desktop/cascade/mcp>
 - <https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution>
+
+Build Setup.exe with `build-setup.ps1 -PackageZip <verified ZIP> -OutputExe <new EXE>`.
+It embeds the exact ZIP plus its SHA-256, validates both archive paths and
+installer payload hashes, and delegates to the same current-user installer.
+Advanced unattended installation supports `/quiet`, `/environment:development`
+and `/destination:<absolute path>`; it does not launch the app and returns a
+nonzero exit code on failure. The GUI retains a diagnostic log on failure.

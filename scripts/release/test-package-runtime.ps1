@@ -1,6 +1,8 @@
 param(
     [Parameter(Mandatory=$true)][string]$PackageDirectory,
     [string]$EvidenceDirectory=(Join-Path $env:TEMP ('Vault-Package-Runtime-'+[Guid]::NewGuid().ToString('N'))),
+    [string]$SetupExe,
+    [switch]$SetupGui,
     [switch]$Interactive
 )
 $ErrorActionPreference='Stop'
@@ -12,7 +14,9 @@ if(Test-Path $result){throw 'Choose a new evidence directory for this package ve
 if(!$Interactive) {
     # SSH sessions are not the logged-in desktop. Run the installer and GUI
     # unelevated in that desktop, rather than accidentally testing as admin.
-    $action=New-ScheduledTaskAction -Execute powershell.exe -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSCommandPath`" -PackageDirectory `"$package`" -EvidenceDirectory `"$evidence`" -Interactive"
+    $setupArgument=if($SetupExe){" -SetupExe `"$SetupExe`""}else{''}
+    if($SetupGui){$setupArgument+=' -SetupGui'}
+    $action=New-ScheduledTaskAction -Execute powershell.exe -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSCommandPath`" -PackageDirectory `"$package`" -EvidenceDirectory `"$evidence`" ${setupArgument} -Interactive"
     $principal=New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
     $task='VaultPackageRuntime-'+[Guid]::NewGuid().ToString('N')
     Register-ScheduledTask -TaskName $task -Action $action -Principal $principal|Out-Null
@@ -69,9 +73,17 @@ function Start-App {
     }while([DateTime]::UtcNow -lt $deadline)
     throw 'Installed app did not open its desktop window and authenticated endpoint'
 }
+function Close-AppMainWindow {
+    $windows=[Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Children,(New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ProcessIdProperty,$script:app.Id)))
+    $main=@($windows|Where-Object {$_.Current.Name -like 'Windows Vault*' -and $_.Current.ClassName -ne '#32770'})
+    if($main.Count -ne 1){throw 'Cannot identify one owned Windows Vault main window for ordinary close'}
+    # Post to the identified main HWND: a synchronous UIA Close can block
+    # behind the deliberate first-quit modal before this test can dismiss it.
+    if(![VaultPackageClose]::PostMessage([IntPtr]$main[0].Current.NativeWindowHandle,0x0010,[IntPtr]::Zero,[IntPtr]::Zero)){throw 'Could not post ordinary close to the owned main window'}
+}
 function Stop-App {
     if(!$script:app -or $script:app.HasExited){return}
-    $null=$script:app.CloseMainWindow()
+    Close-AppMainWindow
     # The app deliberately warns on its first quit. Dismiss only its owned
     # confirmation, then exercise the ordinary second quit and worker flush.
     $deadline=[DateTime]::UtcNow.AddSeconds(8)
@@ -84,7 +96,7 @@ function Stop-App {
         if($script:app.HasExited){return}
         Start-Sleep -Milliseconds 100
     }while([DateTime]::UtcNow -lt $deadline)
-    $null=$script:app.CloseMainWindow()
+    Close-AppMainWindow
     if(!$script:app.WaitForExit(15000)){throw 'Installed app did not flush and close normally'}
 }
 try {
@@ -92,6 +104,7 @@ try {
     $principal=New-Object Security.Principal.WindowsPrincipal($identity)
     Check (!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) 'Installer and GUI run as the normal interactive user'
     Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
+    Add-Type 'using System; using System.Runtime.InteropServices; public static class VaultPackageClose { [DllImport("user32.dll",SetLastError=true)] public static extern bool PostMessage(IntPtr window,uint message,IntPtr wParam,IntPtr lParam); }'
     foreach($key in $keys){$previous[$key]=@{exists=(Test-Path $key);value=$(if(Test-Path $key){(Get-Item $key).GetValue('')}else{$null})}}
     if(Test-Path $shortcut){Copy-Item $shortcut $shortcutBackup}
     $env:PATH="$env:WINDIR\System32;$env:WINDIR"
@@ -99,7 +112,33 @@ try {
     $env:VAULT_ENVIRONMENT='development'
     $env:VAULT_STORAGE_ROOT=$profile
     $env:VAULT_MCP_CLIENT_ROOT=Join-Path $profile 'McpClients'
-    & "$package\Install.ps1" -Environment development -Destination $install *> "$evidence\install.log"
+    if($SetupExe) {
+        $arguments=@('/environment:development',"`"/destination:$install`"")
+        if(!$SetupGui){$arguments+= '/quiet'}
+        $setup=Start-Process $SetupExe -ArgumentList $arguments -PassThru
+        try {
+            if($SetupGui) {
+                $deadline=[DateTime]::UtcNow.AddMinutes(3)
+                do {
+                    $window=[Windows.Automation.AutomationElement]::RootElement.FindFirst([Windows.Automation.TreeScope]::Children,(New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ProcessIdProperty,$setup.Id)))
+                    $open=$null
+                    if($window){$open=$window.FindFirst([Windows.Automation.TreeScope]::Descendants,(New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::NameProperty,'Open Windows Vault')))}
+                    if($open -and !$open.Current.IsOffscreen){break}
+                    if($setup.HasExited){throw 'Setup GUI exited before installation finished'}
+                    Start-Sleep -Milliseconds 250
+                }while([DateTime]::UtcNow -lt $deadline)
+                Check ($open -and !$open.Current.IsOffscreen) 'One-click Setup GUI completes and offers to open the installed app'
+                Add-Type -AssemblyName System.Drawing
+                $bounds=$window.Current.BoundingRectangle
+                $image=New-Object Drawing.Bitmap ([int]$bounds.Width),([int]$bounds.Height)
+                $graphics=[Drawing.Graphics]::FromImage($image)
+                try {$graphics.CopyFromScreen([int]$bounds.X,[int]$bounds.Y,0,0,$image.Size);$image.Save("$evidence\setup-complete.png")}finally{$graphics.Dispose();$image.Dispose()}
+                $window.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Close()
+            }
+            if(!$setup.WaitForExit(180000)){throw 'Setup did not finish'}
+        }finally{if(!$setup.HasExited){$setup.Kill();$setup.WaitForExit()}}
+        Check ($setup.ExitCode -eq 0) 'Unsigned Setup.exe installs without extraction or terminal commands'
+    } else {& "$package\Install.ps1" -Environment development -Destination $install *> "$evidence\install.log"}
     Check ((Test-Path "$install\WindowsBlocker.exe") -and (Test-Path "$install\ClassifierWorker\VaultClassifierWorker.exe")) 'Current-user installer includes the app, helper and shared Swift worker'
     foreach($key in $keys){$manifest=(Get-Item $key).GetValue('');Check ($manifest.StartsWith($install+'\',[StringComparison]::OrdinalIgnoreCase) -and (Test-Path $manifest)) 'Installed browser native registration points to this installation'}
     Check (Test-Path $shortcut) 'Current-user Start menu launcher exists'

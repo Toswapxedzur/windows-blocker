@@ -19,3 +19,5 @@
 - Official dictionaries use the shared Swift service and generated Classifier controls. The WPF host presents the first-launch contribution choice. `LEGAL/` contains current English privacy and dictionary terms.
 
 - `VERSIONS.md`: owner-approved 2026-10-04 capability split; current source version **0.2.0 alpha**. Historical tags/packages remain immutable.
+
+- Current install build: version 0.2.0, unsigned one-click x64 Setup.exe wrapping the self-contained Install.ps1 payload and a verified dictionary-capable worker. Historical alpha installers stay retired; installer-specific prerelease provenance is separate from frozen source milestones.
