@@ -17,3 +17,5 @@
 - **Compact Info (2026-10-02):** 10px icons retain a 24px click area; explanations use 12px text in a softly shaded, 260px-wide popup with tighter padding. English search copy is concise.
 
 - Official dictionaries use the shared Swift service and generated Classifier controls. The WPF host presents the first-launch contribution choice. `LEGAL/` contains current English privacy and dictionary terms.
+
+- `VERSIONS.md`: owner-approved 2026-10-04 capability split; current source version **0.2.0 alpha**. Historical tags/packages remain immutable.
