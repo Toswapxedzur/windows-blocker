@@ -16,4 +16,5 @@
 
 - **Compact Info (2026-10-02):** 10px icons retain a 24px click area; explanations use 12px text in a softly shaded, 260px-wide popup with tighter padding. English search copy is concise.
 
-- Official dictionaries use the shared Swift service and generated Classifier controls. The WPF host presents the first-launch contribution choice. `LEGAL/` contains current English privacy and dictionary terms.
+- The retired local model, official dictionary, and personal Knowledge remain dormant. `LEGAL/` retains historical terms.
+- Current install build: version 0.3.0, unsigned one-click x64 Setup.exe wrapping the verified self-contained Install.ps1 payload and portable AI worker. Historical alpha installers stay retired; installer provenance is separate from source milestones.
