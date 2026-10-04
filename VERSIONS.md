@@ -1,6 +1,6 @@
 # Windows Vault version history
 
-The owner approved this capability split on 2026-10-04. Existing tags and packaged downloads remain unchanged. All new records are **alpha, source-only**. A source record does not certify store submission, signing or native release acceptance.
+The owner approved this capability split on 2026-10-04. Historical source tags remain unchanged; older installer assets are retired. These history records are **alpha, source-only**. Owner update: a verified current unsigned install build may be published separately, with its exact build source and artifact hash; superseded alpha installers are backed up and retired. A source record does not certify store submission, signing or native release acceptance.
 
 Current source version: **0.2.0**. See the group-level `CHANGELOG.md` for the cross-product chapters.
 
@@ -24,4 +24,4 @@ Retroactive milestone: the annotated tag names this exact historical snapshot. I
 
 ## Earlier versions
 
-All existing `v*` tags, `release/v*` branches and published artifacts are retained. Their original details remain in the group changelog and website History.
+All existing `v*` tags and `release/v*` branches are retained; superseded alpha installer assets are privately backed up and retired. Their original details remain in the group changelog and website History.
