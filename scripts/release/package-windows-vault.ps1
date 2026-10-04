@@ -19,6 +19,8 @@ if ((Test-Path $output) -and @(Get-ChildItem $output -Force).Count -gt 0) {
 if (!(Test-Path "$worker\VaultClassifierWorker.exe") -or !(Test-Path "$worker\bundle-manifest.json")) { throw 'A verified bundled Classifier worker is required.' }
 $manifest=Get-Content "$worker\bundle-manifest.json" -Raw|ConvertFrom-Json
 if ($manifest.architecture -ne 'x64' -or $manifest.schema -ne 1 -or @($manifest.files).Count -eq 0) { throw 'Expected the verified x64 Classifier worker manifest.' }
+. "$repo\scripts\classifier-worker\dictionary-worker-guard.ps1"
+Assert-VaultDictionaryWorker $manifest
 foreach ($file in $manifest.files) {
     $relative=$file.path.Replace('/','\')
     $path=[IO.Path]::GetFullPath((Join-Path $worker $relative))
