@@ -267,7 +267,7 @@ internal sealed class PanelCard
     {
         _selects.Clear();
         _lastJson = JsonSerializer.Serialize(snapshot);
-        Root.Background = Brush(null, "#db0f172a");
+        Root.Background = Brush(null, "#f50f172a");
         Root.BorderThickness = new Thickness(0);
         Root.CornerRadius = new CornerRadius(14);
         Root.Padding = new Thickness(12);
@@ -279,7 +279,7 @@ internal sealed class PanelCard
 
         if (!string.IsNullOrEmpty(snapshot.Title))
         {
-            stack.Children.Add(new TextBlock { Text = snapshot.Title, FontSize = 14, FontWeight = FontWeights.Bold, Foreground = fg, Margin = new Thickness(0, 0, 0, 4) });
+            stack.Children.Add(new TextBlock { Text = snapshot.Title, TextWrapping = TextWrapping.Wrap, FontSize = 14, FontWeight = FontWeights.Bold, Foreground = fg, Margin = new Thickness(0, 0, 0, 4) });
         }
         if (!string.IsNullOrEmpty(snapshot.Description))
         {
@@ -335,7 +335,9 @@ internal sealed class PanelCard
             {
                 var initial = c.Type == "numberInput" ? c.ValueDouble.ToString("g", CultureInfo.InvariantCulture) : c.ValueString;
                 var tb = new TextBox { Text = initial, IsEnabled = c.Disabled != true };
-                if (!string.IsNullOrEmpty(c.Placeholder)) tb.ToolTip = c.Placeholder;
+                var hint = c.Type == "date" ? "YYYY-MM-DD" : c.Type == "time" ? "HH:MM" : c.Placeholder ?? "";
+                NativeInputHints.SetHint(tb, hint);
+                if (!string.IsNullOrEmpty(hint)) tb.ToolTip = hint;
                 tb.TextChanged += (_, _) => Fire("change", tb.Text);
                 return Labeled(c.Label, tb, fg);
             }
@@ -394,7 +396,7 @@ internal sealed class PanelCard
                 var panel = new StackPanel { Margin = new Thickness(4, 0, 0, 0) };
                 if (!string.IsNullOrEmpty(c.Text))
                 {
-                    panel.Children.Add(new TextBlock { Text = c.Text, FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = fg, Opacity = 0.7, Margin = new Thickness(0, 0, 0, 4) });
+                    panel.Children.Add(new TextBlock { Text = c.Text, TextWrapping = TextWrapping.Wrap, FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = fg, Opacity = 0.7, Margin = new Thickness(0, 0, 0, 4) });
                 }
                 foreach (var child in c.Controls ?? new List<PanelControl>())
                 {
@@ -433,7 +435,7 @@ internal sealed class PanelCard
             return control;
         }
         var stack = new StackPanel();
-        stack.Children.Add(new TextBlock { Text = label, FontSize = 11, FontWeight = FontWeights.Medium, Foreground = fg, Opacity = 0.7, Margin = new Thickness(0, 0, 0, 2) });
+        stack.Children.Add(new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap, FontSize = 11, FontWeight = FontWeights.Medium, Foreground = fg, Opacity = 0.7, Margin = new Thickness(0, 0, 0, 2) });
         stack.Children.Add(control);
         return stack;
     }

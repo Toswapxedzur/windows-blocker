@@ -26,10 +26,10 @@ internal sealed class NativePanelSelect : StackPanel
     {
         _options=options; _value=value; _changed=changed;
         _button=new Button { Content=Label(value)+"  ▾", HorizontalContentAlignment=HorizontalAlignment.Left };
-        _list=new ListBox { MaxHeight=240, MinHeight=32, DisplayMemberPath=nameof(PanelOption.Label) };
+        _list=new ListBox { MaxHeight=240, MinHeight=32, ItemTemplate=OptionTemplate() };
         _search=new TextBox { Margin=new Thickness(0,0,0,6), Visibility=options.Count>=6 ? Visibility.Visible : Visibility.Collapsed };
         var hint=NativeLanguage.Text("contentPage.searchOptions", "Search options");
-        _search.ToolTip=hint;
+        _search.ToolTip=hint; NativeInputHints.SetHint(_search,hint);
         System.Windows.Automation.AutomationProperties.SetName(_search,hint);
         var contents=new StackPanel(); contents.Children.Add(_search); contents.Children.Add(_list);
         var surface=new Border { Padding=new Thickness(8), CornerRadius=new CornerRadius(12), Child=contents };
@@ -57,6 +57,12 @@ internal sealed class NativePanelSelect : StackPanel
         _popup.Closed+=(_,_)=>EditingEnded?.Invoke();
         Children.Add(_button); Children.Add(_popup);
         Unloaded+=(_,_)=>_popup.IsOpen=false;
+    }
+    private static DataTemplate OptionTemplate() {
+        var label=new FrameworkElementFactory(typeof(TextBlock));
+        label.SetBinding(TextBlock.TextProperty,new Binding(nameof(PanelOption.Label)));
+        label.SetValue(TextBlock.TextWrappingProperty,TextWrapping.Wrap);
+        return new DataTemplate {VisualTree=label};
     }
     private string Label(string value)=>_options.FirstOrDefault(o=>o.Value==value)?.Label ?? value;
 }

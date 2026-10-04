@@ -6,6 +6,15 @@
         ResizeMode="NoResize" SizeToContent="WidthAndHeight"
         Focusable="False" IsHitTestVisible="False">
     <Border CornerRadius="10" Padding="10,8" Background="#DB0F172A" SnapsToDevicePixels="True">
-        <TextBlock x:Name="Rows" Foreground="#F8FAFC" FontFamily="Arial" FontSize="13" Typography.NumeralAlignment="Tabular" LineHeight="18" TextTrimming="CharacterEllipsis"/>
+        <ItemsControl x:Name="Rows">
+            <ItemsControl.ItemTemplate><DataTemplate>
+                <Grid Height="18">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding NameDisplay}" TextTrimming="CharacterEllipsis" Margin="0,0,4,0"/>
+                    <TextBlock Grid.Column="1" Text="{Binding Duration}" Typography.NumeralAlignment="Tabular"/>
+                    <Grid.Resources><Style TargetType="TextBlock"><Setter Property="Foreground" Value="#F8FAFC"/><Setter Property="FontFamily" Value="Arial"/><Setter Property="FontSize" Value="13"/></Style></Grid.Resources>
+                </Grid>
+            </DataTemplate></ItemsControl.ItemTemplate>
+        </ItemsControl>
     </Border>
 </Window>
