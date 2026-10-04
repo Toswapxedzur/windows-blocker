@@ -32,6 +32,13 @@ try {
     Refuses { & "$fixture\Install.ps1" -Environment development -Destination $unrelated } 'unrelated application folder' 'Installer refuses another product marker'
     Refuses { & "$Repository\scripts\release\package-windows-vault.ps1" -ClassifierWorkerDirectory $worker -OutputDirectory (Split-Path $Repository) } 'dedicated package output folder' 'Packager refuses repository ancestor'
     Refuses { & "$Repository\scripts\release\package-windows-vault.ps1" -ClassifierWorkerDirectory $worker -OutputDirectory (Join-Path $worker 'nested-package') } 'separate from the Classifier worker' 'Packager refuses output inside the worker payload'
+    # A valid legacy manifest must be rejected before building or closing apps.
+    Set-Content "$worker\VaultClassifierWorker.exe" 'fixture'
+    $legacy=@{schema=1;architecture='x64';sources=@();files=@(@{path='VaultClassifierWorker.exe';sha256=(Get-FileHash "$worker\VaultClassifierWorker.exe").Hash})}
+    $legacy|ConvertTo-Json -Depth 5|Set-Content "$worker\bundle-manifest.json"
+    Refuses { & "$Repository\scripts\development\run-windows-vault.ps1" -ClassifierWorkerDirectory $worker -Dotnet 'must-not-run.exe' } 'predates the dictionary feature' 'Launcher refuses a stale worker before build or process changes'
+    Refuses { & "$Repository\scripts\release\package-windows-vault.ps1" -ClassifierWorkerDirectory $worker -OutputDirectory (Join-Path $temporary 'stale-package') -Dotnet 'must-not-run.exe' } 'predates the dictionary feature' 'Packager refuses a stale worker before output changes'
+    if(Test-Path (Join-Path $temporary 'stale-package')){throw 'Stale worker refusal created a package'}
     if((Get-Content "$unrelated\keep.txt" -Raw).Trim() -ne 'keep existing files' -or (Test-Path $target)){throw 'Refused operation mutated fixture destination'}
     Write-Output "$count package/installer guards passed"
 } finally { Remove-Item $temporary -Recurse -Force }
