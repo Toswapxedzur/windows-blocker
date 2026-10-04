@@ -8,3 +8,5 @@
 - `PanelOverlayWindow.*`: work-area-bounded, virtualized custom-rule cards.
 - `TimerOverlayWindow.*`, `QuickAddWindow.cs`, `McpConnectionsWindow.cs`: native timer, quick-add and AI connection surfaces.
 - `Assets/`: selected Windows icon assets; `WindowsBlocker.csproj` and `app.manifest`: packaging/build metadata.
+
+- `NativeInputHints.cs`: noninteractive watermarks in the scoped TextBox template. Panel labels wrap; timer rows reserve a countdown column and realize only the current five-second page.

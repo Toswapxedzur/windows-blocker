@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Threading;
 using WindowsBlocker.Core;
 using WindowsBlocker.Enforcement;
@@ -60,7 +61,7 @@ public partial class TimerOverlayWindow : Window
             if(revision!=_revision)return;
             _active=active;
             if(active.Length==0) {
-                _page=0; _rotation.Stop(); Rows.Text="";
+                _page=0; _rotation.Stop(); Rows.ItemsSource=null;
                 if(IsVisible)Hide();
                 return;
             }
@@ -78,9 +79,17 @@ public partial class TimerOverlayWindow : Window
         _page%=pages;
         Rows.MaxWidth=Math.Max(1,area.Width-2*Inset-20);
         Rows.MaxHeight=Math.Max(1,area.Height-2*Inset-16);
-        Rows.Text=string.Join("\n",_active.Skip(_page*capacity).Take(capacity).Select(t=>$"{t.Name}: {Format(t.RemainingSeconds)}"));
+        var visible=_active.Skip(_page*capacity).Take(capacity).Select(t=>new TimerLine(t.Name+":",Format(t.RemainingSeconds))).ToArray();
+        var font=new Typeface("Arial");
+        var natural=visible.Select(row=>new FormattedText(row.NameDisplay+" "+row.Duration,
+            System.Globalization.CultureInfo.CurrentCulture,FlowDirection.LeftToRight,font,13,Brushes.White,
+            VisualTreeHelper.GetDpi(this).PixelsPerDip).Width+8).DefaultIfEmpty(100).Max();
+        Rows.Width=Math.Min(Rows.MaxWidth,Math.Max(100,natural));
+        Rows.ItemsSource=visible;
         if(pages>1) {if(!_rotation.IsEnabled)_rotation.Start();} else _rotation.Stop();
     }
+
+    private sealed record TimerLine(string NameDisplay, string Duration);
 
     private void Reposition()
     {
