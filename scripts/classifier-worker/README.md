@@ -22,6 +22,10 @@ This x64 build does not claim untested ARM64 or GPU support.
 
 `bundle-manifest.json` records versions and SHA-256 hashes of source and shipped
 files. Pass `-ClassifierRevision <verified-commit>` when exporting without Git.
+The development launcher and release packager refuse workers whose source
+provenance predates the official-dictionary backend. Rebuild the worker from the
+accepted shared Classifier source when delivering this feature; rebuilding WPF
+alone does not update the worker.
 The bundle includes the pinned runtime and resolved dependency licenses in
 `Notices/`. No model or user
 state is copied into the app bundle. Model downloads remain explicit scene
