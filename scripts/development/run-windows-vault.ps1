@@ -11,6 +11,8 @@ $appDirectory="$repo\src\WindowsBlocker\bin\Release\net8.0-windows"
 if (!$ClassifierWorkerDirectory) { $ClassifierWorkerDirectory="$repo\src\WindowsBlocker\ClassifierWorker" }
 $worker=(Resolve-Path $ClassifierWorkerDirectory).Path
 if (!(Test-Path "$worker\VaultClassifierWorker.exe") -or !(Test-Path "$worker\bundle-manifest.json")) { throw 'Build and verify the bundled Classifier worker before delivery.' }
+. "$repo\scripts\classifier-worker\dictionary-worker-guard.ps1"
+Assert-VaultDictionaryWorker (Get-Content "$worker\bundle-manifest.json" -Raw | ConvertFrom-Json)
 & $Dotnet build "$repo\src\WindowsBlocker\WindowsBlocker.csproj" -c Release
 if($LASTEXITCODE -ne 0){throw 'Windows Vault build failed'}
 & $Dotnet build "$repo\src\VaultNativeHost\VaultNativeHost.csproj" -c Release
