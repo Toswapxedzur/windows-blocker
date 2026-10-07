@@ -1,10 +1,15 @@
 # Windows Vault tests
 
-All suites run on mini1, with native .NET/WebView2 suites in its Windows VM.
+The current customer-audit repair run uses owner-selected mini2. Windows
+process/WebView2 checks require its Windows VM; portable managed hub contracts
+can also run on mini2 macOS and do not establish Windows runtime acceptance.
 
 - `runner-custom-rule-stress.js`, `runner-rule-worker.js`, `runner-editor-syntax.js` — canonical JS rule engine, disposable worker isolation and document-start native bridge/storage.
 - `OverlayContracts/` — actual WPF overlay containment, virtualization, timer formatting and searchable menus.
 - `NativeContracts/` — source-only native policy, authentication, identity and editor contract fixtures, plus all20 bundled native-language preferences/messages and literal state preservation.
+  `--hub-only` runs actual managed first-link union, multi-browser joining,
+  explicit deletion, fixed/rolling offline-transfer deduplication and restart
+  receipts against disposable storage without invoking Windows process APIs.
 - `NativeHostContracts/` — actual signed browser/system intermediary verification and denial of nonbrowser proof callers.
 - `browser-native-host.py` — genuine guest Edge/Chrome proof, program binding, frame bounds, process ancestry and authenticated extension tunnel through the canonical CDP driver.
 - `browser-worker-parity.py` — actual YouTube collector/private pill/pending cover, production model, correction, ordinary app outage/reconnect and native Activity privacy through that driver.

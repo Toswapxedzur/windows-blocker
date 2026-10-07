@@ -130,7 +130,7 @@ public sealed class NativePolicyTools(WebStore store, ConnectionHub hub, RuleEng
                     var plan = await Call("snoozePlan",group,entry,now); Refuse(plan);
                     var count = plan?["confirmations"]?.GetValue<int>() ?? 0;
                     if (count > 0) { var pending = await Confirm("snooze:" + id,group.ToJsonString(),args["confirm"]?.GetValue<bool>() == true,now,count); if (pending != null) { pending["snoozed"]=false; return pending; } }
-                    next = await Call("snoozeEntry",group,now,document["usageResetAtMs"]?[id]);
+                    next = await Call("snoozeEntry",group,now,document["usageResetAtMs"]?[id],document["usageTimersMs"]?[id] ?? JsonValue.Create(0));
                 }
                 store.Merge(new() { ["groupSnoozes"] = new JsonObject { [id] = next } }); hub.ReconcileLocal(store); return new JsonObject { [name == "end_snooze" ? "ended" : "snoozed"] = true,["snooze"]=next?.DeepClone() };
             }

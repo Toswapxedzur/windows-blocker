@@ -6,6 +6,7 @@ using WindowsBlocker.WebUI;
 
 Environment.SetEnvironmentVariable("VAULT_ENVIRONMENT", "development");
 Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT", Path.Combine(Path.GetTempPath(), "vault-contracts-" + Guid.NewGuid()));
+if (args.Contains("--hub-only")) { HubFirstLinkContracts.Run(); return; }
 static void Check(bool passed, string description) { if (!passed) throw new Exception(description); Console.WriteLine("PASS " + description); }
 NativeLanguageContracts.Run(Check);
 var sourceSeed = "{\"blockedGroups\":[]}";
@@ -65,7 +66,13 @@ Check(hub.Link("windowsapp","local","chrome","browser") == null, "explicit link 
 Check(JsonNode.Parse(hub.ClustersJson())?["clusters"]?[0]?["shared"]?["scopes"]==null,"Unseeded linked group does not overwrite scope lines");
 Check(hub.SharedUsage("Same") == null, "display name never identifies a link");
 hub.ApplySync("windowsapp","local",new JsonObject { ["scalars"]=new JsonObject { ["name"]="Chosen",["allowedMinutes"]=10,["resetIntervalHours"]=24 },["scopes"]=new JsonArray(new JsonObject { ["id"]="apps-1",["surface"]="apps",["apps"]=new JsonArray() }),["ts"]=1 });
+var pendingLink=JsonNode.Parse(hub.ClustersJson())?["clusters"]?[0];
+Check(pendingLink?["shared"]?["scopes"]==null,"Apps-first link withholds partial scopes until browser contributes");
+var pendingMembers=(pendingLink?["members"] as JsonArray)!;
+Check(pendingMembers.OfType<JsonObject>().First(m=>m["program"]?.GetValue<string>()=="chrome")["contributed"]?.GetValue<bool>()==false,"Joining browser sees explicit pending contribution flag");
 hub.ApplySync("chrome","browser",new JsonObject { ["scalars"]=new JsonObject { ["name"]="Browser" },["scopes"]=new JsonArray(new JsonObject { ["id"]="site-1",["surface"]="site",["sites"]=new JsonArray("example.com") }),["usageMs"]=5000,["ts"]=1 });
+var readyScopes=JsonNode.Parse(hub.ClustersJson())?["clusters"]?[0]?["shared"]?["scopes"] as JsonArray;
+Check(readyScopes?.OfType<JsonObject>().Any(s=>s["surface"]?.GetValue<string>()=="apps")==true && readyScopes.OfType<JsonObject>().Any(s=>s["surface"]?.GetValue<string>()=="site"),"Completed first link retains Apps and Websites");
 Check(hub.SharedUsage("local")?.Ms == 5000, "linked usage seeds once");
 
 hub.ReportLocalUsage("local",1000,now.ToUnixTimeMilliseconds()); Check(hub.SharedUsage("local")?.Ms == 6000, "linked usage accumulates deltas");
