@@ -73,7 +73,11 @@ public sealed class WebStore
     {
         var tmp = FilePath + ".tmp";
         File.WriteAllText(tmp, root.ToJsonString());
-        File.Move(tmp, FilePath, overwrite: true);
+        // MoveFileEx cannot replace an open Windows destination even when its
+        // observer permits deletion. ReplaceFile preserves the old reader's
+        // complete snapshot and commits the new document atomically.
+        if (File.Exists(FilePath)) File.Replace(tmp, FilePath, null);
+        else File.Move(tmp, FilePath);
     }
 
     public ChromeExtensionImportResult? ImportedGroups()
@@ -181,9 +185,7 @@ public sealed class WebStore
                 }
             }
             if(snoozeGivenMs.Count>0) { var totals=root["groupSnoozeTotalsMs"] as JsonObject ?? new(); root["groupSnoozeTotalsMs"]=totals; foreach(var (id,delta) in snoozeGivenMs) totals[id]=Number(totals[id])+Math.Max(0,delta); }
-            var tmp = FilePath + ".tmp";
-            File.WriteAllText(tmp, root.ToJsonString());
-            File.Move(tmp, FilePath, overwrite: true);
+            Write(root);
         }
     }
 

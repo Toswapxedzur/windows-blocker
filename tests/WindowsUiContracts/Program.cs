@@ -27,7 +27,17 @@ async Task<JsonNode?> Tool(string name,JsonObject arguments,bool expectedError=f
     return JsonNode.Parse(result!["content"]![0]!["text"]!.GetValue<string>());
 }
 void Check(bool ok,string what){if(!ok)throw new Exception(what);checks.Add(what);Console.WriteLine("PASS "+what);}
-JsonNode? ReadStore(){using var file=new FileStream(Storage.WebStorePath,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete);return JsonNode.Parse(file);}
+JsonNode? ReadStore()
+{
+    // ReplaceFile briefly locks the destination while committing. Retry only
+    // that sharing conflict; malformed JSON and other IO failures still fail.
+    var deadline=Stopwatch.StartNew();
+    while(true)
+    {
+        try {using var file=new FileStream(Storage.WebStorePath,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete);return JsonNode.Parse(file);}
+        catch(IOException ex) when((ex.HResult & 0xffff) is 32 or 33 && deadline.ElapsedMilliseconds<500) {Thread.Sleep(5);}
+    }
+}
 AutomationElement? NativeWindow(int processId,string automationId)
 {
     foreach(var hwnd in NativeInteraction.Windows(processId))
