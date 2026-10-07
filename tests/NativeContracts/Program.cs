@@ -82,6 +82,7 @@ var repeatedHub = new ConnectionHub();
 repeatedHub.SetRoster("chrome",new JsonArray(new JsonObject { ["id"]="browser",["name"]="Chrome" }));
 repeatedHub.SetRoster("windowsapp",new JsonArray(new JsonObject { ["id"]="local",["name"]="Native" }));
 repeatedHub.Link("windowsapp","local","chrome","browser");
+repeatedHub.ApplySync("windowsapp","local",new JsonObject { ["scopes"]=new JsonArray(),["ts"]=1 });
 // A second browser's first contribution replaces only its matching entry,
 // keeping a separately configured Shorts entry for the same website.
 repeatedHub.ApplySync("chrome","browser",new JsonObject { ["scopes"]=new JsonArray(
