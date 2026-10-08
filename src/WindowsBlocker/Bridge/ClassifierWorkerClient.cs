@@ -39,6 +39,7 @@ public sealed class ClassifierWorkerClient : IDisposable
             var exe = _executablePath ?? Path.Combine(AppContext.BaseDirectory, "ClassifierWorker", "VaultClassifierWorker.exe");
             if (!File.Exists(exe)) throw new InvalidOperationException("classifier-worker-unavailable");
             var start = new ProcessStartInfo(exe) { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true, StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8, WorkingDirectory = Path.GetDirectoryName(exe)! };
+            start.Environment["VAULT_STORAGE_APP_VERSION"] = WindowsBlocker.Core.StorageSchema.AppVersion;
             start.Environment["VAULT_ENVIRONMENT"] = Storage.Development ? "development" : "production";
             start.Environment["ADAMANCIA_VAULT_ENVIRONMENT"] = Storage.Development ? "development" : "production";
             start.Environment["VAULT_DATA_ROOT"] = Path.Combine(Storage.RootDirectory, "Classifier");

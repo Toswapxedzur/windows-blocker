@@ -52,6 +52,7 @@ public sealed class WebStore
             var root = LoadObject() ?? new JsonObject();
             foreach (var (key, value) in changes)
             {
+                if (key is "schemaVersion" or "storageMetadata") continue;
                 if (value is null) root.Remove(key);
                 else if (PerGroupKeys.Contains(key) && value is JsonObject entries)
                 {
@@ -71,6 +72,12 @@ public sealed class WebStore
     private static readonly HashSet<string> PerGroupKeys = new() { "usageTimersMs", "usageResetAtMs", "usageBucketsMs", "groupSnoozes", "groupSnoozeTotalsMs", "cbRuleLog", "cbRuleQuarantine", "cbRuleState" };
     private void Write(JsonObject root)
     {
+        if (File.Exists(FilePath))
+        {
+            var existing = JsonNode.Parse(File.ReadAllText(FilePath)) as JsonObject ?? throw new InvalidDataException("Invalid web storage; saved data is preserved.");
+            StorageSchema.ValidateWeb(existing);
+        }
+        StorageSchema.StampWeb(root);
         var tmp = FilePath + ".tmp";
         File.WriteAllText(tmp, root.ToJsonString());
         // MoveFileEx cannot replace an open Windows destination even when its
@@ -89,6 +96,8 @@ public sealed class WebStore
         }
         try
         {
+            if (JsonNode.Parse(json) is not JsonObject root) return null;
+            StorageSchema.ValidateWeb(root);
             return ChromeExtensionImporter.ImportGroups(json);
         }
         catch
@@ -237,7 +246,9 @@ public sealed class WebStore
         {
             var json = LoadRawJson();
             if(json==null) return null;
-            return JsonNode.Parse(json) as JsonObject;
+            var root = JsonNode.Parse(json) as JsonObject;
+            if (root != null) StorageSchema.ValidateWeb(root);
+            return root;
         }
         catch
         {

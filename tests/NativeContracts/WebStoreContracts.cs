@@ -33,6 +33,16 @@ internal static class WebStoreContracts
         }
         check(JsonNode.Parse(store.LoadRawJson()!)?["sequence"]?.GetValue<int>() == 63,
             "Usage persistence preserves rule state and other native store keys");
+        check(current?["schemaVersion"]?.GetValue<int>() == 3 && current?["storageMetadata"]?["product"]?.GetValue<string>() == "windows",
+            "Native schema versions and writing product are persisted independently");
+        var future = "{\"schemaVersion\":99,\"future\":{\"keep\":true}}";
+        File.WriteAllText(store.FilePath, future);
+        foreach (var action in new Action[] { () => store.SaveRaw("{\"blockedGroups\":[]}"), () => store.Merge(new JsonObject { ["blockedGroups"] = new JsonArray() }), () => store.WriteUsage(new() { ["usage"] = 2 }, new()) })
+        {
+            try { action(); } catch (Exception) { }
+            check(File.ReadAllText(store.FilePath) == future, "Unsupported native schema preserves destination bytes during every writer");
+        }
+        File.WriteAllText(store.FilePath, "{\"blockedGroups\":[]}");
         // Other contract fixtures expect an empty initial policy document.
         store.SaveRaw("{\"blockedGroups\":[]}");
     }
