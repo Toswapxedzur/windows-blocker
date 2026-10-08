@@ -21,3 +21,8 @@
 - `VERSIONS.md`: owner-approved 2026-10-04 capability split; current source version **0.2.0 alpha**. Historical tags/packages remain immutable.
 
 - Current install build: version 0.2.0, unsigned one-click x64 Setup.exe wrapping the self-contained Install.ps1 payload and a verified dictionary-capable worker. Historical alpha installers stay retired; installer-specific prerelease provenance is separate from frozen source milestones.
+
+- `Core/StorageSchema.cs` guards native web-store and cluster persistence;
+  `ClassifierWorkerClient` supplies Windows' app version to the shared Swift
+  storage policy. The Classifier sources remain canonical in sibling Mac Vault.
+  `NativeContracts/WebStoreContracts.cs` checks future-destination preservation.

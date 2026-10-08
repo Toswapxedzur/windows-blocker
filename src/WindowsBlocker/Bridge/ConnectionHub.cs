@@ -271,6 +271,7 @@ public sealed class ConnectionHub
     {
         lock (_gate)
         {
+            if (!_clusterStorageWritable) return "unsupported-storage";
             if (program == targetProgram || groupId.Length == 0 || targetGroupId.Length == 0) return "invalid-link";
             var a = _rosters.GetValueOrDefault(program)?.OfType<JsonObject>().FirstOrDefault(g => Text(g["id"]) == groupId);
             var b = _rosters.GetValueOrDefault(targetProgram)?.OfType<JsonObject>().FirstOrDefault(g => Text(g["id"]) == targetGroupId);
@@ -287,7 +288,7 @@ public sealed class ConnectionHub
     }
     public string? Unlink(string program, string groupId)
     {
-        lock (_gate) { var c = Find(program, groupId); if (c == null) return "not-linked"; if (IsLocked(c.Lock)) return "group-locked"; RemoveMember(c, program); Persist(); }
+        lock (_gate) { if (!_clusterStorageWritable) return "unsupported-storage"; var c = Find(program, groupId); if (c == null) return "not-linked"; if (IsLocked(c.Lock)) return "group-locked"; RemoveMember(c, program); Persist(); }
         BroadcastClusters(); return null;
     }
     private void RemoveMember(Cluster c, string program)
@@ -437,8 +438,16 @@ public sealed class ConnectionHub
     }
     public string ClustersJson() { lock (_gate) return new JsonObject { ["clusters"]=new JsonArray(_clusters.Values.Select(c => (JsonNode)Snapshot(c)).ToArray()),["rosters"]=new JsonObject(_rosters.Select(r=>new KeyValuePair<string,JsonNode?>(r.Key,r.Value.DeepClone()))) }.ToJsonString(); }
     private void BroadcastClusters() { lock (_gate) foreach (var c in _clusters.Values) Broadcast(new() { ["kind"] = "cluster-updated", ["cluster"] = Snapshot(c) }); Broadcast(new() { ["kind"] = "clusters", ["clusters"] = JsonNode.Parse(ClustersJson())?["clusters"]?.DeepClone(), ["rosters"] = JsonNode.Parse(ClustersJson())?["rosters"]?.DeepClone() }); }
-    private void Persist() { var temp = Storage.ClustersPath + ".tmp"; File.WriteAllText(temp, JsonSerializer.Serialize(_clusters.Values)); File.Move(temp, Storage.ClustersPath, true); }
-    private void Restore() { lock (_gate) { if (_clusters.Count > 0 || !File.Exists(Storage.ClustersPath)) return; try { foreach (var c in JsonSerializer.Deserialize<List<Cluster>>(File.ReadAllText(Storage.ClustersPath)) ?? []) if (c.Members.Count >= 2 && c.Members.All(m => m.Value.Length > 0 && LocalHubAuthentication.Programs.Contains(m.Key))) _clusters[c.Id] = c; } catch { } } }
+    private bool _clusterStorageWritable = true;
+    private void Persist()
+    {
+        if (!_clusterStorageWritable) return;
+        try {
+            if (File.Exists(Storage.ClustersPath)) StorageSchema.Payload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!, "hub.clusters");
+            StorageSchema.AtomicWrite(Storage.ClustersPath, StorageSchema.Wrap(JsonSerializer.SerializeToNode(_clusters.Values)!, "hub.clusters").ToJsonString());
+        } catch { _clusterStorageWritable = false; }
+    }
+    private void Restore() { lock (_gate) { if (_clusters.Count > 0 || !File.Exists(Storage.ClustersPath)) return; try { foreach (var c in StorageSchema.Payload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!, "hub.clusters").Deserialize<List<Cluster>>() ?? []) if (c.Members.Count >= 2 && c.Members.All(m => m.Value.Length > 0 && LocalHubAuthentication.Programs.Contains(m.Key))) _clusters[c.Id] = c; } catch { _clusterStorageWritable = false; } } }
     private static double Number(JsonNode? node) => node?.GetValueKind() == JsonValueKind.Number && double.TryParse(node.ToJsonString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value) && double.IsFinite(value) ? value : 0;
     private static string Text(JsonNode? node) => node?.GetValueKind() == JsonValueKind.String ? node.GetValue<string>() : "";
 }

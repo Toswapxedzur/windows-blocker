@@ -14,7 +14,7 @@ root, mac, ext = map(Path, sys.argv[1:])
 dest = root / "src/WindowsBlocker/WebAssets"
 editor = mac / "Sources/MacBlockerWebUI/WebAssets"
 files = ["popup.js", "popup.css", "popup.html", "group-scopes.js", "parental-pin.js", "group-actions.js",
-         "platform-profiles.js", "translations.js", "popup-markdown.js", "bridge-protocol.js", "browser-compat.js",
+         "platform-profiles.js", "translations.js", "popup-markdown.js", "bridge-protocol.js", "browser-compat.js", "storage-schema.js",
          "rule-core.js", "vault-ui.css", "vault-ui.js", "vault-info.js", "vault-info.css", "chrome-shim.js",
          "scenes.js", "scenes.css", "activity.js", "activity.css", "activity-time-bins.js"]
 for name in files:
@@ -67,7 +67,8 @@ config = 'window.__CB_DESKTOP_PROGRAM_ID="windowsapp";\nwindow.__CB_DESKTOP_MANI
 html = (dest / "popup.html").read_text(encoding="utf-8")
 marker = '    <script src="chrome-shim.js"></script>'
 assert html.count(marker) == 1, "Mac popup template must load the native shim once"
-html = html.replace(marker, '    <script src="desktop-config.js"></script>\n' + marker)
+if '<script src="desktop-config.js"></script>' not in html:
+    html = html.replace(marker, '    <script src="desktop-config.js"></script>\n' + marker)
 (dest / "popup.html").write_text(html, encoding="utf-8")
 # tools/mcp-tools.mac.json is exported from the tested Swift tools/list
 # registry by PortableMCPCatalogTests, with handlers deliberately untouched.
