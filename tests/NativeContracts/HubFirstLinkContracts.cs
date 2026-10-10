@@ -114,5 +114,18 @@ static class HubFirstLinkContracts
         rollover.ReportLocalUsage("w",1_000,0);
         var stale=Frame(false);stale["usageMs"]=300_000;stale["usageResetAtMs"]=oldAnchor;rollover.ApplySync("chrome","c",stale);
         Check(rollover.SharedUsage("w")?.Ms==1_000,"A true budget restart rejects the pending participant's expired original seed");
+        foreach(var staleAnchor in new[]{true,false})
+        {
+            var rollingJoin=new ConnectionHub();Roster(rollingJoin,"windowsapp","w");Roster(rollingJoin,"chrome","c");rollingJoin.Link("windowsapp","w","chrome","c");
+            var at=DateTimeOffset.Now.ToUnixTimeMilliseconds();var minute=Math.Floor(at/60000d)*60000;
+            var currentKey=minute.ToString(System.Globalization.CultureInfo.InvariantCulture);var expiredKey=(minute-60000).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var rollingOriginal=Frame(true);rollingOriginal["scalars"]!["rollingLimit"]=true;rollingOriginal["usageResetAtMs"]=at-2000;rollingOriginal["usageBucketsSeed"]=new JsonObject{[currentKey]=120_000};rollingJoin.ApplySync("windowsapp","w",rollingOriginal);
+            var rollingEdit=Frame(true);rollingEdit["scalars"]!["rollingLimit"]=true;rollingEdit["scalars"]!["allowedMinutes"]=30;rollingEdit["ts"]=at+1;rollingJoin.ApplySync("windowsapp","w",rollingEdit);
+            rollingJoin.ReportLocalUsage("w",0,0,bucketDeltas:new Dictionary<double,double>{[minute]=1000});
+            var oldRolling=Frame(false);oldRolling["scalars"]!["rollingLimit"]=true;oldRolling["usageBucketsSeed"]=new JsonObject{[currentKey]=300_000,[expiredKey]=900_000};if(staleAnchor) oldRolling["usageResetAtMs"]=at-2000;
+            rollingJoin.ApplySync("chrome","c",oldRolling);
+            var total=rollingJoin.SharedUsage("w")!.Value.Buckets.Values.Sum();
+            Check(total==1000,staleAnchor ? "Rolling restart rejects stale anchored original history" : "Rolling restart rejects original history without a reset anchor");
+        }
     }
 }
