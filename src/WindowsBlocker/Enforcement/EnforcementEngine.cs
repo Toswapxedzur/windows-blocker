@@ -250,7 +250,7 @@ public sealed class EnforcementEngine
     // usage even when there is no foreground app to count.
     internal static void AdoptLinkedUsage(ConnectionHub hub,IEnumerable<BlockGroup> groups,WebStore.UsageTimers timers,HashSet<string> seeded,DateTimeOffset now,Dictionary<string,double> usage,Dictionary<string,double> resets,Dictionary<string,Dictionary<double,double>> buckets)
     {
-        foreach(var group in groups.Where(g=>g.Enabled && g.Mode==BlockingMode.AfterMinutes))
+        foreach(var group in groups.Where(g=>g.Mode==BlockingMode.AfterMinutes))
         {
             var id=group.Id; var shared=hub.SharedUsage(id);
             if(!shared.HasValue) { seeded.Remove(id); continue; }

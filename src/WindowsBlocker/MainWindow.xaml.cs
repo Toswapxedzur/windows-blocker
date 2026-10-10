@@ -29,7 +29,7 @@ public partial class MainWindow : Window
 
     private readonly WebStore _store = new();
     private readonly BlockedAppRegistry _registry = new();
-    private readonly ConnectionHub _hub = new();
+    private readonly ConnectionHub _hub;
     private readonly ClassifierWorkerClient _classifier = new();
     private readonly VaultMcpServer _mcp = new();
     private readonly NativePolicyTools _policy;
@@ -56,6 +56,7 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
+        _hub = new ConnectionHub(_store);
         InitializeComponent();
         McpConnectionsMenu.Header = NativeLanguage.Text("windows.connections.menu", "AI connections…");
         NativeMenu.FlowDirection = NativeLanguage.Language == "ar" ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
