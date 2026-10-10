@@ -16,6 +16,7 @@ static class HubFirstLinkContracts
     };
     public static void Run()
     {
+        InitialStateContracts();
         foreach(var nativeFirst in new[] { true,false })
         {
             var hub=new ConnectionHub(); Roster(hub,"windowsapp","w"); Roster(hub,"chrome","c");
@@ -60,5 +61,58 @@ static class HubFirstLinkContracts
             restarted.ApplySync("chrome","c",transfer);
             Check(Usage((JsonObject)Snapshot(restarted)["shared"]!)==60000,"durable receipt prevents double-count after hub restart");
         }
+    }
+    static void InitialStateContracts()
+    {
+        foreach(var nativeInitiator in new[]{true,false}) foreach(var nativeFirst in new[]{true,false}) foreach(var rolling in new[]{true,false}) foreach(var restart in new[]{true,false})
+        {
+            var hub=new ConnectionHub(); Roster(hub,"windowsapp","w"); Roster(hub,"chrome","c");
+            hub.Link(nativeInitiator ? "windowsapp" : "chrome",nativeInitiator ? "w" : "c",nativeInitiator ? "chrome" : "windowsapp",nativeInitiator ? "c" : "w");
+            var anchor=DateTimeOffset.Now.ToUnixTimeMilliseconds();
+            var key=(Math.Floor(anchor/60000d)*60000).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            JsonObject Original(bool native,double seed) {
+                var f=Frame(native); f["scalars"] = new JsonObject { ["name"]=native ? "Native original" : "Browser chosen",["allowedMinutes"]=native ? 10 : 20,["resetIntervalHours"]=24,["rollingLimit"]=rolling };
+                f["usageResetAtMs"]=anchor; f["usageMs"]=seed;
+                if(rolling) f["usageBucketsSeed"]=new JsonObject{[key]=seed};
+                return f;
+            }
+            hub.ApplySync(nativeFirst ? "windowsapp" : "chrome",nativeFirst ? "w" : "c",Original(nativeFirst,120_000));
+            var delta=new JsonObject { ["usageDeltaMs"]=1_000,["usageDeltaAnchorMs"]=anchor };
+            if(rolling) { delta.Remove("usageDeltaMs"); delta["usageBuckets"]=new JsonObject{[key]=1_000}; }
+            hub.ApplySync(nativeFirst ? "windowsapp" : "chrome",nativeFirst ? "w" : "c",delta);
+            if(restart) { hub=new ConnectionHub(); typeof(ConnectionHub).GetMethod("Restore",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.Invoke(hub,null); }
+            hub.ApplySync(nativeFirst ? "chrome" : "windowsapp",nativeFirst ? "c" : "w",Original(!nativeFirst,300_000));
+            var shared=(JsonObject)Snapshot(hub)["shared"]!;
+            var used=rolling ? ((JsonObject)shared["usageBuckets"]!).Sum(b=>b.Value!.GetValue<double>()) : shared["usageMs"]!.GetValue<double>();
+            Check(used==301_000,$"{(rolling ? "rolling" : "fixed")} unequal initial seed preserves postjoin delta, nativeFirst={nativeFirst}, restart={restart}");
+            Check(shared["scalars"]?["name"]?.GetValue<string>()==(nativeInitiator ? "Native original" : "Browser chosen") && shared["scalars"]?["allowedMinutes"]?.GetValue<double>()==(nativeInitiator ? 10 : 20),"Initiator original settings win either contribution order without resetting usage");
+            hub.ApplySync(nativeInitiator ? "windowsapp" : "chrome",nativeInitiator ? "w" : "c",Original(nativeInitiator,900_000));
+            shared=(JsonObject)Snapshot(hub)["shared"]!;
+            used=rolling ? ((JsonObject)shared["usageBuckets"]!).Sum(b=>b.Value!.GetValue<double>()) : shared["usageMs"]!.GetValue<double>();
+            Check(used==301_000,"Completed link ignores late ordinary absolute seeds");
+        }
+        var store=new WindowsBlocker.WebUI.WebStore();
+        var nativeOriginal=JsonNode.Parse("""{"blockedGroups":[{"id":"w","name":"Native original","allowedMinutes":10,"resetIntervalHours":24,"scopes":[{"surface":"apps","apps":[]}]}],"usageTimersMs":{"w":300000},"usageResetAtMs":{"w":12345}}""")!; nativeOriginal["usageResetAtMs"]!["w"]=DateTimeOffset.Now.ToUnixTimeMilliseconds(); store.SaveRaw(nativeOriginal.ToJsonString());
+        var nativeHub=new ConnectionHub(); Roster(nativeHub,"windowsapp","w"); Roster(nativeHub,"chrome","c"); nativeHub.Link("chrome","c","windowsapp","w");
+        var browser=Frame(false);browser["scalars"]!["name"]="Browser chosen";browser["scalars"]!["allowedMinutes"]=20;
+        nativeHub.ApplySync("chrome","c",browser);
+        nativeHub.ReconcileLocal(store);
+        var nativeShared=(JsonObject)Snapshot(nativeHub)["shared"]!;
+        Check(nativeShared["usageMs"]!.GetValue<double>()==300_000,"Native first contribution includes persisted original usage atomically");
+        Check(nativeShared["scalars"]?["name"]?.GetValue<string>()=="Browser chosen","Native original contribution cannot replace browser initiator settings");
+        Check(JsonNode.Parse(store.LoadRawJson()!)?["blockedGroups"]?[0]?["name"]?.GetValue<string>()=="Browser chosen","Native adopts shared settings after its original contribution");
+        var pending=new ConnectionHub(); Roster(pending,"windowsapp","w"); Roster(pending,"chrome","c"); pending.Link("windowsapp","w","chrome","c");
+        var before=Frame(true);before["usageMs"]=120_000;before["usageResetAtMs"]=DateTimeOffset.Now.ToUnixTimeMilliseconds();pending.ApplySync("windowsapp","w",before);
+        pending.ReportLocalUsage("w",2_000,0); Roster(pending,"edge","e");pending.Link("chrome","c","edge","e");
+        var delayed=Frame(false);delayed["usageMs"]=300_000;pending.ApplySync("chrome","c",delayed);
+        var third=Frame(false);third["usageMs"]=200_000;pending.ApplySync("edge","e",third);
+        Check(pending.SharedUsage("w")?.Ms==302_000,"Adding a third member while an original is pending preserves the earlier postjoin delta");
+        var rollover=new ConnectionHub();Roster(rollover,"windowsapp","w");Roster(rollover,"chrome","c");rollover.Link("windowsapp","w","chrome","c");
+        var oldAnchor=DateTimeOffset.Now.ToUnixTimeMilliseconds()-2_000;
+        var original=Frame(true);original["usageMs"]=120_000;original["usageResetAtMs"]=oldAnchor;rollover.ApplySync("windowsapp","w",original);
+        var edit=Frame(true);edit["scalars"]!["allowedMinutes"]=30;edit["ts"]=DateTimeOffset.Now.ToUnixTimeMilliseconds();rollover.ApplySync("windowsapp","w",edit);
+        rollover.ReportLocalUsage("w",1_000,0);
+        var stale=Frame(false);stale["usageMs"]=300_000;stale["usageResetAtMs"]=oldAnchor;rollover.ApplySync("chrome","c",stale);
+        Check(rollover.SharedUsage("w")?.Ms==1_000,"A true budget restart rejects the pending participant's expired original seed");
     }
 }
