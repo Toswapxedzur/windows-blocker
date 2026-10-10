@@ -24,7 +24,7 @@
     candidates.delete(groupId);
   }
 
-  function createGroupWorker(groupId) {
+  function createGroupWorker(groupId, staged) {
     var previousCandidate = candidates.get(groupId);
     if (previousCandidate) previousCandidate.terminate();
     var worker = new Worker("rule-worker.js");
@@ -33,6 +33,11 @@
       var data = event.data;
       if (!data || data.kind !== "rule-runtime-response") return;
       if (candidates.get(groupId) === worker) {
+        if (staged && data.ok && data.result && data.result.ok) {
+          worker.prepared = true;
+          respond(data.requestId, data.ok, data.result, data.error);
+          return;
+        }
         candidates.delete(groupId);
         if (data.ok && data.result && data.result.ok) {
           var previous = workers.get(groupId);
@@ -94,13 +99,33 @@
       return;
     }
 
-    var worker = operation === "load"
-      ? createGroupWorker(groupId)
+    if (operation === "discard-load") {
+      var rejected = candidates.get(groupId);
+      if (rejected) rejected.terminate();
+      candidates.delete(groupId);
+      respond(requestId, true, { ok: true }, "");
+      return;
+    }
+    if (operation === "commit-load") {
+      var prepared = candidates.get(groupId);
+      if (!prepared || !prepared.prepared) {
+        respond(requestId, false, {}, "group-not-prepared");
+        return;
+      }
+      candidates.delete(groupId);
+      var previous = workers.get(groupId);
+      if (previous) previous.terminate();
+      workers.set(groupId, prepared);
+      respond(requestId, true, { ok: true }, "");
+      return;
+    }
+    var worker = operation === "load" || operation === "prepare-load"
+      ? createGroupWorker(groupId, operation === "prepare-load")
       : workers.get(groupId);
     if (!worker) {
       respond(requestId, false, {}, "group-not-loaded");
       return;
     }
-    worker.postMessage(request);
+    worker.postMessage(operation === "prepare-load" ? { ...request, operation: "load" } : request);
   });
 })();

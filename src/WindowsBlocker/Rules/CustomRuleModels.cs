@@ -105,6 +105,7 @@ public sealed class DispatchResult
 }
 public sealed class LoadResult
 {
+    [JsonPropertyName("states")] public Dictionary<string,string> States { get; set; } = new();
     [JsonPropertyName("ok")] public bool Ok { get; set; }
     [JsonPropertyName("handlers")] public int Handlers { get; set; }
     [JsonPropertyName("types")] public List<string> Types { get; set; } = new();
