@@ -2,7 +2,8 @@
 
 - `build-worker.ps1` — mini1 Windows source build of the shared Swift worker,
   pinned llama.cpp CPU backends, transitive DLL bundle and provenance manifest.
-- `dictionary-worker-guard.ps1` — rejects pre-dictionary worker provenance before native relaunch or packaging.
+- `dictionary-worker-guard.ps1` — rejects incompatible dictionary/Activity worker provenance before native relaunch or packaging.
+- `required-worker-sources.json` — accepted shared Activity handler/dispatch fingerprints; update with an intentional shared-source integration.
 - `test-platform.ps1` / `platform-smoke.cpp` — mini1 guest checks for DPAPI, ACLs, image conversion and fail-closed package reclamation.
 - `test-worker.ps1` — relocated bundle, private pipe protocol, shared scene
   callbacks, UTF-8, persisted activation/DPAPI and graceful shutdown checks.

@@ -1,0 +1,13 @@
+{
+  "classifierRevision": "c1182905544cb4e791d904aa1da42b6799839bf8",
+  "sources": [
+    {
+      "path": "Sources/VaultClassifierApp/VaultClassifierWorkerActivity.swift",
+      "sha256": "7014d4b25c5d48d7023eb49da2b0baac70c43512833db337d298fc973ca59bd6"
+    },
+    {
+      "path": "Sources/VaultClassifierApp/VaultClassifierWorkerService.swift",
+      "sha256": "1914ea8b293d3149020d96252a47b4be256f8763044e1ef749dd385c7b517274"
+    }
+  ]
+}

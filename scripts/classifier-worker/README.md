@@ -25,7 +25,12 @@ files. Pass `-ClassifierRevision <verified-commit>` when exporting without Git.
 The development launcher and release packager refuse workers whose source
 provenance predates the official-dictionary backend. Rebuild the worker from the
 accepted shared Classifier source when delivering this feature; rebuilding WPF
-alone does not update the worker.
+alone does not update the worker. The same guard also checks the exact accepted
+Activity MCP handler and worker dispatch hashes in `required-worker-sources.json`.
+Both files existed in older workers, so their presence does not establish support.
+When intentionally integrating changes to either shared file, update that table
+from the reviewed immutable shared commit and verify every source hash in the
+new bundle. Do not relabel an older bundle's revision or edit its manifest.
 The bundle includes the pinned runtime and resolved dependency licenses in
 `Notices/`. No model or user
 state is copied into the app bundle. Model downloads remain explicit scene
