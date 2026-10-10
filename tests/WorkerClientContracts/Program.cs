@@ -26,4 +26,12 @@ if(answer?["text"]?.GetValue<string>()!=unicode) throw new Exception("Old child 
 Console.WriteLine("PASS Crashed child cleanup leaves replacement requests intact");
 try { await stale;throw new Exception("Crashed child's request unexpectedly succeeded"); } catch(InvalidOperationException) { }
 Console.WriteLine("PASS Crashed child's pending request fails promptly");
+var deleted=await client.Request("activity",ActivityMcpRequest.Create("delete_activity_group",new JsonObject { ["id"]="fixture" }));
+if(deleted?.GetValue<string>()!="Deleted.")throw new Exception("Activity scalar success was not preserved");
+Console.WriteLine("PASS Activity MCP scalar payload survives native worker JSONL client");
+var canonicalRefused=false;
+try { await client.Request("activity",ActivityMcpRequest.Create("delete_activity_group",new JsonObject { ["id"]="missing" })); }
+catch(InvalidOperationException ex) { canonicalRefused=ex.Message=="Activity group not found"; }
+if(!canonicalRefused)throw new Exception("Activity canonical refusal was converted into success");
+Console.WriteLine("PASS Activity MCP canonical refusal reaches native caller as error");
 await client.ShutdownAsync();
