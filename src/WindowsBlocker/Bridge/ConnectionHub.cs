@@ -453,12 +453,16 @@ public sealed class ConnectionHub
         return copy;
     }
     private static bool EquivalentWebsite(JsonObject a, JsonObject b) => JsonNode.DeepEquals(ComparableWebsite(a), ComparableWebsite(b));
-    private static string WebsiteAlias(string seed, IEnumerable<JsonObject> lines)
+    private static string WebsiteAlias(string seed, JsonObject entry, IEnumerable<JsonObject> lines, HashSet<string> reserved)
     {
         var prefix="site:linked_"+Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(seed))).ToLowerInvariant()[..24];
-        var occupied=lines.Select(ScopeKey).ToHashSet(); var alias=prefix; var suffix=2;
-        while(occupied.Contains(alias)) alias=prefix+"_"+suffix++;
-        return alias;
+        var alias=prefix; var suffix=2;
+        while(reserved.Contains(alias)) {
+            var existing=lines.Where(s=>Website(s) && ScopeKey(s)==alias).ToList();
+            if(existing.Count==1 && EquivalentWebsite(existing[0],entry)) return alias;
+            alias=prefix+"_"+suffix++;
+        }
+        reserved.Add(alias); return alias;
     }
     private static void PruneOrigins(Cluster c)
     {
@@ -471,6 +475,7 @@ public sealed class ConnectionHub
         var own=scopes.OfType<JsonObject>().Where(s=>(Text(s["surface"])=="apps")==desktop).Select(s=>(JsonObject)s.DeepClone()).ToList();
         var previous=c.Scopes.OfType<JsonObject>().Select(s=>(JsonObject)s.DeepClone()).ToList();
         var origins=new Dictionary<string,string>(c.ScopeOrigins);
+        var reserved=previous.Concat(own).Select(ScopeKey).ToHashSet();
         var merged=previous.Where(s=>(Text(s["surface"])=="apps")!=desktop || first && !own.Any(i=>ScopeKey(i)==ScopeKey(s))).ToList();
         if(first) {
             // Restore Website collisions removed by the original one-owner merge.
@@ -488,18 +493,20 @@ public sealed class ConnectionHub
                 var union=existing.Count==1 ? UnionOriginalTargets(retained,incoming) : null;
                 if(existing.Count==1 && (EquivalentWebsite(retained,incoming) || union!=null)) {
                     merged.Remove(retained); merged.Add(union ?? retained);
-                    if(priority && key=="site") origins[key]=seed;
+                    if(!origins.ContainsKey(key) || priority && key=="site") origins[key]=seed;
                     continue;
                 }
                 if(priority && key=="site") {
                     foreach(var old in existing) {
                         var known=origins.GetValueOrDefault(key);
-                        var alias=WebsiteAlias(known ?? "retained\0"+c.Id+"\0"+key,merged);
-                        old["entryID"]=alias; if(known!=null) origins[alias]=known;
+                        var alias=WebsiteAlias(known ?? "retained\0"+c.Id+"\0"+key,old,merged,reserved);
+                        if(merged.Any(s=>ScopeKey(s)==alias)) merged.Remove(old); else old["entryID"]=alias;
+                        if(known!=null && !origins.ContainsKey(alias)) origins[alias]=known;
                     }
                     origins.Remove(key); merged.Add(incoming); origins[key]=seed;
                 } else {
-                    var alias=WebsiteAlias(seed,merged); incoming["entryID"]=alias; merged.Add(incoming); origins[alias]=seed;
+                    var alias=WebsiteAlias(seed,incoming,merged,reserved);
+                    if(!merged.Any(s=>ScopeKey(s)==alias)) { incoming["entryID"]=alias; merged.Add(incoming); origins[alias]=seed; }
                 }
             }
         } else {
@@ -510,12 +517,18 @@ public sealed class ConnectionHub
         foreach(var line in merged) { var surface=Text(line["surface"]);counts[surface]=counts.GetValueOrDefault(surface)+1;line["id"]=$"{surface}-{counts[surface]}";result.Add(line); }
         c.Scopes=result; c.ScopeOrigins=origins; PruneOrigins(c);
     }
+    private static bool ValidScopeOrigin(string key, JsonNode? node)
+    {
+        if(key!="site" && !Regex.IsMatch(key,@"^site:[A-Za-z0-9_-]{1,80}$") || node?.GetValueKind()!=JsonValueKind.String) return false;
+        var parts=node!.GetValue<string>().Split('\0');
+        return parts.Length==3 && parts.All(p=>p.Length is >0 and <=128) && parts[0] is "chrome" or "edge" or "safari";
+    }
     private static JsonNode RegistryPayload(JsonNode document)
     {
         var payload=StorageSchema.Payload(document,"hub.clusters");
         if(payload is not JsonArray entries) throw new InvalidDataException("Invalid cluster registry.");
         foreach(var entry in entries.OfType<JsonObject>()) if(entry.ContainsKey("scopeOrigins")) {
-            if(entry["scopeOrigins"] is not JsonObject origins || origins.Any(p=>p.Value?.GetValueKind()!=JsonValueKind.String))
+            if(entry["scopeOrigins"] is not JsonObject origins || origins.Any(p=>!ValidScopeOrigin(p.Key,p.Value)))
                 throw new InvalidDataException("Invalid Website origin map; registry is preserved.");
         }
         return payload;
