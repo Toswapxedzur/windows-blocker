@@ -43,7 +43,9 @@ public sealed class RuleEngine(WebStore store)
     {
         var output = new RuleTickOutput();
         if (_runtime == null) return output;
-        var groups = store.ImportedGroups()?.Groups ?? new();
+        var imported = store.ImportedGroups();
+        if (imported == null) return output; // An unreadable/unsupported snapshot cannot retire working rules.
+        var groups = imported.Groups;
         var wanted = groups.Where(g => g.GroupType == BlockGroupType.Custom && g.CustomRuleSource.Length > 0).ToDictionary(g => g.Id);
         foreach (var id in _loaded.Keys.Concat(_quarantined.Keys).Distinct().Where(id => !wanted.ContainsKey(id)).ToList()) await UnloadCore(id);
         foreach (var (id, group) in wanted)
@@ -67,29 +69,70 @@ public sealed class RuleEngine(WebStore store)
         await Dispatch("tick", new { frontmost = foreground.IsEmpty ? null : new { appId = foreground.Canonical, name = foreground.DisplayName }, running = next.Values.Select(p => new { appId = p.Canonical, name = p.DisplayName }).ToArray() }, null, output);
         return output;
     }
-    private async Task<LoadResult?> Load(BlockGroup group, string source)
+    private async Task<LoadResult?> Load(BlockGroup group, string source, bool saveSource = false)
     {
-        var raw = JsonNode.Parse(store.LoadRawJson() ?? "{}");
-        var state = raw?["cbRuleState"]?[group.Id]?.ToJsonString() ?? "{}";
-        var result = _runtime == null ? null : await _runtime.LoadAsync(group.Id, source, state);
-        if (result != null) AppendLogs(result.Logs);
-        if (result == null || !result.Ok) return result;
-        _loaded[group.Id] = source; _quarantined.Remove(group.Id); _blocks.Remove(group.Id); _panels[group.Id] = result.Panels;
-        return result;
+        if (_runtime == null) return null;
+        try
+        {
+            var raw = JsonNode.Parse(store.LoadRawJson() ?? "{}");
+            if (raw is not JsonObject saved) return new() { Error = "invalid-rule-storage" };
+            StorageSchema.ValidateWeb(saved);
+            var state = saved["cbRuleState"]?[group.Id]?.ToJsonString() ?? "{}";
+            var result = await _runtime.PrepareLoadAsync(group.Id, source, state);
+            if (result == null || !result.Ok) { await _runtime.DiscardLoadAsync(group.Id); return result; }
+            try
+            {
+                // Persist registration state and active source in one guarded write.
+                // Neither native caches nor the old worker change before this succeeds.
+                store.Update(root =>
+                {
+                    var native = (root["blockedGroups"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault(g => g["id"]?.GetValue<string>() == group.Id)
+                        ?? throw new InvalidDataException("group-not-found");
+                    if (saveSource && ConnectionHub.IsLocked(native)) throw new InvalidDataException("group-locked");
+                    if (result.States.Count > 0)
+                    {
+                        var states = root["cbRuleState"] as JsonObject ?? new(); root["cbRuleState"] = states;
+                        foreach (var (id, json) in result.States)
+                        {
+                            if (id != group.Id) throw new InvalidDataException("invalid-rule-state-group");
+                            states[id] = JsonNode.Parse(json) as JsonObject ?? throw new InvalidDataException("invalid-rule-state");
+                        }
+                    }
+                    if (saveSource) { native["activeEventSource"] = source; native["blockingRulesText"] = source; native["enabled"] = true; native["lastAbortReason"] = null; }
+                });
+            }
+            catch
+            {
+                await _runtime.DiscardLoadAsync(group.Id);
+                return new() { Error = "rule-storage-write-failed" };
+            }
+            if (!await _runtime.CommitLoadAsync(group.Id)) return new() { Error = "rule-runtime-commit-failed" };
+            AppendLogs(result.Logs);
+            _loaded[group.Id] = source; _quarantined.Remove(group.Id); _blocks.Remove(group.Id); _panels[group.Id] = result.Panels;
+            return result;
+        }
+        catch { return new() { Error = "invalid-rule-storage" }; }
     }
     public async Task<JsonObject> RunRuleAsync(string groupId,string source)
     { await _operations.WaitAsync(); try { return await RunCore(groupId,source); } finally { _operations.Release(); } }
     private async Task<JsonObject> RunCore(string groupId, string source)
     {
-        var raw = JsonNode.Parse(store.LoadRawJson() ?? "{}");
-        var g = (raw?["blockedGroups"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault(g => g["id"]?.GetValue<string>() == groupId);
-        var group = store.ImportedGroups()?.Groups.FirstOrDefault(g => g.Id == groupId && g.GroupType == BlockGroupType.Custom);
+        JsonObject? g;
+        BlockGroup? group;
+        try
+        {
+            var raw = JsonNode.Parse(store.LoadRawJson() ?? "{}");
+            if (raw is not JsonObject saved) return new() { ["ok"] = false, ["error"] = "invalid-rule-storage" };
+            StorageSchema.ValidateWeb(saved);
+            g = (raw["blockedGroups"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault(g => g["id"]?.GetValue<string>() == groupId);
+            group = store.ImportedGroups()?.Groups.FirstOrDefault(g => g.Id == groupId && g.GroupType == BlockGroupType.Custom);
+        }
+        catch { return new() { ["ok"] = false, ["error"] = "invalid-rule-storage" }; }
         if (g == null || group == null) return new() { ["ok"] = false, ["error"] = "group-not-found" };
         if (ConnectionHub.IsLocked(g)) return new() { ["ok"] = false, ["error"] = "group-locked" };
-        var result = await Load(group, source);
+        var result = await Load(group, source, saveSource: true);
         if (result?.Ok == true)
         {
-            store.Update(root => { var native = (root["blockedGroups"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault(g => g["id"]?.GetValue<string>() == groupId); if (native != null) { native["activeEventSource"] = source; native["blockingRulesText"] = source; native["enabled"] = true; native["lastAbortReason"]=null; } });
             _suppressed.Remove(groupId); if (_runtime != null) await _runtime.SuppressAsync(groupId, false);
         }
         return new() { ["ok"] = result?.Ok == true, ["handlers"] = result?.Handlers ?? 0, ["error"] = result?.Error ?? (result == null ? "rules-not-running" : null) };

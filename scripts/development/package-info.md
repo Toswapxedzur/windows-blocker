@@ -11,3 +11,5 @@
 - `verify-mini1.py` exports source to the isolated mini1 VM and runs the selected suites.
 - `install-native-host.ps1` registers development/production authentication helpers in the current user's Chrome/Edge registry.
 - `run-windows-vault.ps1` rebuilds and relaunches the development app on mini1.
+
+- `test-rule-initialization.ps1` builds and runs the actual WebView2/native initialization persistence contracts in a disposable Limited-user interactive task.

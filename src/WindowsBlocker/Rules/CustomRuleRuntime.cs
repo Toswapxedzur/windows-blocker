@@ -48,6 +48,14 @@ public sealed class CustomRuleRuntime
     public Task<LoadResult?> LoadAsync(string groupId, string source, string stateJSON)
         => RequestAsync<LoadResult>("load", groupId, source, new { stateJSON }, ExecutionTimeout);
 
+    // The old active worker stays alive until native storage commits.
+    public Task<LoadResult?> PrepareLoadAsync(string groupId, string source, string stateJSON)
+        => RequestAsync<LoadResult>("prepare-load", groupId, source, new { stateJSON }, ExecutionTimeout);
+    public async Task<bool> CommitLoadAsync(string groupId)
+        => await RequestAsync<object>("commit-load", groupId, null, null, ExecutionTimeout) is not null;
+    public async Task DiscardLoadAsync(string groupId)
+        => _ = await RequestAsync<object>("discard-load", groupId, null, null, ExecutionTimeout);
+
     public async Task SuppressAsync(string groupId, bool on) => _ = await RequestAsync<object>("suppress", groupId, null, new { on }, ExecutionTimeout);
 
     public async Task UnloadAsync(string groupId)
@@ -79,7 +87,7 @@ public sealed class CustomRuleRuntime
             ["groupId"] = groupId,
             ["source"] = source,
             ["event"] = ev,
-            ["stateJSON"] = ev is not null && operation == "load" ? ((dynamic)ev).stateJSON : null,
+            ["stateJSON"] = ev is not null && (operation is "load" or "prepare-load") ? ((dynamic)ev).stateJSON : null,
             ["descriptor"] = ev is not null && operation == "dispatch" ? ((dynamic)ev).descriptor : null,
             ["on"] = ev is not null && operation == "suppress" ? ((dynamic)ev).on : null,
             ["module"] = ev is not null && operation == "policy" ? ((dynamic)ev).module : null,
@@ -105,8 +113,16 @@ public sealed class CustomRuleRuntime
             LastError = "runtime-timeout";
             if (!string.IsNullOrEmpty(groupId))
             {
-                ResetGroup(groupId);
-                GroupReset?.Invoke(groupId, LastError);
+                if (operation is "prepare-load" or "discard-load")
+                {
+                    // A timed-out candidate must not quarantine the working rule.
+                    try { _web.PostWebMessageAsJson(JsonSerializer.Serialize(new { kind = "rule-runtime-request", operation = "discard-load", groupId })); } catch { }
+                }
+                else
+                {
+                    ResetGroup(groupId);
+                    GroupReset?.Invoke(groupId, LastError);
+                }
             }
             return null;
         }
