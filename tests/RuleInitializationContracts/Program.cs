@@ -6,6 +6,7 @@ using Microsoft.Web.WebView2.Wpf;
 using WindowsBlocker.Rules;
 using WindowsBlocker.WebUI;
 using WindowsBlocker.Enforcement;
+using WindowsBlocker.Bridge;
 
 internal static class Program
 {
@@ -78,6 +79,18 @@ internal static class Program
                 await restarted.TickAsync(new AppIdentity(), new());
                 Check(Read()?["cbRuleState"]?["disabled-init"]?["seeded"]?.GetValue<int>() == 9 && Read()?["blockedGroups"]?[1]?["enabled"]?.GetValue<bool>() == false, "Automatic disabled rule load persists initialization without enabling group");
                 await restarted.UnloadGroupAsync("disabled-init");
+                Check((await restarted.RunRuleAsync("init",source))["ok"]?.GetValue<bool>()==true,"Deletion fixture loads actual active worker");
+                var tools=new NativePolicyTools(store,new ConnectionHub(),restarted);
+                before=File.ReadAllText(store.FilePath);var refused=false;
+                using(var fileLock=new FileStream(store.FilePath,FileMode.Open,FileAccess.Read,FileShare.Read)) {
+                    try { await tools.Invoke("delete_group",new JsonObject{["id"]="init"}); } catch(IOException) { refused=true; }
+                    Check(refused && File.ReadAllText(store.FilePath)==before,"Failed deletion write preserves saved group and memory bytes");
+                }
+                await restarted.FireUserEventAsync("panelEvent","init",new(),new AppIdentity());
+                Check(Read()?["cbRuleState"]?["init"]?["events"]!=null,"Failed deletion preserves compiled worker for later events");
+                Check((await tools.Invoke("delete_group",new JsonObject{["id"]="init"}))?["deleted"]?.GetValue<string>()=="init" && Read()?["cbRuleState"]?["init"]==null && Read()?["cbRuleState"]?["other"]?["keep"]?.GetValue<int>()==7,"Native deletion removes custom memory while preserving unrelated groups");
+                before=File.ReadAllText(store.FilePath);await restarted.FireUserEventAsync("panelEvent","init",new(),new AppIdentity());await restarted.TickAsync(new AppIdentity(),new());
+                Check(File.ReadAllText(store.FilePath)==before && restarted.PanelsSnapshot().Count==0,"Deleted worker cannot resurrect memory or effects on late event and tick");
                 await restarted.UnloadGroupAsync("init");
                 File.WriteAllText(args[2], new JsonObject { ["ok"] = true, ["checks"] = JsonSerializerNodes(checks) }.ToJsonString());
             }

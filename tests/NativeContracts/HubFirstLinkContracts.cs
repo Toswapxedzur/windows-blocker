@@ -19,6 +19,7 @@ static class HubFirstLinkContracts
     };
     public static void Run()
     {
+        HubWebsiteEntryContracts.Run();
         UnlinkContracts();
         SameEntrySiteJoinContracts();
         InitialStateContracts();

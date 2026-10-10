@@ -5,6 +5,9 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
+using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using WindowsBlocker.Core;
 using WindowsBlocker.WebUI;
 
@@ -51,6 +54,8 @@ public sealed class ConnectionHub
         public HashSet<string> Contributed { get; set; } = new();
         public JsonObject Scalars { get; set; } = new();
         public JsonArray Scopes { get; set; } = new();
+        [JsonPropertyName("scopeOrigins")]
+        public Dictionary<string,string> ScopeOrigins { get; set; } = new();
         public JsonObject Lock { get; set; } = new();
         public double Timestamp { get; set; }
         public double Usage { get; set; }
@@ -349,7 +354,8 @@ public sealed class ConnectionHub
             var c = Find(program, groupId); if (c == null) return;
             var first = !c.Contributed.Contains(program); var carriesConfig = frame.ContainsKey("scalars") || frame.ContainsKey("scopes");
             var firstConfig = first && carriesConfig; var ts = Number(frame["ts"]); var priority = firstConfig && program == c.Initiator;
-            var wins = priority || (firstConfig ? !c.Contributed.Contains(c.Initiator) : ts >= c.Timestamp);
+            // A repeated zero-timestamp original is a replay, not an acknowledged edit.
+            var wins = !(!first && carriesConfig && ts == 0) && (priority || (firstConfig ? !c.Contributed.Contains(c.Initiator) : ts >= c.Timestamp));
             if (frame["scalars"] is JsonObject scalars && wins)
             {
                 var budgetChanged = new[] { "mode", "allowedMinutes", "resetIntervalHours", "resetAtMidnight", "rollingLimit" }.Any(k => c.Scalars.ContainsKey(k) && c.Scalars[k]?.ToJsonString() != scalars[k]?.ToJsonString());
@@ -358,17 +364,7 @@ public sealed class ConnectionHub
             }
             if (frame["scopes"] is JsonArray scopes && (first || wins))
             {
-                var desktop = program == LocalProgram;
-                var own = scopes.OfType<JsonObject>().Where(s => (Text(s["surface"]) == "apps") == desktop).ToList();
-                if(first) own = own.Select(incoming => {
-                    var existing = c.Scopes.OfType<JsonObject>().Where(line => ScopeKey(line) == ScopeKey(incoming)).ToList();
-                    return existing.Count == 1 && own.Count(line => ScopeKey(line) == ScopeKey(incoming)) == 1
-                        ? UnionOriginalTargets(existing[0], incoming) ?? incoming : incoming;
-                }).ToList();
-                var keep = c.Scopes.OfType<JsonObject>().Where(s => (Text(s["surface"]) == "apps") != desktop || first && !own.Any(i => ScopeKey(i) == ScopeKey(s))).ToList();
-                var counts = new Dictionary<string, int>(); var merged = new JsonArray();
-                foreach (var s in keep.Concat(own)) { var copy = (JsonObject)s.DeepClone(); var surface = Text(s["surface"]); counts[surface] = counts.GetValueOrDefault(surface) + 1; copy["id"] = $"{surface}-{counts[surface]}"; merged.Add(copy); }
-                c.Scopes = merged;
+                MergeScopes(c, program, groupId, scopes, first, priority);
             }
             if (frame["lock"] is JsonObject incoming && (c.Lock.Count == 0 || !first && Number(frame["lockBase"]) == Number(c.Lock["lockVersion"]) && Number(incoming["lockVersion"]) > Number(c.Lock["lockVersion"]))) c.Lock = (JsonObject)incoming.DeepClone();
             if (c.Anchor <= 0 && Number(frame["usageResetAtMs"]) > 0) c.Anchor = Number(frame["usageResetAtMs"]);
@@ -430,6 +426,7 @@ public sealed class ConnectionHub
         JsonObject? Metadata(JsonObject line) {
             if(Text(line["action"]) is not ("" or "block")) return null;
             var metadata=(JsonObject)line.DeepClone();metadata.Remove("id");metadata.Remove(field);metadata.Remove(except);metadata.Remove("action");
+            if(surface=="site") metadata.Remove("entryID");
             if(metadata["platform"] == null) metadata.Remove("platform");return metadata;
         }
         var before=Metadata(existing);var after=Metadata(incoming);
@@ -440,6 +437,88 @@ public sealed class ConnectionHub
             if(seen.Add(key)) targets.Add(target?.DeepClone());
         }
         result[field]=targets;return result;
+    }
+    // Only Website entries receive independent identities on an incompatible
+    // first contribution. Platform and Apps entry ownership is unchanged.
+    private static bool Website(JsonObject line) => Text(line["surface"]) == "site" && Text(line["platform"]).Length == 0 &&
+        (ScopeKey(line) == "site" || Regex.IsMatch(ScopeKey(line), @"^site:[A-Za-z0-9_-]{1,80}$"));
+    private static string Origin(string program, string groupId, string key) => program + "\0" + groupId + "\0" + key;
+    private static JsonObject ComparableWebsite(JsonObject line)
+    {
+        var copy=(JsonObject)line.DeepClone(); copy.Remove("id"); copy.Remove("entryID");
+        if(copy["platform"] == null) copy.Remove("platform");
+        if(Text(copy["action"]).Length == 0) copy["action"]="block";
+        if(copy["sitesExcept"] == null) copy["sitesExcept"]=false;
+        if(copy["sites"] is JsonArray sites) copy["sites"]=new JsonArray(sites.Select(n=>n?.ToJsonString() ?? "null").Distinct().OrderBy(v=>v,StringComparer.Ordinal).Select(v=>JsonNode.Parse(v)).ToArray());
+        return copy;
+    }
+    private static bool EquivalentWebsite(JsonObject a, JsonObject b) => JsonNode.DeepEquals(ComparableWebsite(a), ComparableWebsite(b));
+    private static string WebsiteAlias(string seed, IEnumerable<JsonObject> lines)
+    {
+        var prefix="site:linked_"+Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(seed))).ToLowerInvariant()[..24];
+        var occupied=lines.Select(ScopeKey).ToHashSet(); var alias=prefix; var suffix=2;
+        while(occupied.Contains(alias)) alias=prefix+"_"+suffix++;
+        return alias;
+    }
+    private static void PruneOrigins(Cluster c)
+    {
+        var keys=c.Scopes.OfType<JsonObject>().Where(Website).Select(ScopeKey).ToHashSet();
+        foreach(var key in c.ScopeOrigins.Keys.Where(k=>!keys.Contains(k)).ToList()) c.ScopeOrigins.Remove(key);
+    }
+    private static void MergeScopes(Cluster c, string program, string groupId, JsonArray scopes, bool first, bool priority)
+    {
+        var desktop=program==LocalProgram;
+        var own=scopes.OfType<JsonObject>().Where(s=>(Text(s["surface"])=="apps")==desktop).Select(s=>(JsonObject)s.DeepClone()).ToList();
+        var previous=c.Scopes.OfType<JsonObject>().Select(s=>(JsonObject)s.DeepClone()).ToList();
+        var origins=new Dictionary<string,string>(c.ScopeOrigins);
+        var merged=previous.Where(s=>(Text(s["surface"])=="apps")!=desktop || first && !own.Any(i=>ScopeKey(i)==ScopeKey(s))).ToList();
+        if(first) {
+            // Restore Website collisions removed by the original one-owner merge.
+            foreach(var old in previous.Where(Website)) if(!desktop && !merged.Contains(old)) merged.Add(old);
+            foreach(var incoming in own) {
+                if(!Website(incoming) || desktop) {
+                    var matches=previous.Where(s=>ScopeKey(s)==ScopeKey(incoming)).ToList();
+                    merged.Add(matches.Count==1 && own.Count(s=>ScopeKey(s)==ScopeKey(incoming))==1 ? UnionOriginalTargets(matches[0],incoming) ?? incoming : incoming);
+                    continue;
+                }
+                var key=ScopeKey(incoming); var existing=merged.Where(s=>Website(s) && ScopeKey(s)==key).ToList();
+                var seed=Origin(program,groupId,key);
+                if(existing.Count==0) { merged.Add(incoming); if(!origins.ContainsKey(key)) origins[key]=seed; continue; }
+                var retained=existing[0];
+                var union=existing.Count==1 ? UnionOriginalTargets(retained,incoming) : null;
+                if(existing.Count==1 && (EquivalentWebsite(retained,incoming) || union!=null)) {
+                    merged.Remove(retained); merged.Add(union ?? retained);
+                    if(priority && key=="site") origins[key]=seed;
+                    continue;
+                }
+                if(priority && key=="site") {
+                    foreach(var old in existing) {
+                        var known=origins.GetValueOrDefault(key);
+                        var alias=WebsiteAlias(known ?? "retained\0"+c.Id+"\0"+key,merged);
+                        old["entryID"]=alias; if(known!=null) origins[alias]=known;
+                    }
+                    origins.Remove(key); merged.Add(incoming); origins[key]=seed;
+                } else {
+                    var alias=WebsiteAlias(seed,merged); incoming["entryID"]=alias; merged.Add(incoming); origins[alias]=seed;
+                }
+            }
+        } else {
+            merged.AddRange(own);
+            foreach(var line in own.Where(Website)) { var key=ScopeKey(line); if(!origins.ContainsKey(key)) origins[key]=Origin(program,groupId,key); }
+        }
+        var counts=new Dictionary<string,int>(); var result=new JsonArray();
+        foreach(var line in merged) { var surface=Text(line["surface"]);counts[surface]=counts.GetValueOrDefault(surface)+1;line["id"]=$"{surface}-{counts[surface]}";result.Add(line); }
+        c.Scopes=result; c.ScopeOrigins=origins; PruneOrigins(c);
+    }
+    private static JsonNode RegistryPayload(JsonNode document)
+    {
+        var payload=StorageSchema.Payload(document,"hub.clusters");
+        if(payload is not JsonArray entries) throw new InvalidDataException("Invalid cluster registry.");
+        foreach(var entry in entries.OfType<JsonObject>()) if(entry.ContainsKey("scopeOrigins")) {
+            if(entry["scopeOrigins"] is not JsonObject origins || origins.Any(p=>p.Value?.GetValueKind()!=JsonValueKind.String))
+                throw new InvalidDataException("Invalid Website origin map; registry is preserved.");
+        }
+        return payload;
     }
     private static Dictionary<double,double> BucketValues(JsonObject buckets) => buckets.Where(b=>double.TryParse(b.Key,System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out var start) && double.IsFinite(start) && Number(b.Value)>0).ToDictionary(b=>double.Parse(b.Key,System.Globalization.CultureInfo.InvariantCulture),b=>Number(b.Value));
     private static void CountBudgetSnooze(Cluster c,double before,double added,double now)
@@ -565,11 +644,11 @@ public sealed class ConnectionHub
     {
         if (!_clusterStorageWritable) return;
         try {
-            if (File.Exists(Storage.ClustersPath)) StorageSchema.Payload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!, "hub.clusters");
+            if (File.Exists(Storage.ClustersPath)) RegistryPayload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!);
             StorageSchema.AtomicWrite(Storage.ClustersPath, StorageSchema.Wrap(JsonSerializer.SerializeToNode(_clusters.Values)!, "hub.clusters").ToJsonString());
         } catch { _clusterStorageWritable = false; }
     }
-    private void Restore() { lock (_gate) { if (_clusters.Count > 0 || !File.Exists(Storage.ClustersPath)) return; try { foreach (var c in StorageSchema.Payload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!, "hub.clusters").Deserialize<List<Cluster>>() ?? []) if (c.Members.Count >= 2 && c.Members.All(m => m.Value.Length > 0 && LocalHubAuthentication.Programs.Contains(m.Key))) { if(c.Members.Keys.All(c.Contributed.Contains)) ClearJoiningUsage(c); else if(!c.JoiningUsageBase.HasValue) BeginJoiningUsage(c); _clusters[c.Id] = c; } } catch { _clusterStorageWritable = false; } } }
+    private void Restore() { lock (_gate) { if (_clusters.Count > 0 || !File.Exists(Storage.ClustersPath)) return; try { foreach (var c in RegistryPayload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!).Deserialize<List<Cluster>>() ?? []) if (c.Members.Count >= 2 && c.Members.All(m => m.Value.Length > 0 && LocalHubAuthentication.Programs.Contains(m.Key))) { PruneOrigins(c); if(c.Members.Keys.All(c.Contributed.Contains)) ClearJoiningUsage(c); else if(!c.JoiningUsageBase.HasValue) BeginJoiningUsage(c); _clusters[c.Id] = c; } } catch { _clusterStorageWritable = false; } } }
     private static double Number(JsonNode? node) => node?.GetValueKind() == JsonValueKind.Number && double.TryParse(node.ToJsonString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value) && double.IsFinite(value) ? value : 0;
     private static string Text(JsonNode? node) => node?.GetValueKind() == JsonValueKind.String ? node.GetValue<string>() : "";
 }
