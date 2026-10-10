@@ -57,6 +57,11 @@ public sealed class ConnectionHub
         public Dictionary<string,double> UsageTransferReceipts { get; set; } = new();
         public JsonObject Buckets { get; set; } = new();
         public bool BucketsSeeded { get; set; }
+        public double? JoiningUsageBase { get; set; }
+        public double JoiningUsageDelta { get; set; }
+        public JsonObject? JoiningBucketBase { get; set; }
+        public JsonObject JoiningBucketDeltas { get; set; } = new();
+        public double JoiningSeedFloor { get; set; }
         public JsonObject Snooze { get; set; } = new();
         public double SnoozeTimestamp { get; set; }
         public double SnoozeTotal { get; set; }
@@ -282,7 +287,8 @@ public sealed class ConnectionHub
             var c = own ?? other ?? new Cluster { Name = Text(a["name"]), Initiator = program };
             if (IsLocked(c.Lock)) return "group-locked";
             if (c.Members.ContainsKey(program) && c.Members[program] != groupId || c.Members.ContainsKey(targetProgram) && c.Members[targetProgram] != targetGroupId) return "program-already-linked";
-            c.Members[program] = groupId; c.Members[targetProgram] = targetGroupId; _clusters[c.Id] = c; Persist();
+            c.Members[program] = groupId; c.Members[targetProgram] = targetGroupId;
+            if(!c.JoiningUsageBase.HasValue) BeginJoiningUsage(c); _clusters[c.Id] = c; Persist();
         }
         BroadcastClusters(); return null;
     }
@@ -295,6 +301,7 @@ public sealed class ConnectionHub
     {
         if (c.Members.TryGetValue(LocalProgram, out var localId)) { _unlinkedLocal.Add(localId); _seenDefinitions.Remove(localId); }
         c.Members.Remove(program); c.Contributed.Remove(program);
+        if (c.Members.Keys.All(c.Contributed.Contains)) ClearJoiningUsage(c);
         if (c.Members.Count < 2) _clusters.Remove(c.Id);
     }
     public static bool IsLocked(JsonObject obj) => obj["lockedAtMs"]?.GetValueKind() == JsonValueKind.Number;
@@ -303,12 +310,14 @@ public sealed class ConnectionHub
         lock (_gate)
         {
             var c = Find(program, groupId); if (c == null) return;
-            var first = !c.Contributed.Contains(program); var ts = Number(frame["ts"]); var priority = first && program == c.Initiator; var wins = priority || ts >= c.Timestamp;
+            var first = !c.Contributed.Contains(program); var carriesConfig = frame.ContainsKey("scalars") || frame.ContainsKey("scopes");
+            var firstConfig = first && carriesConfig; var ts = Number(frame["ts"]); var priority = firstConfig && program == c.Initiator;
+            var wins = priority || (firstConfig ? !c.Contributed.Contains(c.Initiator) : ts >= c.Timestamp);
             if (frame["scalars"] is JsonObject scalars && wins)
             {
                 var budgetChanged = new[] { "mode", "allowedMinutes", "resetIntervalHours", "resetAtMidnight", "rollingLimit" }.Any(k => c.Scalars.ContainsKey(k) && c.Scalars[k]?.ToJsonString() != scalars[k]?.ToJsonString());
                 c.Scalars = (JsonObject)scalars.DeepClone(); c.Timestamp = priority ? Math.Max(ts, c.Timestamp) + 1 : ts; c.Name = Text(c.Scalars["name"]);
-                if (budgetChanged) { c.Usage = 0; c.Anchor = DateTimeOffset.Now.ToUnixTimeMilliseconds(); c.Buckets.Clear(); c.UsageSeeded = c.BucketsSeeded = true; }
+                if (budgetChanged && !firstConfig) { c.Usage = 0; c.Anchor = DateTimeOffset.Now.ToUnixTimeMilliseconds(); c.Buckets.Clear(); c.UsageSeeded = c.BucketsSeeded = true; ResetJoiningUsage(c); }
             }
             if (frame["scopes"] is JsonArray scopes && (first || wins))
             {
@@ -320,7 +329,6 @@ public sealed class ConnectionHub
                 c.Scopes = merged;
             }
             if (frame["lock"] is JsonObject incoming && (c.Lock.Count == 0 || !first && Number(frame["lockBase"]) == Number(c.Lock["lockVersion"]) && Number(incoming["lockVersion"]) > Number(c.Lock["lockVersion"]))) c.Lock = (JsonObject)incoming.DeepClone();
-            if (frame.ContainsKey("scalars") || frame.ContainsKey("scopes")) c.Contributed.Add(program);
             if (c.Anchor <= 0 && Number(frame["usageResetAtMs"]) > 0) c.Anchor = Number(frame["usageResetAtMs"]);
             Roll(c);
             var now = DateTimeOffset.Now.ToUnixTimeMilliseconds();
@@ -330,7 +338,13 @@ public sealed class ConnectionHub
             foreach(var expired in c.UsageTransferReceipts.Where(p=>p.Value<now-receiptLifetime).Select(p=>p.Key).ToList()) c.UsageTransferReceipts.Remove(expired);
             var duplicateTransfer=transferKey!=null && c.UsageTransferReceipts.ContainsKey(transferKey);
             var delta = Number(frame["usageDeltaMs"]);
-            if (!duplicateTransfer && delta != 0 && (!frame.ContainsKey("usageDeltaAnchorMs") || Number(frame["usageDeltaAnchorMs"]) == c.Anchor)) { if(c.Scalars["rollingLimit"]?.GetValueKind()!=JsonValueKind.True) CountBudgetSnooze(c,c.Usage,delta,now); c.Usage = Math.Max(0, c.Usage + delta); c.UsageSeeded = true; }
+            if (!duplicateTransfer && firstConfig && frame.ContainsKey("usageMs") && (c.JoiningSeedFloor <= 0 || Number(frame["usageResetAtMs"]) >= c.JoiningSeedFloor))
+            {
+                c.JoiningUsageBase = Math.Max(c.JoiningUsageBase ?? Math.Max(0,c.Usage-c.JoiningUsageDelta),Number(frame["usageMs"]));
+                c.Usage = Math.Max(0,c.JoiningUsageBase.Value+c.JoiningUsageDelta);
+                c.UsageSeeded=true;
+            }
+            if (!duplicateTransfer && delta != 0 && (!frame.ContainsKey("usageDeltaAnchorMs") || Number(frame["usageDeltaAnchorMs"]) == c.Anchor)) { if(c.Scalars["rollingLimit"]?.GetValueKind()!=JsonValueKind.True) CountBudgetSnooze(c,c.Usage,delta,now); c.Usage = Math.Max(0, c.Usage + delta); if(c.JoiningUsageBase.HasValue) c.JoiningUsageDelta+=delta; c.UsageSeeded = true; }
             else if (!duplicateTransfer && !c.UsageSeeded) c.Usage = Math.Max(c.Usage, Number(frame["usageMs"]));
             var rollingPolicy=new BlockGroup { ResetIntervalHours=Number(c.Scalars["resetIntervalHours"])>0 ? Number(c.Scalars["resetIntervalHours"]) : 24,ResetAtMidnight=c.Scalars["resetAtMidnight"]?.GetValueKind()==JsonValueKind.True };
             var rollingBefore=UsageBudget.UsedMs(UsageBudget.PruneBuckets(BucketValues(c.Buckets),rollingPolicy,now));
@@ -338,14 +352,26 @@ public sealed class ConnectionHub
             {
                 if(c.Scalars["rollingLimit"]?.GetValueKind()==JsonValueKind.True)
                     CountBudgetSnooze(c,rollingBefore,UsageBudget.UsedMs(UsageBudget.PruneBuckets(BucketValues(buckets),rollingPolicy,now)),now);
-                foreach (var (k, v) in buckets) c.Buckets[k] = Math.Max(0, Number(c.Buckets[k]) + Number(v)); c.BucketsSeeded = true;
+                foreach (var (k, v) in buckets) { c.Buckets[k] = Math.Max(0, Number(c.Buckets[k]) + Number(v)); if(c.JoiningBucketBase!=null) c.JoiningBucketDeltas[k]=Number(c.JoiningBucketDeltas[k])+Number(v); } c.BucketsSeeded = true;
             }
-            else if (!duplicateTransfer && !c.BucketsSeeded && frame["usageBucketsSeed"] is JsonObject seed) foreach (var (k, v) in seed) c.Buckets[k] = Math.Max(Number(c.Buckets[k]), Number(v));
+            if (!duplicateTransfer && frame["usageBucketsSeed"] is JsonObject seed)
+            {
+                if(firstConfig && (c.JoiningSeedFloor<=0 || Number(frame["usageResetAtMs"])>=c.JoiningSeedFloor))
+                {
+                    c.JoiningBucketBase ??= (JsonObject)c.Buckets.DeepClone();
+                    foreach(var (k,v) in seed) { c.JoiningBucketBase[k]=Math.Max(Number(c.JoiningBucketBase[k]),Number(v)); c.Buckets[k]=Math.Max(0,Number(c.JoiningBucketBase[k])+Number(c.JoiningBucketDeltas[k])); }
+                    c.BucketsSeeded=true;
+                }
+                else if(!c.BucketsSeeded) foreach (var (k, v) in seed) c.Buckets[k] = Math.Max(Number(c.Buckets[k]), Number(v));
+            }
             var cutoff = now - (Math.Max(Number(c.Scalars["resetIntervalHours"]), 24) * 3_600_000 + 60_000);
             foreach (var key in c.Buckets.Select(k => k.Key).Where(k => !double.TryParse(k, out var n) || n <= cutoff).ToList()) c.Buckets.Remove(key);
+            foreach(var values in new[]{c.JoiningBucketBase,c.JoiningBucketDeltas}) if(values!=null) foreach(var key in values.Select(k=>k.Key).Where(k=>!double.TryParse(k,out var n) || n<=cutoff).ToList()) values.Remove(key);
             if (Number(frame["snoozeTs"]) > c.SnoozeTimestamp) { CountSnooze(c, now, true); c.SnoozeTimestamp = Number(frame["snoozeTs"]); c.Snooze = frame["snooze"] is JsonObject snooze ? (JsonObject)snooze.DeepClone() : new(); }
             CountSnooze(c, now, false);
             if(transferKey!=null) c.UsageTransferReceipts[transferKey]=now;
+            if(carriesConfig) c.Contributed.Add(program);
+            if(c.Members.Keys.All(c.Contributed.Contains)) ClearJoiningUsage(c);
             Persist();
         }
         BroadcastClusters();
@@ -371,8 +397,11 @@ public sealed class ConnectionHub
         if (c.Anchor <= 0 || c.Scalars["rollingLimit"]?.GetValueKind() == JsonValueKind.True) return;
         var group = new BlockGroup { ResetIntervalHours = Number(c.Scalars["resetIntervalHours"]), ResetAtMidnight = c.Scalars["resetAtMidnight"]?.GetValueKind() == JsonValueKind.True };
         var start = UsageBudget.PeriodStartMs(c.Anchor, group, DateTimeOffset.Now.ToUnixTimeMilliseconds());
-        if (start == c.Anchor) return; c.Anchor = start; c.Usage = 0; c.UsageSeeded = true;
+        if (start == c.Anchor) return; c.Anchor = start; c.Usage = 0; c.UsageSeeded = true; ResetJoiningUsage(c);
     }
+    private static void BeginJoiningUsage(Cluster c) { c.JoiningUsageBase=c.Usage; c.JoiningUsageDelta=0; c.JoiningBucketBase=(JsonObject)c.Buckets.DeepClone(); c.JoiningBucketDeltas=new(); c.JoiningSeedFloor=0; }
+    private static void ClearJoiningUsage(Cluster c) { c.JoiningUsageBase=null; c.JoiningUsageDelta=0; c.JoiningBucketBase=null; c.JoiningBucketDeltas=new(); c.JoiningSeedFloor=0; }
+    private static void ResetJoiningUsage(Cluster c) { if(c.JoiningUsageBase.HasValue) { BeginJoiningUsage(c); c.JoiningSeedFloor=c.Anchor; } }
     public void ReportLocalUsage(string groupId, double deltaMs, double resetAtMs, double? seedMs = null, IReadOnlyDictionary<double, double>? bucketDeltas = null, IReadOnlyDictionary<double, double>? seedBuckets = null)
     {
         var frame = new JsonObject { ["usageResetAtMs"] = resetAtMs, ["usageDeltaMs"] = deltaMs };
@@ -395,16 +424,17 @@ public sealed class ConnectionHub
         foreach (var g in groups.OfType<JsonObject>())
         {
             var gid = Text(g["id"]); Cluster? c; lock (_gate) c = Find(LocalProgram, gid); if (c == null) continue;
-            if(document["groupSnoozes"]?[gid] is JsonObject snooze && SnoozeChanged(snooze)>c.SnoozeTimestamp)
+            var joined=c.Contributed.Contains(LocalProgram);
+            if(joined && document["groupSnoozes"]?[gid] is JsonObject snooze && SnoozeChanged(snooze)>c.SnoozeTimestamp)
                 ApplySync(LocalProgram,gid,new() { ["snooze"]=snooze.DeepClone(),["snoozeTs"]=SnoozeChanged(snooze),["ts"]=0 });
             var scalars = new JsonObject(); foreach (var field in ScalarFields) if (g.ContainsKey(field)) scalars[field] = g[field]?.DeepClone();
             var lockUnit = new JsonObject(); if(g.ContainsKey("lockVersion")) foreach (var field in LockFields) lockUnit[field]=g[field]?.DeepClone();
             var definition = scalars.ToJsonString() + g["scopes"]?.ToJsonString() + lockUnit.ToJsonString();
             var previous = _seenDefinitions.GetValueOrDefault(gid); if(previous==definition) continue; _seenDefinitions[gid]=definition;
-            var joined=c.Contributed.Contains(LocalProgram);
             if(joined && previous==null) continue;
             if(joined && scalars.ToJsonString()==c.Scalars.ToJsonString() && g["scopes"]?.ToJsonString()==c.Scopes.ToJsonString() && (lockUnit.Count==0 || lockUnit.ToJsonString()==c.Lock.ToJsonString())) continue;
             var frame = new JsonObject { ["scalars"]=scalars,["scopes"]=new JsonArray((g["scopes"] as JsonArray ?? new()).OfType<JsonObject>().Where(l=>Text(l["surface"])=="apps").Select(l=>l.DeepClone()).ToArray()),["ts"]=joined ? DateTimeOffset.Now.ToUnixTimeMilliseconds() : 0 };
+            if(!joined) { frame["usageMs"]=document["usageTimersMs"]?[gid]?.DeepClone() ?? JsonValue.Create(0); frame["usageResetAtMs"]=document["usageResetAtMs"]?[gid]?.DeepClone() ?? JsonValue.Create(DateTimeOffset.Now.ToUnixTimeMilliseconds()); if(document["usageBucketsMs"]?[gid] is JsonObject originalBuckets) frame["usageBucketsSeed"]=originalBuckets.DeepClone(); }
             if(lockUnit.Count>0) { frame["lock"]=lockUnit; frame["lockBase"]=Number(g["lockSyncedVersion"]); }
             ApplySync(LocalProgram,gid,frame);
         }
@@ -415,14 +445,15 @@ public sealed class ConnectionHub
             {
                 var gid = Text(g["id"]); var c = Find(LocalProgram, gid);
                 if (c == null) { if (_unlinkedLocal.Remove(gid) && g["scopes"] is JsonArray s) g["scopes"] = new JsonArray(s.OfType<JsonObject>().Where(l => Text(l["surface"]) == "apps").Select(l => l.DeepClone()).ToArray()); continue; }
-                foreach (var (k, v) in c.Scalars) g[k] = v?.DeepClone();
+                var localContributed=c.Contributed.Contains(LocalProgram);
+                if(localContributed) foreach (var (k, v) in c.Scalars) g[k] = v?.DeepClone();
                 if (c.Members.Keys.All(c.Contributed.Contains)) g["scopes"] = c.Scopes.DeepClone();
                 if(c.SnoozeTimestamp>0 && c.Snooze.Count>0 && c.SnoozeTimestamp>SnoozeChanged(root["groupSnoozes"]?[gid])) { var snoozes=root["groupSnoozes"] as JsonObject ?? new(); root["groupSnoozes"]=snoozes; snoozes[gid]=c.Snooze.DeepClone(); }
                 if(c.SnoozeTotal>0) { var totals=root["groupSnoozeTotalsMs"] as JsonObject ?? new(); root["groupSnoozeTotalsMs"]=totals; totals[gid]=c.SnoozeTotal; }
-                foreach (var (k, v) in c.Lock) g[k] = v?.DeepClone();
-                if (c.Lock.Count > 0) g["lockSyncedVersion"] = c.Lock["lockVersion"]?.DeepClone();
+                if(localContributed) foreach (var (k, v) in c.Lock) g[k] = v?.DeepClone();
+                if (localContributed && c.Lock.Count > 0) g["lockSyncedVersion"] = c.Lock["lockVersion"]?.DeepClone();
                 var currentLock = new JsonObject(); if(g.ContainsKey("lockVersion")) foreach(var field in LockFields) currentLock[field]=g[field]?.DeepClone();
-                _seenDefinitions[gid] = new JsonObject(ScalarFields.Where(g.ContainsKey).Select(k => KeyValuePair.Create(k, g[k]?.DeepClone()))).ToJsonString() + g["scopes"]?.ToJsonString() + currentLock.ToJsonString();
+                if(localContributed) _seenDefinitions[gid] = new JsonObject(ScalarFields.Where(g.ContainsKey).Select(k => KeyValuePair.Create(k, g[k]?.DeepClone()))).ToJsonString() + g["scopes"]?.ToJsonString() + currentLock.ToJsonString();
             }
         });
     }
@@ -447,7 +478,7 @@ public sealed class ConnectionHub
             StorageSchema.AtomicWrite(Storage.ClustersPath, StorageSchema.Wrap(JsonSerializer.SerializeToNode(_clusters.Values)!, "hub.clusters").ToJsonString());
         } catch { _clusterStorageWritable = false; }
     }
-    private void Restore() { lock (_gate) { if (_clusters.Count > 0 || !File.Exists(Storage.ClustersPath)) return; try { foreach (var c in StorageSchema.Payload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!, "hub.clusters").Deserialize<List<Cluster>>() ?? []) if (c.Members.Count >= 2 && c.Members.All(m => m.Value.Length > 0 && LocalHubAuthentication.Programs.Contains(m.Key))) _clusters[c.Id] = c; } catch { _clusterStorageWritable = false; } } }
+    private void Restore() { lock (_gate) { if (_clusters.Count > 0 || !File.Exists(Storage.ClustersPath)) return; try { foreach (var c in StorageSchema.Payload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!, "hub.clusters").Deserialize<List<Cluster>>() ?? []) if (c.Members.Count >= 2 && c.Members.All(m => m.Value.Length > 0 && LocalHubAuthentication.Programs.Contains(m.Key))) { if(c.Members.Keys.All(c.Contributed.Contains)) ClearJoiningUsage(c); else if(!c.JoiningUsageBase.HasValue) BeginJoiningUsage(c); _clusters[c.Id] = c; } } catch { _clusterStorageWritable = false; } } }
     private static double Number(JsonNode? node) => node?.GetValueKind() == JsonValueKind.Number && double.TryParse(node.ToJsonString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value) && double.IsFinite(value) ? value : 0;
     private static string Text(JsonNode? node) => node?.GetValueKind() == JsonValueKind.String ? node.GetValue<string>() : "";
 }

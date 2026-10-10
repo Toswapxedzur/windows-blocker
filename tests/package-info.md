@@ -12,6 +12,9 @@ can also run on mini1 macOS and do not establish Windows runtime acceptance.
   `--hub-only` runs actual managed first-link union, multi-browser joining,
   explicit deletion, fixed/rolling offline-transfer deduplication and restart
   receipts against disposable storage without invoking Windows process APIs.
+  It also checks unequal first-link usage in both contribution orders and both
+  initiators, rolling history, postjoin deltas, interrupted joining/restart,
+  native original storage contribution and nested third-browser joins.
 - `NativeHostContracts/` — actual signed browser/system intermediary verification and denial of nonbrowser proof callers.
 - `browser-native-host.py` — genuine guest Edge/Chrome proof, program binding, frame bounds, process ancestry and authenticated extension tunnel through the canonical CDP driver.
 - `browser-worker-parity.py` — actual YouTube collector/private pill/pending cover, production model, correction, ordinary app outage/reconnect and native Activity privacy through that driver.
