@@ -38,7 +38,8 @@ public sealed class ConnectionHub
     {
         public readonly Guid Id = Guid.NewGuid();
         public readonly WebSocket Socket = socket;
-        public readonly SemaphoreSlim SendLock = new(1);
+        public readonly object SendGate = new();
+        public Task SendTail = Task.CompletedTask;
         public readonly string Challenge = LocalHubAuthentication.Challenge();
         public string Program = "";
         public bool Connected;
@@ -132,12 +133,15 @@ public sealed class ConnectionHub
                 if (!peer.Connected)
                 {
                     var reason = kind == "hello" ? HelloRejectionReason(message, peer.Challenge, LocalHubAuthentication.Secret()) : "authentication-required";
-                    lock (_gate) if (reason == null && _peers.Values.Any(p => p.Id != peer.Id && p.Connected && p.Program == Text(message["program"]))) reason = "duplicate-program";
+                    Task? initial=null;
+                    lock(_gate)
+                    {
+                        if(reason==null && _peers.Values.Any(p=>p.Id!=peer.Id && p.Connected && p.Program==Text(message["program"]))) reason="duplicate-program";
+                        if(reason==null) { peer.Program=Text(message["program"]);peer.Connected=true;initial=QueueWelcome(peer); }
+                    }
                     if (reason != null) { await Reject(peer, reason); return; }
-                    peer.Program = Text(message["program"]); peer.Connected = true;
-                    await SendAsync(peer, new() { ["kind"] = "welcome", ["v"] = ProtocolVersion, ["hubProgram"] = LocalProgram, ["peers"] = PeerList(), ["usageTransferReceipts"] = true });
-                    await SendAsync(peer, new() { ["kind"] = "clusters", ["clusters"] = JsonNode.Parse(ClustersJson())?["clusters"]?.DeepClone(), ["rosters"] = JsonNode.Parse(ClustersJson())?["rosters"]?.DeepClone() });
-                    Broadcast(new() { ["kind"] = "peers", ["peers"] = PeerList() }); continue;
+                    await initial!;
+                    BroadcastPeers(); continue;
                 }
                 switch (kind)
                 {
@@ -217,12 +221,28 @@ public sealed class ConnectionHub
             if (message["body"] is JsonObject body) pending.Reply.TrySetResult((JsonObject)body.DeepClone()); else pending.Reply.TrySetException(new InvalidOperationException(Text(message["error"])));
         }
     }
-    private async Task SendAsync(Peer peer, JsonObject message)
+    private Task SendAsync(Peer peer, JsonObject message)
     {
-        await peer.SendLock.WaitAsync();
-        try { if (peer.Socket.State == WebSocketState.Open) await peer.Socket.SendAsync(Encoding.UTF8.GetBytes(message.ToJsonString()), WebSocketMessageType.Text, true, CancellationToken.None); }
-        catch { Remove(peer); }
-        finally { peer.SendLock.Release(); }
+        var bytes=Encoding.UTF8.GetBytes(message.ToJsonString());
+        // Never execute the write/remove callback inline while SendGate is held:
+        // removing a failed peer acquires the hub gate in the opposite direction.
+        lock(peer.SendGate)
+            return peer.SendTail=peer.SendTail.ContinueWith(async _ => {
+                try { if(peer.Socket.State==WebSocketState.Open) await peer.Socket.SendAsync(bytes,WebSocketMessageType.Text,true,CancellationToken.None); }
+                catch { Remove(peer); }
+            },CancellationToken.None,TaskContinuationOptions.None,TaskScheduler.Default).Unwrap();
+    }
+    private Task QueueWelcome(Peer peer)
+    {
+        lock(_gate)
+        {
+            var welcome=SendAsync(peer,new() { ["kind"]="welcome",["v"]=ProtocolVersion,["hubProgram"]=LocalProgram,["peers"]=PeerList(),["usageTransferReceipts"]=true });
+            var frame=ClustersFrame();
+#if VAULT_CONTRACT_TESTS
+            ClusterSnapshotCapturedForTests?.Invoke("welcome");
+#endif
+            return Task.WhenAll(welcome,SendAsync(peer,frame));
+        }
     }
     private async Task Reject(Peer peer, string reason)
     {
@@ -238,9 +258,20 @@ public sealed class ConnectionHub
             _rosters.Remove(peer.Program);
             foreach (var pending in _browserRequests.Values.Where(p => p.PeerId == peer.Id)) pending.Reply.TrySetException(new InvalidOperationException("browser-unavailable"));
         }
-        peer.Socket.Dispose(); Broadcast(new() { ["kind"] = "peers", ["peers"] = PeerList() }); BroadcastRosters(); BroadcastClusters();
+        peer.Socket.Dispose(); BroadcastPeers(); BroadcastRosters(); BroadcastClusters();
     }
-    private void Broadcast(JsonObject frame) { List<Peer> peers; lock (_gate) peers = _peers.Values.Where(p => p.Connected).ToList(); foreach (var p in peers) _ = SendAsync(p, frame); }
+    private void Broadcast(JsonObject frame) { lock (_gate) foreach (var p in _peers.Values.Where(p => p.Connected)) _ = SendAsync(p, frame); }
+    private void BroadcastPeers()
+    {
+        lock(_gate)
+        {
+            var frame=new JsonObject { ["kind"]="peers",["peers"]=PeerList() };
+#if VAULT_CONTRACT_TESTS
+            ClusterSnapshotCapturedForTests?.Invoke("peers");
+#endif
+            Broadcast(frame);
+        }
+    }
     private JsonArray PeerList()
     {
         lock (_gate)
@@ -277,7 +308,18 @@ public sealed class ConnectionHub
         }});
         BroadcastRosters(); BroadcastClusters();
     }
-    private void BroadcastRosters() { var r = new JsonObject(); lock (_gate) foreach (var (p, groups) in _rosters) r[p] = groups.DeepClone(); Broadcast(new() { ["kind"] = "rosters", ["rosters"] = r }); }
+    private void BroadcastRosters()
+    {
+        lock(_gate)
+        {
+            var r=new JsonObject();foreach(var (p,groups) in _rosters)r[p]=groups.DeepClone();
+            var frame=new JsonObject { ["kind"]="rosters",["rosters"]=r };
+#if VAULT_CONTRACT_TESTS
+            ClusterSnapshotCapturedForTests?.Invoke("rosters");
+#endif
+            Broadcast(frame);
+        }
+    }
     private Cluster? Find(string program, string groupId) => _clusters.Values.FirstOrDefault(c => c.Members.GetValueOrDefault(program) == groupId && groupId.Length > 0);
     public string? Link(string program, string groupId, string targetProgram, string targetGroupId)
     {
@@ -650,8 +692,23 @@ public sealed class ConnectionHub
         ((JsonObject)snapshot["shared"]!)["usageTransferReceipts"]=JsonSerializer.SerializeToNode(c.UsageTransferReceipts);
         return snapshot;
     }
-    public string ClustersJson() { lock (_gate) return new JsonObject { ["clusters"]=new JsonArray(_clusters.Values.Select(c => (JsonNode)Snapshot(c)).ToArray()),["rosters"]=new JsonObject(_rosters.Select(r=>new KeyValuePair<string,JsonNode?>(r.Key,r.Value.DeepClone()))) }.ToJsonString(); }
-    private void BroadcastClusters() { lock (_gate) foreach (var c in _clusters.Values) Broadcast(new() { ["kind"] = "cluster-updated", ["cluster"] = Snapshot(c) }); Broadcast(new() { ["kind"] = "clusters", ["clusters"] = JsonNode.Parse(ClustersJson())?["clusters"]?.DeepClone(), ["rosters"] = JsonNode.Parse(ClustersJson())?["rosters"]?.DeepClone() }); }
+    private JsonObject ClustersFrame() => new() { ["kind"]="clusters",["clusters"]=new JsonArray(_clusters.Values.Select(c => (JsonNode)Snapshot(c)).ToArray()),["rosters"]=new JsonObject(_rosters.Select(r=>new KeyValuePair<string,JsonNode?>(r.Key,r.Value.DeepClone()))) };
+    public string ClustersJson() { lock (_gate) { var frame=ClustersFrame();frame.Remove("kind");return frame.ToJsonString(); } }
+#if VAULT_CONTRACT_TESTS
+    internal Action<string>? ClusterSnapshotCapturedForTests;
+#endif
+    private void BroadcastClusters()
+    {
+        lock(_gate)
+        {
+            foreach(var c in _clusters.Values) Broadcast(new() { ["kind"]="cluster-updated",["cluster"]=Snapshot(c) });
+            var frame=ClustersFrame();
+#if VAULT_CONTRACT_TESTS
+            ClusterSnapshotCapturedForTests?.Invoke("broadcast");
+#endif
+            Broadcast(frame);
+        }
+    }
     private bool _clusterStorageWritable = true;
     private void Persist()
     {

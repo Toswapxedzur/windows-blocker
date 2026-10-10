@@ -16,10 +16,20 @@ function Assert-VaultDictionaryWorker($Manifest) {
     # These shared worker files existed before Activity MCP routing. Presence
     # alone cannot establish that the bundled worker implements the new route.
     $accepted=Get-Content (Join-Path $PSScriptRoot 'required-worker-sources.json') -Raw|ConvertFrom-Json
+    $paths=@('Sources/VaultClassifierApp/VaultClassifierWorkerActivity.swift','Sources/VaultClassifierApp/VaultClassifierWorkerService.swift')
+    if($accepted.classifierRevision -isnot [string] -or $accepted.classifierRevision -notmatch '^[0-9a-fA-F]{40}$' -or @($accepted.sources).Count -ne $paths.Count) {
+        throw 'Invalid accepted worker requirements table; restore the reviewed table before rebuilding or launching.'
+    }
+    foreach($path in $paths) {
+        $requirements=@($accepted.sources | Where-Object { $_.path -eq $path })
+        if($requirements.Count -ne 1 -or $requirements[0].path -isnot [string] -or $requirements[0].path -cne $path -or $requirements[0].sha256 -isnot [string] -or $requirements[0].sha256 -notmatch '^[0-9a-fA-F]{64}$') {
+            throw 'Invalid accepted worker requirements table; restore the reviewed table before rebuilding or launching.'
+        }
+    }
     foreach($source in $accepted.sources) {
         $record=@($Manifest.sources | Where-Object { $_.path -eq $source.path })
-        if($record.Count -ne 1 -or $record[0].path -cne $source.path -or $record[0].sha256 -notmatch '^[0-9a-fA-F]{64}$' -or
-            $record[0].sha256.ToLowerInvariant() -ne $source.sha256) {
+        if($record.Count -ne 1 -or $record[0].path -isnot [string] -or $record[0].path -cne $source.path -or $record[0].sha256 -isnot [string] -or $record[0].sha256 -notmatch '^[0-9a-fA-F]{64}$' -or
+            $record[0].sha256.ToLowerInvariant() -ne $source.sha256.ToLowerInvariant()) {
             throw "Classifier worker lacks the accepted Activity MCP backend; rebuild from the accepted shared source. Incompatible provenance: $($source.path)"
         }
     }
