@@ -65,4 +65,21 @@ mappedAction["data"]!["paused"]=false;
 Check(actionArguments["data"]!["paused"]!.GetValue<bool>() && ClassifierMcpRequest.Create("classifier_action",new JsonObject{["action"]="state"})["data"] is JsonObject {Count:0}, "Classifier mapping leaves caller arguments intact and supplies omitted action data");
 var unknownRefused=false;try {ClassifierMcpRequest.Create("unknown-tool",new());}catch(InvalidOperationException ex){unknownRefused=ex.Message=="unknown-tool";}
 Check(unknownRefused,"Unknown Classifier tools cannot silently return a successful state response");
-Console.WriteLine($"{count} MCP connector/proxy/Classifier contracts passed");
+var publicTools = JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "mcp-tools.json")))!.AsArray();
+var activityTools = publicTools.OfType<JsonObject>().Select(t => t["name"]!.GetValue<string>()).Where(n => n.Contains("activity_group", StringComparison.Ordinal)).ToArray();
+Check(activityTools.Length > 0 && activityTools.All(ActivityMcpRequest.Handles), "Every advertised Activity-group tool selects dedicated routing from the shipped catalog");
+foreach (var tool in activityTools)
+{
+    var arguments = new JsonObject { ["name"] = "Group 中文", ["merge"] = false, ["members"] = new JsonArray("app|fixture"), ["move"] = true };
+    var request = ActivityMcpRequest.Create(tool, arguments);
+    Check(ActivityMcpRequest.Handles(tool) && request["kind"]!.GetValue<string>() == "mcp" && request["tool"]!.GetValue<string>() == tool,
+        "Advertised Activity tool selects its dedicated shared-store MCP handler: " + tool);
+    Check(request["arguments"]!.ToJsonString() == arguments.ToJsonString(), "Activity arguments reach canonical validation unchanged: " + tool);
+    request["arguments"]!["members"]![0] = "app|changed";
+    Check(arguments["members"]![0]!.GetValue<string>() == "app|fixture", "Activity dispatch deep-clones caller arguments: " + tool);
+}
+Check(!ActivityMcpRequest.Handles("classifier_state") && !ActivityMcpRequest.Handles("save_activity_group_extra"), "Activity routing cannot capture other tools or similar prefixes");
+var activityUnknownRefused = false;
+try { ActivityMcpRequest.Create("unknown-tool", new()); } catch (InvalidOperationException ex) { activityUnknownRefused = ex.Message == "unknown-tool"; }
+Check(activityUnknownRefused, "Unknown Activity tools refuse successful fallback responses");
+Console.WriteLine($"{count} MCP connector/proxy/Classifier/Activity contracts passed");
