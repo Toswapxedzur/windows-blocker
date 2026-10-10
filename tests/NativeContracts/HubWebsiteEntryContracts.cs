@@ -25,6 +25,19 @@ static class HubWebsiteEntryContracts
         var before=Environment.GetEnvironmentVariable("VAULT_STORAGE_ROOT");
         var root=Path.Combine(Path.GetTempPath(),"vault-website-contracts-"+Guid.NewGuid());
         try {
+            var reviewFailures=new List<Exception>();
+            try {
+                Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT",Path.Combine(root,Guid.NewGuid().ToString()));var hub=new ConnectionHub();Roster(hub,"chrome","c");Roster(hub,"edge","e");hub.Link("chrome","c","edge","e");
+                var explicitKey=Alias("edge","e","site");hub.ApplySync("chrome","c",Frame(Site("first.example")));hub.ApplySync("edge","e",Frame(Site("safe.example",true),Site("explicit.example",false,"pause",explicitKey)));
+                Check(Lines(hub).Count==3 && Lines(hub).Any(l=>Key(l!)==explicitKey && ((JsonArray)l!["sites"]!)[0]!.GetValue<string>()=="explicit.example") && Lines(hub).Any(l=>Key(l!)==explicitKey+"_2" && ((JsonArray)l!["sites"]!)[0]!.GetValue<string>()=="safe.example"),"Review regression: generated alias reserves future explicit identities in same original contribution");
+            } catch(Exception ex) { Console.WriteLine("FAIL "+ex.Message);reviewFailures.Add(ex); }
+            var badOrigins=new[]{new JsonObject{["apps"]="chrome\0c\0site"},new JsonObject{["site"]= "chrome\0c"},new JsonObject{["site"]="chrome\0c\0site\0extra"},new JsonObject{["site"]="chrome\0\0site"},new JsonObject{["site"]="windowsapp\0w\0site"},new JsonObject{["site"]="classifier\0c\0site"},new JsonObject{["site"]="chrome\0"+new string('x',129)+"\0site"}};
+            foreach(var bad in badOrigins) try {
+                Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT",Path.Combine(root,Guid.NewGuid().ToString()));var hub=new ConnectionHub();Roster(hub,"chrome","c");Roster(hub,"edge","e");hub.Link("chrome","c","edge","e");hub.ApplySync("chrome","c",Frame(Site("first.example")));
+                var saved=JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!;saved["value"]![0]!["scopeOrigins"]=bad.DeepClone();File.WriteAllText(Storage.ClustersPath,saved.ToJsonString());var bytes=File.ReadAllText(Storage.ClustersPath);
+                hub=Restart();Roster(hub,"chrome","c");Roster(hub,"edge","e");Check(hub.Link("chrome","c","edge","e")=="unsupported-storage" && File.ReadAllText(Storage.ClustersPath)==bytes,"Review regression: malformed Website provenance key/parts/program refuses writes "+bad.ToJsonString());
+            } catch(Exception ex) { Console.WriteLine("FAIL "+ex.Message);reviewFailures.Add(ex); }
+            if(reviewFailures.Count>0) throw new AggregateException(reviewFailures);
             foreach(var nativeInitiates in new[]{false,true}) foreach(var initiatorLast in new[]{false,true}) foreach(var restart in new[]{false,true})
             {
                 Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT",Path.Combine(root,Guid.NewGuid().ToString()));
@@ -80,6 +93,11 @@ static class HubWebsiteEntryContracts
                 Check(Lines(hub).Count==2 && Lines(hub).Any(l=>Key(l!)==expected),"Absent legacy origin map retains old incompatible branch with stable cluster fallback");
                 var origins=(JsonObject)JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!["value"]![0]!["scopeOrigins"]!;
                 Check(!origins.ContainsKey(expected) && origins["site"]!.GetValue<string>()=="chrome\0c\0site","Legacy fallback never fabricates member provenance");
+            }
+            Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT",Path.Combine(root,Guid.NewGuid().ToString())); {
+                var hub=new ConnectionHub();Roster(hub,"chrome","c");Roster(hub,"edge","e");hub.Link("chrome","c","edge","e");var alias=Alias("edge","e","site");
+                hub.ApplySync("chrome","c",Frame(Site("first.example"),Site("same.example",true,"block",alias)));hub.ApplySync("edge","e",Frame(Site("same.example",true)));
+                Check(Lines(hub).Count==2 && Lines(hub).Any(l=>Key(l!)==alias),"Matching occupied computed alias deduplicates exact Website behavior without reminting");
             }
             Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT",Path.Combine(root,Guid.NewGuid().ToString())); {
                 var hub=new ConnectionHub();foreach(var pair in new[]{("chrome","c"),("edge","e"),("safari","s")}) Roster(hub,pair.Item1,pair.Item2);
