@@ -1,4 +1,4 @@
-param([string]$Repository=(Resolve-Path "$PSScriptRoot\..\..").Path)
+param([string]$Repository=(Resolve-Path "$PSScriptRoot\..\..").Path,[string]$OldWorkerManifest='')
 $ErrorActionPreference='Stop'
 $temporary=Join-Path $env:TEMP ('Vault-Package-Guards-'+[Guid]::NewGuid().ToString('N'))
 $count=0
@@ -39,6 +39,34 @@ try {
     Refuses { & "$Repository\scripts\development\run-windows-vault.ps1" -ClassifierWorkerDirectory $worker -Dotnet 'must-not-run.exe' } 'predates the dictionary feature' 'Launcher refuses a stale worker before build or process changes'
     Refuses { & "$Repository\scripts\release\package-windows-vault.ps1" -ClassifierWorkerDirectory $worker -OutputDirectory (Join-Path $temporary 'stale-package') -Dotnet 'must-not-run.exe' } 'predates the dictionary feature' 'Packager refuses a stale worker before output changes'
     if(Test-Path (Join-Path $temporary 'stale-package')){throw 'Stale worker refusal created a package'}
+    . "$Repository\scripts\classifier-worker\dictionary-worker-guard.ps1"
+    $accepted=Get-Content "$Repository\scripts\classifier-worker\required-worker-sources.json" -Raw|ConvertFrom-Json
+    $dictionary=@('Sources/VaultClassifierCore/OfficialDictionary.swift','Sources/VaultClassifierCore/DictionaryDiskStore.swift','Sources/VaultClassifierApp/OfficialDictionaryService.swift','Sources/VaultClassifierApp/VaultClassifierViewModel+Dictionaries.swift')
+    $sources=@($dictionary | ForEach-Object { @{path=$_;sha256=('0'*64)} }) + @($accepted.sources | ForEach-Object { @{path=$_.path;sha256=$_.sha256.ToUpperInvariant()} })
+    Assert-VaultDictionaryWorker @{sources=$sources};$count++;Write-Output 'PASS Accepted Activity fingerprints allow uppercase manifest hashes'
+    foreach($kind in @('missing','duplicate','duplicate-case-path','tampered','invalid-hash','wrong-case-path')) {
+        $records=@($sources | ForEach-Object { @{path=$_.path;sha256=$_.sha256} })
+        $path=$accepted.sources[0].path
+        switch($kind) {
+            'missing' { $records=@($records | Where-Object {$_.path -ne $path}) }
+            'duplicate' { $records+=@{path=$path;sha256=$accepted.sources[0].sha256} }
+            'duplicate-case-path' { $records+=@{path=$path.ToUpperInvariant();sha256=$accepted.sources[0].sha256} }
+            'tampered' { ($records | Where-Object {$_.path -eq $path}).sha256='0'*64 }
+            'invalid-hash' { ($records | Where-Object {$_.path -eq $path}).sha256='not-a-hash' }
+            'wrong-case-path' { ($records | Where-Object {$_.path -eq $path}).path=$path.ToUpperInvariant() }
+        }
+        Refuses { Assert-VaultDictionaryWorker @{sources=$records} } 'accepted Activity MCP backend' "Activity provenance refuses $kind records"
+    }
+    if($OldWorkerManifest) {
+        $old=Get-Content $OldWorkerManifest -Raw|ConvertFrom-Json
+        if($old.classifierRevision -ne 'b0f1fb89f4039370c3ec5eb8ae29159d760bda61'){throw 'Expected the preserved actual pre-Activity worker manifest'}
+        Assert-VaultDictionaryWorker @{sources=@($old.sources | Where-Object {$_.path -notlike '*VaultClassifierWorkerActivity.swift' -and $_.path -notlike '*VaultClassifierWorkerService.swift'}) + @($accepted.sources)}
+        Refuses { Assert-VaultDictionaryWorker $old } 'accepted Activity MCP backend' 'Actual preserved b0f1 worker manifest refuses new Activity routing'
+        $old|ConvertTo-Json -Depth 8|Set-Content "$worker\bundle-manifest.json"
+        Refuses { & "$Repository\scripts\development\run-windows-vault.ps1" -ClassifierWorkerDirectory $worker -Dotnet 'must-not-run.exe' } 'accepted Activity MCP backend' 'Launcher refuses actual pre-Activity manifest before build or process changes'
+        Refuses { & "$Repository\scripts\release\package-windows-vault.ps1" -ClassifierWorkerDirectory $worker -OutputDirectory (Join-Path $temporary 'old-activity-package') -Dotnet 'must-not-run.exe' } 'accepted Activity MCP backend' 'Packager refuses actual pre-Activity manifest before output changes'
+        if(Test-Path (Join-Path $temporary 'old-activity-package')){throw 'Old Activity worker refusal created a package'}
+    }
     if((Get-Content "$unrelated\keep.txt" -Raw).Trim() -ne 'keep existing files' -or (Test-Path $target)){throw 'Refused operation mutated fixture destination'}
     Write-Output "$count package/installer guards passed"
 } finally { Remove-Item $temporary -Recurse -Force }
