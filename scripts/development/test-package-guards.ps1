@@ -44,6 +44,31 @@ try {
     $dictionary=@('Sources/VaultClassifierCore/OfficialDictionary.swift','Sources/VaultClassifierCore/DictionaryDiskStore.swift','Sources/VaultClassifierApp/OfficialDictionaryService.swift','Sources/VaultClassifierApp/VaultClassifierViewModel+Dictionaries.swift')
     $sources=@($dictionary | ForEach-Object { @{path=$_;sha256=('0'*64)} }) + @($accepted.sources | ForEach-Object { @{path=$_.path;sha256=$_.sha256.ToUpperInvariant()} })
     Assert-VaultDictionaryWorker @{sources=$sources};$count++;Write-Output 'PASS Accepted Activity fingerprints allow uppercase manifest hashes'
+    $guardCopy=Join-Path $temporary 'guard';New-Item -ItemType Directory $guardCopy|Out-Null
+    Copy-Item "$Repository\scripts\classifier-worker\dictionary-worker-guard.ps1" $guardCopy
+    $requirementsPath=Join-Path $guardCopy 'required-worker-sources.json'
+    . "$guardCopy\dictionary-worker-guard.ps1"
+    foreach($kind in @('empty','missing-sources','missing-file','malformed','wrong-path','duplicate-path','invalid-hash','array-hash','invalid-revision','array-revision')) {
+        $table=($accepted|ConvertTo-Json -Depth 6|ConvertFrom-Json)
+        switch($kind) {
+            'empty' { $table.sources=@() }
+            'missing-sources' { $table=[pscustomobject]@{classifierRevision=$accepted.classifierRevision} }
+            'missing-file' { }
+            'malformed' { }
+            'wrong-path' { $table.sources[0].path='Sources/unknown.swift' }
+            'duplicate-path' { $table.sources[1].path=$table.sources[0].path }
+            'invalid-hash' { $table.sources[0].sha256='invalid' }
+            'array-hash' { $table.sources[0].sha256=@($table.sources[0].sha256) }
+            'invalid-revision' { $table.classifierRevision='invalid' }
+            'array-revision' { $table.classifierRevision=@($table.classifierRevision) }
+        }
+        $table|ConvertTo-Json -Depth 6|Set-Content $requirementsPath
+        if($kind -eq 'missing-file'){Remove-Item $requirementsPath}
+        if($kind -eq 'malformed'){Set-Content $requirementsPath '{'}
+        $refused=$false;try { Assert-VaultDictionaryWorker @{sources=$sources} }catch{$refused=$true}
+        if(!$refused){throw "Requirements table accepted $kind"};$count++;Write-Output "PASS Requirements table refuses $kind"
+    }
+    . "$Repository\scripts\classifier-worker\dictionary-worker-guard.ps1"
     foreach($kind in @('missing','duplicate','duplicate-case-path','tampered','invalid-hash','wrong-case-path')) {
         $records=@($sources | ForEach-Object { @{path=$_.path;sha256=$_.sha256} })
         $path=$accepted.sources[0].path
