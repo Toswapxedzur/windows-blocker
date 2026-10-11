@@ -372,6 +372,7 @@ public sealed partial class ConnectionHub
     {
         lock (_gate)
         {
+            if (_editorStorageHeld) return "editor-storage-partial-failure; storage repair required";
             if (!_clusterStorageWritable) return "unsupported-storage";
             if (program == targetProgram || groupId.Length == 0 || targetGroupId.Length == 0) return "invalid-link";
             var a = _rosters.GetValueOrDefault(program)?.OfType<JsonObject>().FirstOrDefault(g => Text(g["id"]) == groupId);

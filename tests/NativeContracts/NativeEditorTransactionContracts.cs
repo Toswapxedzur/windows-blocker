@@ -118,7 +118,8 @@ internal static class NativeEditorTransactionContracts
                 Check(Refuses(() => store.Update(doc => doc["usageTimersMs"] = new JsonObject { ["w"] = 99 }), "editor-storage-partial-failure"), "Runtime-like Update bypassed storage hold");
                 Check(Refuses(() => store.Merge(new JsonObject { ["groupSnoozes"] = new JsonObject() }), "editor-storage-partial-failure"), "Runtime-like Merge bypassed storage hold");
                 Check(Refuses(() => hub.ReconcileLocal(store), "editor-storage-partial-failure") && Refuses(() => hub.ApplySync("chrome", "c", Frame(42, 3)), "editor-storage-partial-failure"), "Ordinary hub mutation bypassed hold");
-                Check(actual.SequenceEqual(File.ReadAllBytes(store.FilePath)) && capture.RegistryBytes!.SequenceEqual(File.ReadAllBytes(RegistryPath)), "Held runtime/hub writer clobbered retained disk bytes"); Check(socket.Sends == 0, "Refused editor stage emitted an outgoing frame"); return Task.CompletedTask;
+                Check(actual.SequenceEqual(File.ReadAllBytes(store.FilePath)) && capture.RegistryBytes!.SequenceEqual(File.ReadAllBytes(RegistryPath)), "Held runtime/hub writer clobbered retained disk bytes");
+                Check(hub.Link("chrome", "c", "windowsapp", "w")?.Contains("editor-storage-partial-failure") == true, "Direct link bypassed partial storage hold"); Check(socket.Sends == 0, "Refused editor stage emitted an outgoing frame"); return Task.CompletedTask;
             });
             await Case("editor-delete-cleans-rule-state-and-linked-member", () => {
                 var (store, hub) = Seed(); var capture = hub.CaptureEditor(store); hub.CommitEditor(store, capture, new JsonArray());
