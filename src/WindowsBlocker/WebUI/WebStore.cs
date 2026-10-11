@@ -77,7 +77,9 @@ public sealed class WebStore
         {
             var raw = LoadRawJson() ?? throw new InvalidDataException("Missing local storage; saved links are preserved.");
             var root = JsonNode.Parse(raw) as JsonObject ?? throw new InvalidDataException("Invalid local storage; saved links are preserved.");
-            StorageSchema.ValidateWeb(root);
+            try { StorageSchema.ValidateWeb(root); }
+            catch (Exception ex) when (ex is InvalidOperationException or FormatException or OverflowException)
+            { throw new InvalidDataException("Invalid local storage metadata; saved links are preserved.", ex); }
             if (root["blockedGroups"] is not JsonArray groups)
                 throw new InvalidDataException("Missing or invalid blocking groups; saved links are preserved.");
             var ids = new HashSet<string>(StringComparer.Ordinal);
