@@ -87,8 +87,18 @@ Operations:
   `native-sample` accrues monotonic foreground app time. Recording stays opt-in.
 - `hostEvent`: `{kind:"flush"}` flushes native Activity and queued state writes.
 
-On shutdown the host requests `hostEvent/flush`, closes stdin and waits briefly
-before terminating an unresponsive worker. The executable always starts the full
+On shutdown the host stops admitting producers, drains already admitted JSONL
+writes, closes stdin, and waits for the exact child to exit. It does not request
+a flush reply before EOF. An unresponsive child is terminated only as an
+explicitly reported abnormal fallback. The executable always starts the full
 production engine/research service. Unit tests inject their hermetic engines
 directly through the shared service initializer. Process fixtures run the actual
 production worker with isolated host support paths and no provider consent.
+
+C# transport validation on Mini2 alt1 (2026-10-11, source `fe39502`): the
+identical EOF-order fixture fails on `4af20cf` and passes on the candidate with
+all 32 admitted observations; 11 worker-client controls, 236 native contracts,
+35 MCP contracts and 29 packaging guards pass. WPF and the native host compile
+without warnings/errors. These hermetic transport/build checks do not establish
+normal Quit, recording-OFF or inference cancellation with a rebuilt shared Swift
+worker; that installed acceptance remains separate.
