@@ -1,7 +1,8 @@
 using System.Text.Json.Nodes;
 using WindowsBlocker.Bridge;
 Environment.SetEnvironmentVariable("VAULT_ENVIRONMENT","development");
-Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT",Path.Combine(Path.GetTempPath(),"vault-order-contract-"+Guid.NewGuid()));
+var storageRoot=Path.Combine(Path.GetTempPath(),"vault-order-contract-"+Guid.NewGuid());
+Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT",storageRoot);
 var path=Path.Combine(Path.GetTempPath(),"vault-order-proof-"+Guid.NewGuid()+".json");
 try
 {
@@ -19,4 +20,14 @@ try
     if(!actual.SequenceEqual(Enumerable.Range(0,32).Select(i=>"观察"+i)))throw new Exception("An admitted observation was lost/reordered before EOF");
     Console.WriteLine("PASS Exact EOF-order regression preserves32 admitted observations without flush prerequisite");
 }
-finally {if(File.Exists(path))File.Delete(path);}
+finally
+{
+    // Preserve measured EOF/flush-attempt evidence before removing the exact
+    // randomly owned fixture paths. This runs for baseline failure too.
+    try {if(args.Length>1 && File.Exists(path))File.Copy(path,args[1],false);}
+    finally
+    {
+        if(File.Exists(path))File.Delete(path);
+        if(Directory.Exists(storageRoot))Directory.Delete(storageRoot,true);
+    }
+}
