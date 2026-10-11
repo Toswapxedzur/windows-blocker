@@ -473,6 +473,7 @@ public partial class MainWindow : Window
             // produces this tick's set for the next pass (≤1s latency).
             _hub.ReconcileLocal(_store);
             if(_runtime!=null && await _policy.SettleSnoozesAsync()) { _hub.ReconcileLocal(_store); PushNativeStore(); }
+            if (_closingFlush) return;
             McpConnectionsMenu.Header = NativeLanguage.Text("windows.connections.menu", "AI connections…");
             NativeMenu.FlowDirection = NativeLanguage.Language == "ar" ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
             if (JsonNode.Parse(_store.LoadRawJson() ?? "{}") is JsonObject quickAddStore) _quickAdd?.Reload(quickAddStore);
