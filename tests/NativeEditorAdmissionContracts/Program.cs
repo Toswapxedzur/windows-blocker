@@ -74,16 +74,19 @@ internal static class Program
             await Case("stale-apps24-retains-rich-linked-state-and-sites", async () => {
                 var (store, hub, tools) = Seed(); var view = Group(store);
                 hub.SetRoster("safari", new JsonArray(new JsonObject { ["id"] = "s" })); Check(hub.Link("safari", "s", "windowsapp", "w") == null, "Third member refused");
-                // Different first-contribution behavior creates a retained alias; Safari stays un-contributed so joining ledgers remain populated.
-                // An acknowledged browser replacement can carry the explicit independent Website branch.
-                var current = Shared(hub); var sites = current["scopes"]!.AsArray(); sites.Add(new JsonObject { ["surface"] = "site", ["id"] = "site-2", ["entryID"] = "site:linked_0123456789abcdef01234567", ["sites"] = new JsonArray("safe.example"), ["sitesExcept"] = true, ["action"] = "pause" });
+                // The real incompatible first contribution mints the alias and source origin.
+                hub.ApplySync("safari", "s", Frame(20, 0, new JsonArray(Site("safe.example", true))));
+                var current = Shared(hub); var sites = current["scopes"]!.AsArray();
                 var update = Frame(24, DateTimeOffset.Now.ToUnixTimeMilliseconds(), (JsonArray)sites.DeepClone());
                 hub.ApplySync("chrome", "c", update);
                 var anchor = Shared(hub)["usageResetAtMs"]!.GetValue<double>(); var now = DateTimeOffset.Now.ToUnixTimeMilliseconds(); var bucket = now.ToString();
                 hub.ApplySync("chrome", "c", new JsonObject { ["usageDeltaMs"] = 1234, ["usageDeltaAnchorMs"] = anchor, ["usageBuckets"] = new JsonObject { [bucket] = 321 }, ["usageTransferId"] = "fixture-transfer", ["snoozeTs"] = now,
                     ["snooze"] = new JsonObject { ["kind"] = "budget", ["startsAtMs"] = now, ["untilMs"] = now + 300000, ["extraMs"] = 300000, ["changedAtMs"] = now } });
+                // A fourth, not-yet-contributed browser retains real nonempty joining bases plus subsequent deltas.
+                hub.SetRoster("edge", new JsonArray(new JsonObject { ["id"] = "e" })); Check(hub.Link("edge", "e", "windowsapp", "w") == null, "Fourth member refused");
+                hub.ApplySync("chrome", "c", new JsonObject { ["usageDeltaMs"] = 88, ["usageDeltaAnchorMs"] = anchor, ["usageBuckets"] = new JsonObject { [bucket] = 22 }, ["usageTransferId"] = "fixture-transfer-after-join" });
                 var before = RegistryCluster();
-                Check(before["JoiningUsageBase"] != null && before["JoiningUsageDelta"]!.GetValue<double>() > 0 && before["JoiningBucketDeltas"]!.AsObject().Count > 0 && before["UsageTransferReceipts"]!.AsObject().Count > 0 && before["scopeOrigins"]!.AsObject().Count > 0 && before["Snooze"]!.AsObject().Count > 0 && before["Anchor"]!.GetValue<double>() > 0, "Rich fixture was empty");
+                Check(before["JoiningUsageBase"]!.GetValue<double>() > 0 && before["JoiningUsageDelta"]!.GetValue<double>() > 0 && before["JoiningBucketBase"]!.AsObject().Count > 0 && before["JoiningBucketDeltas"]!.AsObject().Count > 0 && before["UsageTransferReceipts"]!.AsObject().Count > 0 && before["scopeOrigins"]!.AsObject().Any(pair => pair.Value!.GetValue<string>().StartsWith("safari\0s\0")) && before["Snooze"]!.AsObject().Count > 0 && before["Anchor"]!.GetValue<double>() > 0, "Rich fixture was empty or lacked a genuine incompatible origin");
                 var request = await Request(view, g => g["scopes"]![0]!["apps"] = new JsonArray(new JsonObject { ["id"] = "C:\\Fixture\\new.exe", ["name"] = "New app" }));
                 var reply = await tools.ApplyEditorRequest(request); var saved = reply["groups"]![0]!;
                 Check(reply["ok"]!.GetValue<bool>() && saved["allowedMinutes"]!.GetValue<double>() == 24, "Stale Apps edit restored20");
