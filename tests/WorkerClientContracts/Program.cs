@@ -2,7 +2,10 @@ using System.Diagnostics;
 using System.Text.Json.Nodes;
 using WindowsBlocker.Bridge;
 Environment.SetEnvironmentVariable("VAULT_ENVIRONMENT","development");
-Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT",Path.Combine(Path.GetTempPath(),"vault-worker-contracts-"+Guid.NewGuid()));
+var storageRoot=Path.Combine(Path.GetTempPath(),"vault-worker-contracts-"+Guid.NewGuid());
+Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT",storageRoot);
+try
+{
 using var client=new ClassifierWorkerClient(args[0]);
 var unicode="标签 café 🔒";
 var roundtrip=await client.Request("echo",new JsonObject { ["text"]=unicode });
@@ -89,3 +92,11 @@ using(var failedExit=new ClassifierWorkerClient(args[0]))
     if(result.Kind!=WorkerShutdownKind.Failed || result.ExitCode!=9 || result.Clean)throw new Exception("Nonzero worker exit was hidden as successful persistence");
 }
 Console.WriteLine("PASS Nonzero worker exit remains explicit failure");
+
+}
+finally
+{
+    // All using-owned clients are disposed before the exact fixture root is
+    // removed, including exceptional contract failures.
+    if(Directory.Exists(storageRoot))Directory.Delete(storageRoot,true);
+}
