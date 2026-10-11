@@ -91,10 +91,10 @@ internal static class Program
                 var request = await Request(view, g => g["scopes"]!.AsArray().OfType<JsonObject>().Single(s => s["surface"]!.GetValue<string>() == "apps")["apps"] = new JsonArray(new JsonObject { ["id"] = "C:\\Fixture\\new.exe", ["name"] = "New app" }));
                 var reply = await tools.ApplyEditorRequest(request); var saved = reply["groups"]![0]!;
                 Check(reply["ok"]!.GetValue<bool>() && saved["allowedMinutes"]!.GetValue<double>() == 24, "Stale Apps edit restored20");
-                Check(Shared(hub)["scopes"]!.AsArray().OfType<JsonObject>().Count(s => s["surface"]!.GetValue<string>() == "site") == 2 && saved["scopes"]!.AsArray().OfType<JsonObject>().Single(s => s["surface"]!.GetValue<string>() == "apps")["apps"]![0]!["id"]!.GetValue<string>().EndsWith("new.exe"), "Precise Apps or authoritative Website retention failed");
-                Check(JsonNode.DeepEquals(Runtime(before), Runtime(RegistryCluster())), "Configuration edit lost populated linked runtime/ledger state");
                 Console.WriteLine(new JsonObject { ["kind"] = "rich-state", ["before"] = Runtime(before), ["after"] = Runtime(RegistryCluster()), ["saved"] = saved.DeepClone() }.ToJsonString());
-                var authoritative = Shared(hub)["scopes"]!.AsArray().OfType<JsonObject>().ToArray();
+                var authoritative = RegistryCluster()["Scopes"]!.AsArray().OfType<JsonObject>().ToArray();
+                Check(authoritative.Count(s => s["surface"]!.GetValue<string>() == "site") == 2 && saved["scopes"]!.AsArray().OfType<JsonObject>().Single(s => s["surface"]!.GetValue<string>() == "apps")["apps"]![0]!["id"]!.GetValue<string>().EndsWith("new.exe"), "Precise Apps or authoritative Website retention failed");
+                Check(JsonNode.DeepEquals(Runtime(before), Runtime(RegistryCluster())), "Configuration edit lost populated linked runtime/ledger state");
                 Check(authoritative.Single(s => s["surface"]!.GetValue<string>() == "apps")["apps"]![0]!["id"]!.GetValue<string>().EndsWith("new.exe") && authoritative.Any(s => s["entryID"]?.GetValue<string>()?.StartsWith("site:linked_") == true && s["sitesExcept"]!.GetValue<bool>() && s["sites"]![0]!.GetValue<string>() == "safe.example"), "Shared Apps or genuine exclusion alias lost");
                 hub.ApplySync("edge", "e", Frame(24, 0)); hub.ReconcileLocal(store);
                 Check(JsonNode.DeepEquals(Group(store)["scopes"], Shared(hub)["scopes"]) && Group(store)["scopes"]!.AsArray().OfType<JsonObject>().Count(s => s["surface"]!.GetValue<string>() == "site") == 2, "Final contribution did not adopt the complete Website union");
