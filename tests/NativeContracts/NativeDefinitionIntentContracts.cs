@@ -109,6 +109,12 @@ internal static class NativeDefinitionIntentContracts
                 var (store,hub)=Seed(false);hub.ApplySync("chrome","c",Frame(24,2));Edit(store,"allowedMinutes",JsonValue.Create(30));hub.ReconcileLocal(store);
                 Check(Allowance(hub)==30 && StoredAllowance(store)==30,"Successful native write before first reconcile was discarded as startup stale storage");return Task.CompletedTask;
             });
+            await Case("future-schema-refuses-hub-mutation",()=> {
+                var (store,hub)=Seed();var before=hub.ClustersJson();var doc=JsonNode.Parse(store.LoadRawJson()!)!.AsObject();
+                doc["schemaVersion"]=99;doc["blockedGroups"]![0]!["allowedMinutes"]=30;File.WriteAllText(store.FilePath,doc.ToJsonString());var bytes=File.ReadAllText(store.FilePath);
+                try {hub.ReconcileLocal(store);}catch(InvalidDataException){}
+                Check(hub.ClustersJson()==before && File.ReadAllText(store.FilePath)==bytes,"Future storage altered shared definition before refusing physical write");return Task.CompletedTask;
+            });
             await Case("malformed-nested-scopes-refused",()=> {
                 var (store,hub)=Seed();var before=hub.ClustersJson();Edit(store,"scopes",JsonValue.Create("broken"));var bytes=File.ReadAllText(store.FilePath);
                 try {hub.ReconcileLocal(store);}catch(InvalidDataException){}
@@ -116,7 +122,7 @@ internal static class NativeDefinitionIntentContracts
             });
         }
         finally {Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT",previousRoot);Directory.Delete(parent,true);}
-        Console.WriteLine($"Native definition intent cases: {9-failures.Count} passed, {failures.Count} failed");
+        Console.WriteLine($"Native definition intent cases: {10-failures.Count} passed, {failures.Count} failed");
         if(failures.Count>0)throw new Exception("Native definition intent failures: "+string.Join(", ",failures));
     }
 }
