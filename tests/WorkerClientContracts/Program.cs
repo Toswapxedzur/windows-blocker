@@ -43,7 +43,7 @@ Console.WriteLine("PASS Healthy worker EOF/exit reported distinctly from fallbac
 
 // The old client sends native-flush before EOF and gets stuck in this exact
 // fixture. The new client must close stdin without requesting a flush reply.
-var evidence=Path.Combine(Path.GetTempPath(),"vault-worker-shutdown-"+Guid.NewGuid()+".json");
+var evidence=Path.Combine(storageRoot,"shutdown-proof.json");
 using(var closing=new ClassifierWorkerClient(args[0]))
 {
     await closing.Request("shutdown-proof",new JsonObject{["path"]=evidence,["flushHang"]=true});
@@ -65,17 +65,15 @@ using(var closing=new ClassifierWorkerClient(args[0]))
     closing.Dispose();
     if(closing.LastShutdownResult?.Kind!=WorkerShutdownKind.CleanExit)throw new Exception("Dispose altered a clean lifecycle outcome");
 }
-File.Delete(evidence);
 Console.WriteLine("PASS EOF drains admitted FIFO frames, avoids hanging flush, and rejects restart after stop");
 
-var failedEvidence=Path.Combine(Path.GetTempPath(),"vault-worker-fallback-"+Guid.NewGuid()+".json");
+var failedEvidence=Path.Combine(storageRoot,"fallback-proof.json");
 using(var failed=new ClassifierWorkerClient(args[0]))
 {
     await failed.Request("shutdown-proof",new JsonObject{["path"]=failedEvidence,["hangOnEof"]=true});
     var outcome=await failed.ShutdownAsync();
-    if(outcome.Kind!=WorkerShutdownKind.ForcedTermination || outcome.Clean || outcome.Error!="classifier-worker-shutdown-timeout")throw new Exception("Timed-out EOF was mislabeled clean or forced fallback was hidden");
+    if(outcome.Kind!=WorkerShutdownKind.ForcedTermination || outcome.Clean || outcome.ExitCode==null || outcome.Error!="classifier-worker-shutdown-timeout")throw new Exception("Timed-out EOF was mislabeled clean or forced fallback was hidden");
 }
-if(File.Exists(failedEvidence))File.Delete(failedEvidence);
 Console.WriteLine("PASS Unresponsive EOF fallback is explicit and cannot report clean exit");
 
 using(var neverStarted=new ClassifierWorkerClient(args[0]))
@@ -98,5 +96,17 @@ finally
 {
     // All using-owned clients are disposed before the exact fixture root is
     // removed, including exceptional contract failures.
-    if(Directory.Exists(storageRoot))Directory.Delete(storageRoot,true);
+    try
+    {
+        if(args.Length>1)
+        {
+            Directory.CreateDirectory(args[1]);
+            foreach(var name in new[]{"shutdown-proof.json","fallback-proof.json"})
+            {
+                var source=Path.Combine(storageRoot,name);
+                if(File.Exists(source))File.Copy(source,Path.Combine(args[1],name),false);
+            }
+        }
+    }
+    finally {if(Directory.Exists(storageRoot))Directory.Delete(storageRoot,true);}
 }
