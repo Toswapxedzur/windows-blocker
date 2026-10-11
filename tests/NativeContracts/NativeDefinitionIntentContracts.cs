@@ -109,6 +109,53 @@ internal static class NativeDefinitionIntentContracts
                 var (store,hub)=Seed(false);hub.ApplySync("chrome","c",Frame(24,2));Edit(store,"allowedMinutes",JsonValue.Create(30));hub.ReconcileLocal(store);
                 Check(Allowance(hub)==30 && StoredAllowance(store)==30,"Successful native write before first reconcile was discarded as startup stale storage");return Task.CompletedTask;
             });
+            await Case("native30-then-apps-on-newer-shared",()=> {
+                var (store,hub)=Seed();Edit(store,"allowedMinutes",JsonValue.Create(30));hub.ReconcileLocal(store);
+                var newer=Frame(30,DateTimeOffset.Now.ToUnixTimeMilliseconds()+1);hub.ApplySync("chrome","c",newer);
+                Edit(store,"scopes",new JsonArray(new JsonObject { ["surface"]="apps", ["apps"]=new JsonArray() }));hub.ReconcileLocal(store);
+                Check(Allowance(hub)==30 && StoredAllowance(store)==30,"Apps clear erased previous native allowance30");return Task.CompletedTask;
+            });
+            await Case("object-key-order-does-not-publish",()=> {
+                var (store,hub)=Seed();hub.ApplySync("chrome","c",Frame(24,2));hub.ReconcileLocal(store);var ts=Shared(hub)["ts"]!.GetValue<double>();
+                store.Update(doc=> {var g=doc["blockedGroups"]![0]!.AsObject();var pairs=g.Reverse().Select(k=>KeyValuePair.Create(k.Key,k.Value?.DeepClone())).ToArray();doc["blockedGroups"]![0]=new JsonObject(pairs);});
+                hub.ReconcileLocal(store);Check(Shared(hub)["ts"]!.GetValue<double>()==ts && Allowance(hub)==24,"Object property ordering was mistaken for native edit");return Task.CompletedTask;
+            });
+            await Case("unchanged-usage-and-rule-state-preserved",()=> {
+                var (store,hub)=Seed();store.Merge(new JsonObject { ["cbRuleState"]=new JsonObject { ["w"]=new JsonObject { ["count"]=7 } } });
+                hub.ReportLocalUsage("w",1234,Shared(hub)["usageResetAtMs"]!.GetValue<double>());hub.ApplySync("chrome","c",Frame(20,2));
+                Edit(store,"enabled",JsonValue.Create(false));hub.ReconcileLocal(store);
+                var doc=JsonNode.Parse(store.LoadRawJson()!)!;Check(doc["cbRuleState"]!["w"]!["count"]!.GetValue<int>()==7 && Shared(hub)["usageMs"]!.GetValue<double>()==1234,"Non-budget intent damaged usage/custom-rule state");return Task.CompletedTask;
+            });
+            await Case("scalar-removal-is-explicit-intent",()=> {
+                var (store,hub)=Seed();Edit(store,"fallbackUrl",JsonValue.Create("https://example.com/"));hub.ReconcileLocal(store);hub.ApplySync("chrome","c",Frame(24,DateTimeOffset.Now.ToUnixTimeMilliseconds()+1));
+                store.Update(doc=>doc["blockedGroups"]![0]!.AsObject().Remove("fallbackUrl"));hub.ReconcileLocal(store);
+                Check(!Local(store).ContainsKey("fallbackUrl") && !Shared(hub)["scalars"]!.AsObject().ContainsKey("fallbackUrl") && Allowance(hub)==24,"Scalar clear republished stale allowance or failed to remove value");return Task.CompletedTask;
+            });
+            await Case("matching-lock-cas-applied",()=> {
+                var (store,hub)=Seed();var frame=Frame(20,2);frame["lock"]=new JsonObject { ["lockVersion"]=1 };hub.ApplySync("chrome","c",frame);hub.ReconcileLocal(store);
+                store.Update(doc=> {doc["blockedGroups"]![0]!["lockVersion"]=2;doc["blockedGroups"]![0]!["parentalPasswordHash"]="fixture";});hub.ReconcileLocal(store);
+                Check(Shared(hub)["lock"]!["lockVersion"]!.GetValue<double>()==2 && Local(store)["lockSyncedVersion"]!.GetValue<double>()==2,"Matching lock CAS lost native atomic lock unit");return Task.CompletedTask;
+            });
+            await Case("stale-lock-cas-rejected",()=> {
+                var (store,hub)=Seed();var first=Frame(20,2);first["lock"]=new JsonObject { ["lockVersion"]=1 };hub.ApplySync("chrome","c",first);hub.ReconcileLocal(store);
+                var newer=Frame(24,3);newer["lock"]=new JsonObject { ["lockVersion"]=3, ["parentalPasswordHash"]="remote" };newer["lockBase"]=1;hub.ApplySync("chrome","c",newer);
+                Edit(store,"lockVersion",JsonValue.Create(2));hub.ReconcileLocal(store);
+                Check(Allowance(hub)==24 && Shared(hub)["lock"]!["lockVersion"]!.GetValue<double>()==3 && Local(store)["lockSyncedVersion"]!.GetValue<double>()==3,"Stale lock CAS overwrote current lock or unrelated browser allowance");return Task.CompletedTask;
+            });
+            await Case("missing-canonical-file-refused",()=> {
+                var (store,hub)=Seed();var before=hub.ClustersJson();File.Delete(store.FilePath);var refused=false;
+                try {hub.ReconcileLocal(store);}catch(InvalidDataException){refused=true;}
+                Check(refused && !File.Exists(store.FilePath) && hub.ClustersJson()==before,"Missing canonical file fabricated empty roster/adoption");return Task.CompletedTask;
+            });
+            await Case("same-owner-reattach-does-not-reset-intent",()=> {
+                var (store,hub)=Seed(false);Edit(store,"allowedMinutes",JsonValue.Create(30));hub.ReconcileLocal(store);hub.ReconcileLocal(store);
+                Check(Allowance(hub)==30 && StoredAllowance(store)==30,"Same-owner reconciliation recaptured changed raw as startup baseline");return Task.CompletedTask;
+            });
+            await Case("mixed-scope-array-refused",()=> {
+                var (store,hub)=Seed();var before=hub.ClustersJson();Edit(store,"scopes",new JsonArray(Apps(),JsonValue.Create("broken")));var bytes=File.ReadAllText(store.FilePath);var refused=false;
+                try {hub.ReconcileLocal(store);}catch(InvalidDataException){refused=true;}
+                Check(refused && hub.ClustersJson()==before && File.ReadAllText(store.FilePath)==bytes,"Mixed nested scopes mutated canonical state");return Task.CompletedTask;
+            });
             await Case("future-schema-refuses-hub-mutation",()=> {
                 var (store,hub)=Seed();var before=hub.ClustersJson();var doc=JsonNode.Parse(store.LoadRawJson()!)!.AsObject();
                 doc["schemaVersion"]=99;doc["blockedGroups"]![0]!["allowedMinutes"]=30;File.WriteAllText(store.FilePath,doc.ToJsonString());var bytes=File.ReadAllText(store.FilePath);
@@ -122,7 +169,7 @@ internal static class NativeDefinitionIntentContracts
             });
         }
         finally {Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT",previousRoot);Directory.Delete(parent,true);}
-        Console.WriteLine($"Native definition intent cases: {10-failures.Count} passed, {failures.Count} failed");
+        Console.WriteLine($"Native definition intent cases: {19-failures.Count} passed, {failures.Count} failed");
         if(failures.Count>0)throw new Exception("Native definition intent failures: "+string.Join(", ",failures));
     }
 }
