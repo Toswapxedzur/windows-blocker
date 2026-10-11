@@ -6,52 +6,87 @@ using WindowsBlocker.WebUI;
 
 namespace WindowsBlocker.Bridge;
 
+public enum WorkerShutdownKind { AlreadyStopped, CleanExit, Failed, ForcedTermination }
+public sealed record WorkerShutdownResult(WorkerShutdownKind Kind, int? ExitCode = null, string? Error = null)
+{
+    public bool Clean => Kind is WorkerShutdownKind.AlreadyStopped or WorkerShutdownKind.CleanExit;
+}
+
 // The bundled shared Swift backend runs as the same unelevated user. Its
 // stdout is only framed JSONL; stderr goes to developer diagnostics.
 public sealed class ClassifierWorkerClient : IDisposable
 {
-    private sealed record Pending(Process Process,TaskCompletionSource<JsonNode?> Completion);
-    private readonly ConcurrentDictionary<string,Pending> _pending = new();
-    private readonly SemaphoreSlim _write = new(1);
-    private Process? _process;
+    private sealed class Session(Process process)
+    {
+        public Process Process { get; } = process;
+        public StreamWriter Input { get; } = process.StandardInput;
+        public Task Writes { get; set; } = Task.CompletedTask;
+        public string? WriteError { get; set; }
+        public TaskCompletionSource<WorkerShutdownResult> Exit { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+    private sealed record Pending(Session Session, TaskCompletionSource<JsonNode?> Completion);
+    private readonly ConcurrentDictionary<string, Pending> _pending = new();
     private readonly object _gate = new();
+    private Session? _session;
+    private Task<WorkerShutdownResult>? _shutdown;
+    private bool _stopping;
+    private bool _disposed;
+    public WorkerShutdownResult? LastShutdownResult { get; private set; }
     public event Action<JsonObject>? Event;
     private readonly string? _executablePath;
-    public ClassifierWorkerClient(string? executablePath=null) => _executablePath=executablePath;
+    public ClassifierWorkerClient(string? executablePath = null) => _executablePath = executablePath;
+
     public async Task<JsonNode?> Request(string operation, JsonObject data)
     {
-        var process=EnsureStarted();
-        var id = Guid.NewGuid().ToString(); var completion = new TaskCompletionSource<JsonNode?>(TaskCreationOptions.RunContinuationsAsynchronously); _pending[id] = new(process,completion);
+        var id = Guid.NewGuid().ToString();
+        var completion = new TaskCompletionSource<JsonNode?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Session session;
+        Task write;
+        // Admission and FIFO enqueue are one critical section. Shutdown captures
+        // this tail, so every admitted frame is written before stdin EOF.
+        lock (_gate)
+        {
+            if (_stopping || _disposed) throw new InvalidOperationException("classifier-worker-stopping");
+            var frame = new JsonObject { ["id"] = id, ["operation"] = operation, ["data"] = data.DeepClone() }.ToJsonString();
+            session = EnsureStarted();
+            _pending[id] = new(session, completion);
+            write = session.Writes = session.Writes.ContinueWith(async _ =>
+            {
+                try { await session.Input.WriteLineAsync(frame); await session.Input.FlushAsync(); }
+                catch (Exception ex) { lock (_gate) session.WriteError ??= ex.Message; throw; }
+            }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default).Unwrap();
+        }
         try
         {
-            await _write.WaitAsync();
-            try { await process.StandardInput.WriteLineAsync(new JsonObject { ["id"] = id, ["operation"] = operation, ["data"] = data.DeepClone() }.ToJsonString()); await process.StandardInput.FlushAsync(); }
-            finally { _write.Release(); }
-            return await completion.Task.WaitAsync(TimeSpan.FromSeconds(operation is "action" or "mcp" ? 120 : operation=="hub" ? 30 : 20));
+            await write;
+            return await completion.Task.WaitAsync(TimeSpan.FromSeconds(operation is "action" or "mcp" ? 120 : operation == "hub" ? 30 : 20));
         }
         finally { _pending.TryRemove(id, out _); }
     }
-    private Process EnsureStarted()
+
+    // Caller holds _gate. Only the reader owns Process disposal, under this gate.
+    private Session EnsureStarted()
     {
-        lock (_gate)
-        {
-            if (_process is { HasExited:false }) return _process;
-            var exe = _executablePath ?? Path.Combine(AppContext.BaseDirectory, "ClassifierWorker", "VaultClassifierWorker.exe");
-            if (!File.Exists(exe)) throw new InvalidOperationException("classifier-worker-unavailable");
-            var start = new ProcessStartInfo(exe) { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true, StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8, WorkingDirectory = Path.GetDirectoryName(exe)! };
-            start.Environment["VAULT_STORAGE_APP_VERSION"] = WindowsBlocker.Core.StorageSchema.AppVersion;
-            start.Environment["VAULT_ENVIRONMENT"] = Storage.Development ? "development" : "production";
-            start.Environment["ADAMANCIA_VAULT_ENVIRONMENT"] = Storage.Development ? "development" : "production";
-            start.Environment["VAULT_DATA_ROOT"] = Path.Combine(Storage.RootDirectory, "Classifier");
-            _process = Process.Start(start) ?? throw new InvalidOperationException("classifier-worker-launch-failed");
-            var process = _process;
-            _ = ReadAsync(process);
-            _ = Task.Run(async () => { try { while (await process.StandardError.ReadLineAsync() is { } line) Trace.WriteLine("Classifier: " + line); } catch { } });
-            return process;
-        }
+        if (_session is { } current && !current.Process.HasExited) return current;
+        var exe = _executablePath ?? Path.Combine(AppContext.BaseDirectory, "ClassifierWorker", "VaultClassifierWorker.exe");
+        if (!File.Exists(exe)) throw new InvalidOperationException("classifier-worker-unavailable");
+        var start = new ProcessStartInfo(exe) { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true, StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8, WorkingDirectory = Path.GetDirectoryName(exe)! };
+        start.Environment["VAULT_STORAGE_APP_VERSION"] = WindowsBlocker.Core.StorageSchema.AppVersion;
+        start.Environment["VAULT_ENVIRONMENT"] = Storage.Development ? "development" : "production";
+        start.Environment["ADAMANCIA_VAULT_ENVIRONMENT"] = Storage.Development ? "development" : "production";
+        start.Environment["VAULT_DATA_ROOT"] = Path.Combine(Storage.RootDirectory, "Classifier");
+        var process = Process.Start(start) ?? throw new InvalidOperationException("classifier-worker-launch-failed");
+        var session = new Session(process);
+        _session = session;
+        _ = Task.Run(() => ReadAsync(session));
+        _ = Task.Run(async () => { try { while (await process.StandardError.ReadLineAsync() is { } line) Trace.WriteLine("Classifier: " + line); } catch { } });
+        return session;
     }
-    private async Task ReadAsync(Process process)
+
+    private async Task ReadAsync(Session session)
     {
+        var process = session.Process;
+        string? error = null;
         try
         {
             while (await process.StandardOutput.ReadLineAsync() is { } line)
@@ -60,41 +95,120 @@ public sealed class ClassifierWorkerClient : IDisposable
                 if (JsonNode.Parse(line) is not JsonObject message) continue;
                 if (message["event"] != null)
                 {
-                    bool active; lock(_gate) active=_process==process;
-                    if(active)
+                    bool active; lock (_gate) active = _session == session;
+                    if (active)
                     {
-                        if(message["event"]?.GetValue<string>()=="error") Trace.WriteLine("Classifier background error: "+message["error"]?.GetValue<string>()+" ("+message["sourceEvent"]?.GetValue<string>()+")");
+                        if (message["event"]?.GetValue<string>() == "error") Trace.WriteLine("Classifier background error: " + message["error"]?.GetValue<string>() + " (" + message["sourceEvent"]?.GetValue<string>() + ")");
                         Event?.Invoke(message);
                     }
                     continue;
                 }
                 var id = message["id"]?.GetValue<string>() ?? "";
-                if (!_pending.TryGetValue(id,out var pending) || pending.Process!=process || !_pending.TryRemove(id,out _)) continue;
-                var completion=pending.Completion;
-                if (message["ok"]?.GetValue<bool>() == true) completion.TrySetResult(message["value"]?.DeepClone()); else completion.TrySetException(new InvalidOperationException(message["error"]?.GetValue<string>() ?? "classifier-worker-error"));
+                if (!_pending.TryGetValue(id, out var pending) || pending.Session != session || !_pending.TryRemove(id, out _)) continue;
+                if (message["ok"]?.GetValue<bool>() == true) pending.Completion.TrySetResult(message["value"]?.DeepClone());
+                else pending.Completion.TrySetException(new InvalidOperationException(message["error"]?.GetValue<string>() ?? "classifier-worker-error"));
             }
         }
-        catch (Exception ex) { Trace.WriteLine("Classifier worker: " + ex.Message); }
+        catch (Exception ex) { error = ex.Message; Trace.WriteLine("Classifier worker: " + error); }
         finally
         {
-            foreach (var (id,pending) in _pending) if(pending.Process==process && _pending.TryRemove(id,out _)) pending.Completion.TrySetException(new InvalidOperationException("classifier-worker-stopped"));
-            lock(_gate) { if(_process==process) _process=null; process.Dispose(); }
+            foreach (var (id, pending) in _pending)
+                if (pending.Session == session && _pending.TryRemove(id, out _)) pending.Completion.TrySetException(new InvalidOperationException("classifier-worker-stopped"));
+            try
+            {
+                await process.WaitForExitAsync();
+                var code = process.ExitCode;
+                session.Exit.TrySetResult(new(error == null && code == 0 ? WorkerShutdownKind.CleanExit : WorkerShutdownKind.Failed, code, error));
+            }
+            catch (Exception ex) { session.Exit.TrySetResult(new(WorkerShutdownKind.Failed, Error: ex.Message)); }
+            lock (_gate) { if (_session == session) _session = null; process.Dispose(); }
         }
     }
-    public async Task ShutdownAsync()
+
+    public Task<WorkerShutdownResult> ShutdownAsync()
     {
-        if (_process is not { HasExited:false }) return;
+        lock (_gate)
+        {
+            if (_shutdown != null) return _shutdown;
+            _stopping = true;
+            var session = _session;
+            var writes = session?.Writes ?? Task.CompletedTask;
+            // Run outside producer locks/UI context. EOF is the shared worker's
+            // cooperative shutdown signal; do not wait for a flush reply first.
+            return _shutdown = Task.Run(() => ShutdownCoreAsync(session, writes));
+        }
+    }
+    private async Task<WorkerShutdownResult> ShutdownCoreAsync(Session? session, Task writes)
+    {
+        WorkerShutdownResult result;
+        if (session == null) result = new(WorkerShutdownKind.AlreadyStopped);
+        else
+        {
+            try
+            {
+                // Retain the existing abnormal-exit bound for a blocked pipe or
+                // child. EOF is not withheld waiting for any request reply.
+                await writes.WaitAsync(TimeSpan.FromSeconds(3));
+                lock (_gate)
+                {
+                    if (_session == session && !session.Exit.Task.IsCompleted) session.Input.Close();
+                }
+                result = await session.Exit.Task.WaitAsync(TimeSpan.FromSeconds(3));
+                if (session.WriteError != null) result = result with { Kind = WorkerShutdownKind.Failed, Error = session.WriteError };
+            }
+            catch (TimeoutException)
+            {
+                result = await ForcedResultAsync(session, "classifier-worker-shutdown-timeout");
+            }
+            catch (Exception ex)
+            {
+                // Failed writes cannot hide the EOF attempt. The worker can
+                // still flush already received data normally.
+                try { lock (_gate) { if (_session == session && !session.Exit.Task.IsCompleted) session.Input.Close(); } }
+                catch (Exception closeError) { Trace.WriteLine("Classifier EOF failed: " + closeError.Message); }
+                try { await session.Exit.Task.WaitAsync(TimeSpan.FromSeconds(3)); }
+                catch (TimeoutException)
+                {
+                    result = await ForcedResultAsync(session, ex.Message);
+                    LastShutdownResult = result;
+                    Trace.WriteLine($"Classifier shutdown: {result.Kind}; error={result.Error}");
+                    return result;
+                }
+                result = new(WorkerShutdownKind.Failed, Error: ex.Message);
+            }
+        }
+        LastShutdownResult = result;
+        Trace.WriteLine($"Classifier shutdown: {result.Kind}; exit={result.ExitCode}; error={result.Error}");
+        return result;
+    }
+    private async Task<WorkerShutdownResult> ForcedResultAsync(Session session, string error)
+    {
+        var killed = Terminate(session);
         try
         {
-            await Request("activity",new JsonObject { ["kind"] = "native-flush" }).WaitAsync(TimeSpan.FromSeconds(3));
-            await Request("hostEvent",new JsonObject { ["kind"] = "flush" }).WaitAsync(TimeSpan.FromSeconds(3));
-            _process.StandardInput.Close();
-            await _process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3));
+            var exit = await session.Exit.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            return new(killed ? WorkerShutdownKind.ForcedTermination : WorkerShutdownKind.Failed, exit.ExitCode, error);
         }
-        catch { }
+        catch (TimeoutException) { return new(killed ? WorkerShutdownKind.ForcedTermination : WorkerShutdownKind.Failed, Error: error + "; child-exit-unconfirmed"); }
+    }
+    private bool Terminate(Session session)
+    {
+        lock (_gate)
+        {
+            if (session.Exit.Task.IsCompleted || _session != session) return false;
+            try { if (!session.Process.HasExited) { session.Process.Kill(true); return true; } }
+            catch (Exception ex) { Trace.WriteLine("Classifier forced termination failed: " + ex.Message); }
+            return false;
+        }
     }
     public void Dispose()
     {
-        lock (_gate) { if (_process is { HasExited:false }) _process.Kill(true); _process?.Dispose(); _process = null; }
+        Session? session;
+        lock (_gate) { if (_disposed) return; _disposed = true; _stopping = true; session = _session; }
+        if (session != null && Terminate(session))
+        {
+            LastShutdownResult = new(WorkerShutdownKind.ForcedTermination, Error: "classifier-worker-disposed-before-clean-exit");
+            Trace.WriteLine("Classifier shutdown: forced termination during Dispose");
+        }
     }
 }

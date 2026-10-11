@@ -59,6 +59,15 @@ return an explicit error with the request ID rather than partial data. Backgroun
 event refusals report an `error` event. UI snapshots omit native-paged knowledge
 collections; the explicitly requested MCP `all` section retains full public state.
 
+Normal app Quit stops new producer/client admissions, writes already admitted
+frames before closing the private stdin pipe, then waits for the exact child.
+The shared worker's EOF shutdown owns cooperative classifier cancellation and
+Activity/state flush. Native shutdown reports clean exit, failure, and actual
+forced fallback separately; a timed-out or forced worker must not count as
+successful persistence acceptance. `WorkerShutdownOrderContracts` is the same
+EOF-order runner for the prior and current client; it deliberately stalls any
+pre-EOF flush reply and checks that admitted observations survive EOF.
+
 Operations:
 
 - `snapshot`: current Classifier scene state.
