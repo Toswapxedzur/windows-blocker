@@ -33,6 +33,43 @@ public sealed class NativePolicyTools(WebStore store, ConnectionHub hub, RuleEng
     {
         store.Update(doc => { var current = Group(doc,id); if (current.ToJsonString() != expected.ToJsonString()) throw new InvalidOperationException("store-changed-retry"); var groups = Groups(doc); var index = groups.IndexOf(current); groups[index] = replacement.DeepClone(); });
     }
+    public async Task<JsonObject> ApplyEditorRequest(JsonObject request)
+    {
+        await _mutation.WaitAsync();
+        try
+        {
+            var capture = hub.CaptureEditor(store);
+            var result = await Scope("applyEditorRequest", capture.Groups, request.DeepClone(), "desktop",
+                new JsonObject { ["nowMs"] = DateTimeOffset.Now.ToUnixTimeMilliseconds(), ["readOnlyGroupIds"] = new JsonArray() });
+            Refuse(result);
+            var groups = result?["groups"] as JsonArray ?? throw new InvalidOperationException("invalid-editor-result");
+            var previousGroups = capture.Groups.OfType<JsonObject>().ToDictionary(g => Text(g["id"]));
+            var restarts = new HashSet<string>();
+            foreach (var group in groups.OfType<JsonObject>())
+            {
+                var id = Text(group["id"]);
+                if (!capture.LinkedIds.Contains(id) && previousGroups.TryGetValue(id, out var before) &&
+                    (await Call("budgetRestarts", before, group))?.GetValue<bool>() == true) restarts.Add(id);
+            }
+            var previousIds = previousGroups.Keys.ToHashSet();
+            var committed = hub.CommitEditor(store, capture, groups, restarts);
+            var deleted = previousIds.Except(committed.OfType<JsonObject>().Select(g => Text(g["id"])));
+            var cleanupErrors = new List<string>();
+            foreach (var id in deleted)
+            {
+                try { await rules.UnloadGroupAsync(id); rules.ClearLog(id); }
+                catch (Exception ex)
+                {
+                    cleanupErrors.Add(id + ": " + ex.Message);
+                    System.Diagnostics.Trace.WriteLine("Saved editor deletion; rule cleanup failed: " + ex.Message);
+                }
+            }
+            var reply = new JsonObject { ["ok"] = true, ["groups"] = committed };
+            if (cleanupErrors.Count > 0) reply["cleanupError"] = string.Join("; ", cleanupErrors);
+            return reply;
+        }
+        finally { _mutation.Release(); }
+    }
     public async Task<JsonNode?> Invoke(string name,JsonObject args)
     {
         await _mutation.WaitAsync();

@@ -15,6 +15,10 @@ namespace WindowsBlocker.WebUI;
 public sealed class WebStore
 {
     private readonly object _gate = new();
+    private bool _editorWritesHeld;
+    internal void HoldEditorWrites() { lock (_gate) _editorWritesHeld = true; }
+    private void RequireWrites()
+    { if (_editorWritesHeld) throw new InvalidOperationException("editor-storage-partial-failure; canonical writes held"); }
     public string FilePath => Storage.WebStorePath;
 
     public void SeedIfNeeded()
@@ -49,6 +53,7 @@ public sealed class WebStore
     {
         lock (_gate)
         {
+            RequireWrites();
             var root = LoadObject() ?? new JsonObject();
             foreach (var (key, value) in changes)
             {
@@ -67,7 +72,7 @@ public sealed class WebStore
     }
     public void Update(Action<JsonObject> mutation)
     {
-        lock (_gate) { var root = LoadObject() ?? new JsonObject(); var before = root.ToJsonString(); mutation(root); if (root.ToJsonString() != before) Write(root); }
+        lock (_gate) { RequireWrites(); var root = LoadObject() ?? new JsonObject(); var before = root.ToJsonString(); mutation(root); if (root.ToJsonString() != before) Write(root); }
     }
     // The canonical owner holds this file gate through the hub transaction and
     // its throwing save. Read fallbacks are never authority to publish/adopt.
@@ -77,21 +82,7 @@ public sealed class WebStore
         {
             var raw = LoadRawJson() ?? throw new InvalidDataException("Missing local storage; saved links are preserved.");
             var root = JsonNode.Parse(raw) as JsonObject ?? throw new InvalidDataException("Invalid local storage; saved links are preserved.");
-            try { StorageSchema.ValidateWeb(root); }
-            catch (Exception ex) when (ex is InvalidOperationException or FormatException or OverflowException)
-            { throw new InvalidDataException("Invalid local storage metadata; saved links are preserved.", ex); }
-            if (root["blockedGroups"] is not JsonArray groups)
-                throw new InvalidDataException("Missing or invalid blocking groups; saved links are preserved.");
-            var ids = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var node in groups)
-            {
-                if (node is not JsonObject group || group["id"]?.GetValueKind() != JsonValueKind.String ||
-                    string.IsNullOrEmpty(group["id"]!.GetValue<string>()) || !ids.Add(group["id"]!.GetValue<string>()))
-                    throw new InvalidDataException("Invalid or duplicate blocking group identity; saved links are preserved.");
-                if (group.ContainsKey("scopes") &&
-                    (group["scopes"] is not JsonArray scopes || scopes.Any(line => line is not JsonObject)))
-                    throw new InvalidDataException("Invalid blocking group scopes; saved links are preserved.");
-            }
+            ValidateCanonicalDocument(root);
             var saved = root.DeepClone();
             transaction(root, () => {
                 if (JsonNode.DeepEquals(saved, root)) return;
@@ -101,9 +92,51 @@ public sealed class WebStore
         }
     }
 
+    internal static void ValidateCanonicalDocument(JsonObject root)
+    {
+        try { StorageSchema.ValidateWeb(root); }
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException or OverflowException)
+        { throw new InvalidDataException("Invalid local storage metadata; saved links are preserved.", ex); }
+        if (root["blockedGroups"] is not JsonArray groups)
+            throw new InvalidDataException("Missing or invalid blocking groups; saved links are preserved.");
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var node in groups)
+        {
+            if (node is not JsonObject group || group["id"]?.GetValueKind() != JsonValueKind.String ||
+                string.IsNullOrEmpty(group["id"]!.GetValue<string>()) || !ids.Add(group["id"]!.GetValue<string>()))
+                throw new InvalidDataException("Invalid or duplicate blocking group identity; saved links are preserved.");
+            if (group.ContainsKey("scopes") &&
+                (group["scopes"] is not JsonArray scopes || scopes.Any(line => line is not JsonObject)))
+                throw new InvalidDataException("Invalid blocking group scopes; saved links are preserved.");
+        }
+    }
+    internal static void RemoveGroupMaps(JsonObject root, string id)
+    {
+        foreach (var key in PerGroupKeys.Append("parentalPinAttempts"))
+            if (root[key] is JsonObject map) map.Remove(id);
+    }
+    // Editor rollback accepts only the original canonical bytes and validates
+    // both snapshots. It never restamps metadata or targets an arbitrary path.
+    internal void RestoreValidatedBytes(byte[] bytes)
+    {
+        lock (_gate)
+        {
+            RequireWrites();
+            using var reader = new StreamReader(new MemoryStream(bytes), System.Text.Encoding.UTF8, true);
+            var old = JsonNode.Parse(reader.ReadToEnd()) as JsonObject ?? throw new InvalidDataException("Invalid original canonical storage.");
+            ValidateCanonicalDocument(old);
+            var current = JsonNode.Parse(LoadRawJson() ?? throw new InvalidDataException("Missing current canonical storage.")) as JsonObject
+                ?? throw new InvalidDataException("Invalid current canonical storage.");
+            ValidateCanonicalDocument(current);
+            var temporary = FilePath + ".tmp"; File.WriteAllBytes(temporary, bytes);
+            File.Replace(temporary, FilePath, null);
+        }
+    }
+
     private static readonly HashSet<string> PerGroupKeys = new() { "usageTimersMs", "usageResetAtMs", "usageBucketsMs", "groupSnoozes", "groupSnoozeTotalsMs", "cbRuleLog", "cbRuleQuarantine", "cbRuleState" };
     private void Write(JsonObject root)
     {
+        RequireWrites();
         if (File.Exists(FilePath))
         {
             var existing = JsonNode.Parse(File.ReadAllText(FilePath)) as JsonObject ?? throw new InvalidDataException("Invalid web storage; saved data is preserved.");

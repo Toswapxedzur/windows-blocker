@@ -45,6 +45,7 @@ public partial class MainWindow : Window
     private CustomRuleRuntime? _runtime;
     private bool _ruleBusy;
     private bool _folderChooserOpen;
+    private long _editorDocumentGeneration;
     private IntPtr _selfHwnd;
 
     // Leading-edge throttle for high-frequency panel change events (slider drag,
@@ -126,6 +127,7 @@ public partial class MainWindow : Window
             await core.AddScriptToExecuteOnDocumentCreatedAsync(SeedScript(seed));
         }
 
+        core.NavigationStarting += (_, _) => ++_editorDocumentGeneration;
         core.WebMessageReceived += OnWebMessage;
         core.AddWebResourceRequestedFilter("*app-inventory.json", CoreWebView2WebResourceContext.All);
         core.AddWebResourceRequestedFilter("https://appassets.windowsblocker/worker-resource*", CoreWebView2WebResourceContext.All);
@@ -277,8 +279,30 @@ public partial class MainWindow : Window
                 case "mcp-connectors": NativeReply(root,McpConnectorRegistry.Snapshot()); break;
                 case "mcp-connect": McpConnectorRegistry.Set(ReadMessageString(root,"id"),true); NativeReply(root,McpConnectorRegistry.Snapshot()); break;
                 case "mcp-disconnect": McpConnectorRegistry.Set(ReadMessageString(root,"id"),false); NativeReply(root,McpConnectorRegistry.Snapshot()); break;
+                case "editor-definition-edit":
+                {
+                    var generation = _editorDocumentGeneration;
+                    try
+                    {
+                        var request = JsonNode.Parse(MessageJson(root)) as JsonObject ?? throw new InvalidOperationException("invalid-editor-request");
+                        var reply = await _policy.ApplyEditorRequest(request);
+                        if (!_closingFlush && generation == _editorDocumentGeneration) NativeReply(root, reply);
+                    }
+                    catch (Exception ex)
+                    {
+                        if (!_closingFlush && generation == _editorDocumentGeneration)
+                            NativeReply(root, new JsonObject { ["ok"] = false, ["error"] = ex.Message });
+                    }
+                    break;
+                }
                 case "persist-store":
-                    if (root.TryGetProperty("changes", out var changes) && JsonNode.Parse(changes.GetRawText()) is JsonObject patch) _store.Merge(patch);
+                    if (root.TryGetProperty("changes", out var changes) && JsonNode.Parse(changes.GetRawText()) is JsonObject patch)
+                    {
+                        // Reject mixed old full-group requests as a whole. Settings
+                        // and keyed runtime writes still use their existing path.
+                        NativeEditorContract.RequireKeyedPersist(patch);
+                        _store.Merge(patch);
+                    }
                     break;
 
                 // Web-app bridge: the editor drives the local hub through cbBridge,
