@@ -4067,7 +4067,7 @@ async function flushAutosave() {
 }
 
 // Best-effort sync persist used from pagehide / visibilitychange.
-// We can't await — Chrome's IPC layer forwards the unawaited set() before
+// We can't await — Chrome's IPC layer forwards the submitted message/write before
 // the popup tears down. Validation errors are swallowed so a half-typed
 // draft never blocks exit; partial input is recovered from state.drafts.
 function flushAutosaveOnExit() {
@@ -4082,8 +4082,8 @@ function flushAutosaveOnExit() {
   try {
     const next = applyDraft(group, getDraftForGroup(group.id)).group;
     state.groups = state.groups.map((item) => (item.id === group.id ? next : item));
-    // Unawaited: the write is sent before the popup tears down.
-    persistGroups([group.id]).catch(() => {});
+    // Unawaited: definition intent is sent before the popup tears down.
+    persistGroups([group.id], { before: [group] }).catch(() => {});
   } catch (_) {}
 }
 
@@ -4145,31 +4145,31 @@ async function loadStoredState() {
 // elsewhere meanwhile — a linked device, the "+", an AI tool — is kept).
 // Usage, snooze counting and links belong to the service worker / Mac Vault,
 // which share every stored change.
-async function persistGroups(ids, { reorder = false, message = "" } = {}) {
-  let list = state.storedGroups.filter((group) => group && group.id);
-  for (const id of ids) {
-    const at = list.findIndex((group) => group.id === id);
-    const index = state.groups.findIndex((group) => group.id === id);
-    if (index < 0) {
-      if (at >= 0) list.splice(at, 1);
-      continue;
-    }
-    const next = toStoredGroup(state.groups[index]);
-    // The other program's lines are never written from here: they stay as stored.
-    if (at >= 0) next.scopes = CBGroupScopes.withOwnLines(list[at], next, LOCAL_OWNER);
-    if (at >= 0) list[at] = next;
-    else list.splice(Math.min(index, list.length), 0, next);
-  }
-  if (reorder) {
-    const order = new Map(state.groups.map((group, index) => [group.id, index]));
-    list = list
-      .map((group, index) => ({ group, key: order.has(group.id) ? order.get(group.id) : state.groups.length + index }))
-      .sort((a, b) => a.key - b.key)
-      .map((entry) => entry.group);
-  }
-  state.storedGroups = list;
-  await chrome.storage.local.set({ [BLOCKED_GROUPS_KEY]: list });
-  if (message) setStatus(message);
+let editorPersistTail = Promise.resolve();
+const editorPendingTasks = new Set();
+function persistGroups(ids, options = {}) {
+  // Every producer supplies the pre-edit UI copy. Diff the actual action, not
+  // the whole stale editor list or an unacknowledged store notification.
+  const baseline = new Map((options.before || []).map(group => [group.id, toStoredGroup(group)]));
+  const changes = ids.map(id => CBGroupScopes.editorChange(baseline.get(id), state.groups.find(group => group.id === id) ? toStoredGroup(state.groups.find(group => group.id === id)) : null, LOCAL_OWNER));
+  const request = { type: "editor-definition-edit", changes, intent: options.intent || "edit" };
+  if (options.coveredPinHashes) request.coveredPinHashes = options.coveredPinHashes;
+  if (options.reorder) { request.order = state.groups.map(group => group.id); request.movedId = options.movedId; }
+  // Submit immediately, including pagehide flushes while an earlier save waits
+  // for acknowledgement. The worker's queue serializes commits, not this page.
+  ++popupDefinitionReadRevision;
+  const sent = chrome.runtime.sendMessage(request);
+  const task = Promise.resolve(sent).then(async reply => {
+    if (!reply?.ok) throw new Error(reply?.error || "Unable to save group.");
+    if (options.message) setStatus(options.message);
+    return reply;
+  }).finally(async () => {
+    editorPendingTasks.delete(task);
+    if (!editorPendingTasks.size) await refreshPopupDefinitionStorage();
+  });
+  editorPendingTasks.add(task);
+  editorPersistTail = Promise.allSettled([...editorPendingTasks]);
+  return task;
 }
 
 // A snooze entry the user started or ended here; the service worker / Mac
@@ -4217,7 +4217,7 @@ function updateGroupEnabled(groupId, enabled) {
   }
 
   renderGroupList();
-  persistGroups([groupId], { message: t(enabled ? "status.enabled" : "status.disabled", { name: group.name }) }).catch(() => {
+  persistGroups([groupId], { before: [group], message: t(enabled ? "status.enabled" : "status.disabled", { name: group.name }) }).catch(() => {
     setStatus(t("status.errorSaveGroup"), true);
   });
 }
@@ -4310,7 +4310,7 @@ async function setGroupPlatformView(key) {
   }
   state.groups = state.groups.map((item) => (item.id === stored.id ? next : item));
   delete state.drafts[stored.id];
-  if (!known) await persistGroups([stored.id]);
+  if (!known) await persistGroups([stored.id], { before: [stored] });
   render();
 }
 
@@ -4339,7 +4339,7 @@ async function removeGroupPlatform(platform) {
   const next = viewGroupOnPlatform({ ...stored, scopes }, nextKey);
   state.groups = state.groups.map((item) => (item.id === stored.id ? next : item));
   delete state.drafts[stored.id];
-  await persistGroups([stored.id]);
+  await persistGroups([stored.id], { before: [stored] });
   render();
 }
 
@@ -4474,18 +4474,19 @@ async function deleteAllGroups() {
   await clearAllGroups();
 }
 
-async function clearAllGroups() {
+async function clearAllGroups(coveredPinHashes = []) {
   // The last step's own check: a linked group turned enforce-only meanwhile.
   const away = state.groups.find(isEnforceOnly);
   if (away && refuseWhileDesktopVaultAway(away)) return;
-  const ids = state.groups.map((group) => group.id);
+  const before = state.groups;
+  const ids = before.map((group) => group.id);
   state.groups = [];
   state.drafts = {};
   ++groupSelectionRevision;
   state.selectedGroupId = null;
 
   // The service worker / Mac Vault drop the groups' usage and snoozes.
-  await persistGroups(ids, { message: t("status.bulkDeleted") });
+  await persistGroups(ids, { before, intent: "delete-all", coveredPinHashes, message: t("status.bulkDeleted") });
   await rememberGroupSelection();
   render();
 }
@@ -4510,7 +4511,7 @@ async function deleteSelectedGroup() {
   ++groupSelectionRevision;
   state.selectedGroupId = state.groups[0]?.id ?? null;
 
-  await persistGroups([group.id], { message: t("status.deleted", { name: group.name }) });
+  await persistGroups([group.id], { before: [group], message: t("status.deleted", { name: group.name }) });
   await rememberGroupSelection();
   render();
 }
@@ -4593,7 +4594,7 @@ async function importIntoSelectedGroup() {
     state.groups = state.groups.map((item) => (item.id === group.id ? replacementGroup : item));
     delete state.drafts[group.id];
 
-    await persistGroups([group.id], { message: t("status.importedGroup", { name: replacementGroup.name }) });
+    await persistGroups([group.id], { before: [group], message: t("status.importedGroup", { name: replacementGroup.name }) });
     // An imported group starts fresh (owner 2026-09-27): no time used, no
     // snooze. The runtime's owner (the worker, Mac Vault) resets it.
     await chrome.runtime.sendMessage({ type: "reset-group-runtime", groupId: group.id });
@@ -4792,7 +4793,7 @@ async function autosaveSelectedGroup() {
   else delete state.drafts[group.id];
 
   try {
-    await persistGroups([group.id]);
+    await persistGroups([group.id], { before: [group] });
   } catch (error) {
     console.error("Failed to persist groups during autosave.", error);
     setStatus(t("status.errorSaveGroup"), true);
@@ -4858,7 +4859,7 @@ async function reorderGroups(draggedGroupId, insertIndex) {
   state.draggedGroupId = null;
   state.dragInsertIndex = null;
 
-  await persistGroups([], { reorder: true });
+  await persistGroups([], { reorder: true, movedId: draggedGroupId });
   render();
 }
 
@@ -4934,10 +4935,11 @@ async function persistGroupFields(groupId, fields, statusMsg) {
   // A long flow (a 10 × 5 s confirmation, an open PIN panel) checks again at
   // the end: Mac Vault may have gone away meanwhile.
   if (refuseWhileDesktopVaultAway(state.groups.find((item) => item.id === groupId))) return;
+  const before = state.groups.find(item => item.id === groupId);
   state.groups = state.groups.map((item) =>
     item.id === groupId ? { ...item, ...fields } : item
   );
-  await persistGroups([groupId], { message: statusMsg });
+  await persistGroups([groupId], { before: before ? [before] : [], intent: "lock-fields", message: statusMsg });
   render();
 }
 
@@ -5224,7 +5226,7 @@ async function handleUnfreezeConfirm() {
         render();
         return;
       }
-      await clearAllGroups();
+      await clearAllGroups(passed);
       return;
     }
 
@@ -5442,6 +5444,19 @@ function startResizingPanels(event) {
 
   window.addEventListener("mousemove", handleMove);
   window.addEventListener("mouseup", handleUp);
+}
+
+let popupDefinitionReadRevision = 0;
+async function refreshPopupDefinitionStorage(changes = {}) {
+  // Runtime/settings pushes remain prompt, even when group reconciliation waits
+  // for already-submitted local intents. They do not replace the editor list.
+  const other = { ...changes }; delete other[BLOCKED_GROUPS_KEY];
+  if (Object.keys(other).length) syncExternalState(other);
+  const revision = ++popupDefinitionReadRevision;
+  if (editorPendingTasks.size) return;
+  const current = await chrome.storage.local.get({ [BLOCKED_GROUPS_KEY]: [] });
+  if (revision !== popupDefinitionReadRevision || editorPendingTasks.size) return;
+  syncExternalState({ [BLOCKED_GROUPS_KEY]: { newValue: current[BLOCKED_GROUPS_KEY] } });
 }
 
 function syncExternalState(changes) {
@@ -6305,7 +6320,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     return;
   }
 
-  syncExternalState(changes);
+  if (changes[BLOCKED_GROUPS_KEY] && !IS_NATIVE_DESKTOP) {
+    refreshPopupDefinitionStorage(changes).catch(error => console.error("Failed to refresh groups.", error));
+  } else syncExternalState(changes);
 });
 
 window.addEventListener("keydown", (event) => {
