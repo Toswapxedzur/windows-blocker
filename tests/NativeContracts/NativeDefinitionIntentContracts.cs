@@ -173,7 +173,13 @@ internal static class NativeDefinitionIntentContracts
                     Check(refused && JsonNode.DeepEquals(snapshot,JsonNode.Parse(restarted.ClustersJson())) && JsonNode.DeepEquals(Shared(restarted),expectedShared) && File.ReadAllBytes(Storage.ClustersPath).SequenceEqual(registry) &&
                         ((System.Collections.IDictionary)typeof(ConnectionHub).GetField("_seenDefinitions",Private)!.GetValue(restarted)!).Count==0,"Unreadable startup changed saved shared data or fabricated baseline");
                 }
-                finally {file.SetAccessControl(original);}
+                finally
+                {
+                    // GetAccessControl has no modified-section flags. Explicitly
+                    // re-mark the saved DACL so normal SetAccessControl persists it.
+                    original.SetSecurityDescriptorBinaryForm(descriptor,AccessControlSections.Access);
+                    file.SetAccessControl(original);
+                }
                 Check(file.GetAccessControl().GetSecurityDescriptorBinaryForm().SequenceEqual(descriptor) && File.ReadAllBytes(store.FilePath).SequenceEqual(bytes),"Owned ACL or file bytes were not restored exactly");
                 restarted!.ReconcileLocal(store);Check(Allowance(restarted)==24 && StoredAllowance(store)==24,"Unreadable startup fabricated stale raw edit after access recovery");return Task.CompletedTask;
             });
