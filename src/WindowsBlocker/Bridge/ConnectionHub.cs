@@ -638,6 +638,9 @@ public sealed class ConnectionHub
             if(lockUnit.Count>0) { frame["lock"]=lockUnit; frame["lockBase"]=Number(g["lockSyncedVersion"]); }
             ApplySync(LocalProgram,gid,frame);
         }
+#if VAULT_CONTRACT_TESTS
+        LocalReconciliationPhaseForTests?.Invoke("before-adoption");
+#endif
         store.Update(root =>
         {
             if (root["blockedGroups"] is not JsonArray nativeGroups) return;
@@ -696,6 +699,7 @@ public sealed class ConnectionHub
     public string ClustersJson() { lock (_gate) { var frame=ClustersFrame();frame.Remove("kind");return frame.ToJsonString(); } }
 #if VAULT_CONTRACT_TESTS
     internal Action<string>? ClusterSnapshotCapturedForTests;
+    internal Action<string>? LocalReconciliationPhaseForTests;
 #endif
     private void BroadcastClusters()
     {

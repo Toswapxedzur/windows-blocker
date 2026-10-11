@@ -6,6 +6,7 @@ using WindowsBlocker.WebUI;
 
 Environment.SetEnvironmentVariable("VAULT_ENVIRONMENT", "development");
 Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT", Path.Combine(Path.GetTempPath(), "vault-contracts-" + Guid.NewGuid()));
+if (args.Contains("--definition-intent-only")) { await NativeDefinitionIntentContracts.Run(); return; }
 if (args.Contains("--ordering-only")) { await HubSnapshotOrderContracts.Run(args.Length>1?args[1]:null); return; }
 if (args.Contains("--hub-only")) { HubFirstLinkContracts.Run(); await HubSnapshotOrderContracts.Run(args.Length>1?args[1]:null); return; }
 static void Check(bool passed, string description) { if (!passed) throw new Exception(description); Console.WriteLine("PASS " + description); }
