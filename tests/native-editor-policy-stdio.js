@@ -6,7 +6,7 @@ const [sourceRoot, manifestPath] = process.argv.slice(2);
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 if (manifest.revision !== "db770c9e0ff9941f80786fbdb53edaa5638ff0a3") throw new Error("wrong canonical revision");
 const files = ["platform-profiles.js", "parental-pin.js", "group-actions.js", "group-scopes.js"];
-const ctx = vm.createContext({ console: { log() {}, warn() {}, error() {} }, crypto: crypto.webcrypto, TextEncoder, structuredClone });
+const ctx = vm.createContext({ console: { log() {}, warn() {}, error() {} }, crypto: crypto.webcrypto, TextEncoder, structuredClone, URL });
 for (const file of files) {
   const records = manifest.files.filter(record => record.path === file);
   if (records.length !== 1) throw new Error("missing or duplicate canonical file");
