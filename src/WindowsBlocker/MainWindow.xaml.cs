@@ -245,7 +245,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (!TrustedEditorUri(e.Source) || e.WebMessageAsJson.Length > 2 * 1024 * 1024) return;
+            if (_closingFlush || !TrustedEditorUri(e.Source) || e.WebMessageAsJson.Length > 2 * 1024 * 1024) return;
             using var doc = JsonDocument.Parse(e.WebMessageAsJson);
             var root = doc.RootElement;
             if (!root.TryGetProperty("kind", out var kindEl) || kindEl.ValueKind != JsonValueKind.String)
@@ -463,7 +463,7 @@ public partial class MainWindow : Window
     private bool _nativeTickBusy;
     private async void OnTick(object? sender, EventArgs e)
     {
-        if(_nativeTickBusy) return; _nativeTickBusy=true;
+        if(_closingFlush || _nativeTickBusy) return; _nativeTickBusy=true;
         // A transient failure (e.g. a momentarily malformed store write) must
         // never kill the enforcement timer, or blocking would silently stop.
         try
@@ -478,7 +478,7 @@ public partial class MainWindow : Window
             if (JsonNode.Parse(_store.LoadRawJson() ?? "{}") is JsonObject quickAddStore) _quickAdd?.Reload(quickAddStore);
             var foreground = ProcessIdentity.ForWindow(NativeMethods.GetForegroundWindow());
             var status = _engine.Tick(foreground, _ruleEngine.BlockedIdentities);
-            _ = RecordActivity(foreground);
+            _lastActivityRequest = RecordActivity(foreground);
 
             PushUsage();
             PushPermission();
@@ -542,6 +542,7 @@ public partial class MainWindow : Window
     }
     private async Task<JsonNode?> InvokeMcpTool(string name,JsonObject args)
     {
+        if (_closingFlush) throw new InvalidOperationException("vault-stopping");
         NativeToolSchema.Validate(await McpTools(),name,args);
         if (NativePolicyTools.Names.Contains(name))
             return await Dispatcher.InvokeAsync(async () => { var value = await _policy.Invoke(name,args); PushNativeStore(); return value; }).Task.Unwrap();
@@ -570,6 +571,7 @@ public partial class MainWindow : Window
 
     private async Task<JsonObject> HubClassifierRequest(string sourcePeer, string requestId, string operation, JsonObject body)
     {
+        if (_closingFlush) throw new InvalidOperationException("vault-stopping");
         if(operation=="activity-record")
         {
             var recorded=await _classifier.Request("activity",new JsonObject { ["kind"]="browser-record",["body"]=body.DeepClone() });
@@ -629,6 +631,7 @@ public partial class MainWindow : Window
         _ = Web.CoreWebView2.ExecuteScriptAsync($"window.activityApply && window.activityApply({string.Join(",", args)});");
     }
     private long? _lastActivitySample;
+    private Task _lastActivityRequest = Task.CompletedTask;
     private async Task RecordActivity(AppIdentity foreground)
     {
         var sample=System.Diagnostics.Stopwatch.GetTimestamp(); var elapsed=_lastActivitySample.HasValue ? Math.Max(0,(sample-_lastActivitySample.Value)*1000.0/System.Diagnostics.Stopwatch.Frequency) : 0; _lastActivitySample=sample;
@@ -636,7 +639,7 @@ public partial class MainWindow : Window
         {
             var app=AppInventory.DescribeActivity(foreground);
             await _classifier.Request("activity",new JsonObject { ["kind"]="native-sample",["appId"]=foreground.IsEmpty ? null : foreground.Canonical,["name"]=app.Name,["icon"]=app.Icon,["elapsedMs"]=elapsed,["monotonicMs"]=(long)(sample*1000.0/System.Diagnostics.Stopwatch.Frequency),["atMs"]=DateTimeOffset.Now.ToUnixTimeMilliseconds() });
-        } catch { }
+        } catch (Exception ex) { System.Diagnostics.Trace.WriteLine("Native Activity sample: " + ex.Message); }
     }
 
     // ---- Custom-rule helpers ------------------------------------------------
@@ -935,7 +938,24 @@ public partial class MainWindow : Window
         }
         if (!_flushedForClosing)
         {
-            e.Cancel = true; if(_closingFlush) return; _closingFlush=true; _timer?.Stop(); await _mcp.StopAsync(); await _hub.StopAsync(); await _classifier.ShutdownAsync(); _flushedForClosing = true; Close(); return;
+            e.Cancel = true;
+            if (_closingFlush) return;
+            _closingFlush = true;
+            _timer?.Stop();
+            // Request admits its frame synchronously before returning a Task.
+            // The retained observed sample is already on the client's FIFO;
+            // close producer listeners without waiting for their pending replies
+            // before sending EOF to the shared cooperative shutdown path.
+            var stopMcp = _mcp.StopAsync();
+            var stopHub = _hub.StopAsync();
+            var shutdown = await _classifier.ShutdownAsync();
+            await _lastActivityRequest;
+            try { await Task.WhenAll(stopMcp, stopHub); }
+            catch (Exception ex) { System.Diagnostics.Trace.WriteLine("Vault listener shutdown: " + ex.Message); }
+            if (!shutdown.Clean) System.Diagnostics.Trace.WriteLine($"Vault worker did not exit cleanly: {shutdown.Kind}; {shutdown.Error}");
+            _flushedForClosing = true;
+            Close();
+            return;
         }
         _mcp.Dispose();
         _classifier.Dispose();

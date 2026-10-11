@@ -1,10 +1,28 @@
 using System.Text;
 using System.Text.Json.Nodes;
 Console.InputEncoding=new UTF8Encoding(false);Console.OutputEncoding=new UTF8Encoding(false);
+string? evidencePath=null;
+var remembered=new List<string>();
+var flushHang=false;
+var hangOnEof=false;
+var exitCode=0;
 while(await Console.In.ReadLineAsync() is { } line)
 {
     var request=JsonNode.Parse(line)!;
     var operation=request["operation"]!.GetValue<string>();
+    if(operation=="shutdown-proof")
+    {
+        evidencePath=request["data"]?["path"]?.GetValue<string>();
+        flushHang=request["data"]?["flushHang"]?.GetValue<bool>()==true;
+        hangOnEof=request["data"]?["hangOnEof"]?.GetValue<bool>()==true;
+        exitCode=request["data"]?["exitCode"]?.GetValue<int>()??0;
+    }
+    if(operation=="remember") remembered.Add(request["data"]!["text"]!.GetValue<string>());
+    if(flushHang && ((operation=="activity" && request["data"]?["kind"]?.GetValue<string>()=="native-flush") || operation=="hostEvent"))
+    {
+        if(evidencePath!=null)File.WriteAllText(evidencePath,new JsonObject{["flushAttempted"]=true,["pid"]=Environment.ProcessId}.ToJsonString());
+        await Task.Delay(Timeout.Infinite);
+    }
     if(operation=="background-error")Console.WriteLine(new JsonObject{["event"]="error",["error"]="worker-response-too-large",["sourceEvent"]="activity"}.ToJsonString());
     if(operation=="crash") { Console.WriteLine(new JsonObject { ["event"]="hold",["pid"]=Environment.ProcessId }.ToJsonString());Console.Out.Flush();Environment.Exit(7); }
     if(operation=="delay") await Task.Delay(500);
@@ -18,3 +36,7 @@ while(await Console.In.ReadLineAsync() is { } line)
     }
     Console.WriteLine(new JsonObject { ["id"]=request["id"]!.DeepClone(),["ok"]=true,["value"]=request["data"]!.DeepClone() }.ToJsonString());
 }
+
+if(hangOnEof)await Task.Delay(10000);
+if(evidencePath!=null)File.WriteAllText(evidencePath,new JsonObject{["eof"]=true,["pid"]=Environment.ProcessId,["remembered"]=new JsonArray(remembered.Select(x=>(JsonNode?)JsonValue.Create(x)).ToArray())}.ToJsonString());
+Environment.ExitCode=exitCode;

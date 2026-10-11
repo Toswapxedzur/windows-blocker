@@ -34,4 +34,58 @@ try { await client.Request("activity",ActivityMcpRequest.Create("delete_activity
 catch(InvalidOperationException ex) { canonicalRefused=ex.Message=="Activity group not found"; }
 if(!canonicalRefused)throw new Exception("Activity canonical refusal was converted into success");
 Console.WriteLine("PASS Activity MCP canonical refusal reaches native caller as error");
-await client.ShutdownAsync();
+var normal=await client.ShutdownAsync();
+if(!normal.Clean)throw new Exception("Healthy worker shutdown was not a clean exit");
+Console.WriteLine("PASS Healthy worker EOF/exit reported distinctly from fallback");
+
+// The old client sends native-flush before EOF and gets stuck in this exact
+// fixture. The new client must close stdin without requesting a flush reply.
+var evidence=Path.Combine(Path.GetTempPath(),"vault-worker-shutdown-"+Guid.NewGuid()+".json");
+using(var closing=new ClassifierWorkerClient(args[0]))
+{
+    await closing.Request("shutdown-proof",new JsonObject{["path"]=evidence,["flushHang"]=true});
+    var admitted=Enumerable.Range(0,32).Select(i=>closing.Request("remember",new JsonObject{["text"]=unicode+i})).ToArray();
+    var first=closing.ShutdownAsync();var second=closing.ShutdownAsync();
+    if(!ReferenceEquals(first,second))throw new Exception("Concurrent shutdown calls did not share one lifecycle task");
+    var refusedAfterStop=false;
+    try {await closing.Request("echo",new());}catch(InvalidOperationException ex){refusedAfterStop=ex.Message=="classifier-worker-stopping";}
+    if(!refusedAfterStop)throw new Exception("A request after shutdown started was admitted");
+    await Task.WhenAll(admitted);
+    var outcome=await first;
+    if(outcome.Kind!=WorkerShutdownKind.CleanExit || outcome.ExitCode!=0)throw new Exception("Busy/pre-flush fixture did not exit normally via EOF");
+    var proof=JsonNode.Parse(File.ReadAllText(evidence))!;
+    if(proof["eof"]?.GetValue<bool>()!=true || proof["flushAttempted"]!=null || proof["remembered"]?.AsArray().Count!=32)throw new Exception("EOF did not persist every admitted frame without pre-flush request");
+    var expected=Enumerable.Range(0,32).Select(i=>unicode+i);
+    if(!proof["remembered"]!.AsArray().Select(n=>n!.GetValue<string>()).SequenceEqual(expected))throw new Exception("Admitted writes were reordered before EOF");
+    var pid=proof["pid"]!.GetValue<int>();
+    try {using var child=Process.GetProcessById(pid);if(!child.HasExited)throw new Exception("Clean shutdown left its exact child running");}catch(ArgumentException){}
+    closing.Dispose();
+    if(closing.LastShutdownResult?.Kind!=WorkerShutdownKind.CleanExit)throw new Exception("Dispose altered a clean lifecycle outcome");
+}
+File.Delete(evidence);
+Console.WriteLine("PASS EOF drains admitted FIFO frames, avoids hanging flush, and rejects restart after stop");
+
+var failedEvidence=Path.Combine(Path.GetTempPath(),"vault-worker-fallback-"+Guid.NewGuid()+".json");
+using(var failed=new ClassifierWorkerClient(args[0]))
+{
+    await failed.Request("shutdown-proof",new JsonObject{["path"]=failedEvidence,["hangOnEof"]=true});
+    var outcome=await failed.ShutdownAsync();
+    if(outcome.Kind!=WorkerShutdownKind.ForcedTermination || outcome.Clean || outcome.Error!="classifier-worker-shutdown-timeout")throw new Exception("Timed-out EOF was mislabeled clean or forced fallback was hidden");
+}
+if(File.Exists(failedEvidence))File.Delete(failedEvidence);
+Console.WriteLine("PASS Unresponsive EOF fallback is explicit and cannot report clean exit");
+
+using(var neverStarted=new ClassifierWorkerClient(args[0]))
+{
+    if((await neverStarted.ShutdownAsync()).Kind!=WorkerShutdownKind.AlreadyStopped)throw new Exception("Unused client launched a child during shutdown");
+    try {await neverStarted.Request("echo",new());throw new Exception("Stopped unused client restarted");}catch(InvalidOperationException ex)when(ex.Message=="classifier-worker-stopping"){}
+}
+Console.WriteLine("PASS Unused shutdown and disposal never create a replacement child");
+
+using(var failedExit=new ClassifierWorkerClient(args[0]))
+{
+    await failedExit.Request("shutdown-proof",new JsonObject{["exitCode"]=9});
+    var result=await failedExit.ShutdownAsync();
+    if(result.Kind!=WorkerShutdownKind.Failed || result.ExitCode!=9 || result.Clean)throw new Exception("Nonzero worker exit was hidden as successful persistence");
+}
+Console.WriteLine("PASS Nonzero worker exit remains explicit failure");
