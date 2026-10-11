@@ -60,7 +60,7 @@ public sealed class ConnectionHub
                 _localStore = store;
             }});
         }
-        catch (Exception ex) when (ex is InvalidDataException or JsonException or IOException)
+        catch (Exception ex) when (ex is InvalidDataException or JsonException or IOException or UnauthorizedAccessException)
         {
             // Missing/unsupported startup bytes supply no baseline. Reconciliation
             // still validates and refuses them before changing any hub state.

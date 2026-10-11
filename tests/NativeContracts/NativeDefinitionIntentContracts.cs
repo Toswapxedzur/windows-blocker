@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text.Json.Nodes;
 using WindowsBlocker.Bridge;
 using WindowsBlocker.WebUI;
@@ -156,6 +158,22 @@ internal static class NativeDefinitionIntentContracts
                 try {hub.ReconcileLocal(store);}catch(InvalidDataException){refused=true;}
                 Check(refused && hub.ClustersJson()==before && File.ReadAllText(store.FilePath)==bytes,"Mixed nested scopes mutated canonical state");return Task.CompletedTask;
             });
+            await Case("unreadable-existing-startup-preserves-file",()=> {
+                var (store,hub)=Seed();hub.ApplySync("chrome","c",Frame(24,2));var before=hub.ClustersJson();var bytes=File.ReadAllBytes(store.FilePath);
+                var file=new FileInfo(store.FilePath);var original=file.GetAccessControl();var descriptor=original.GetSecurityDescriptorBinaryForm();
+                ConnectionHub? restarted=null;var denied=false;
+                try
+                {
+                    var restricted=file.GetAccessControl();restricted.AddAccessRule(new FileSystemAccessRule(WindowsIdentity.GetCurrent().User!,FileSystemRights.ReadData,AccessControlType.Deny));file.SetAccessControl(restricted);
+                    try {File.ReadAllText(store.FilePath);}catch(UnauthorizedAccessException){denied=true;}
+                    Check(denied,"Owned unreadable-file fixture did not deny actual read");
+                    restarted=new ConnectionHub(store);typeof(ConnectionHub).GetMethod("Restore",Private)!.Invoke(restarted,null);
+                    Check(restarted.ClustersJson()==before,"Unreadable startup changed saved shared state");
+                }
+                finally {file.SetAccessControl(original);}
+                Check(file.GetAccessControl().GetSecurityDescriptorBinaryForm().SequenceEqual(descriptor) && File.ReadAllBytes(store.FilePath).SequenceEqual(bytes),"Owned ACL or file bytes were not restored exactly");
+                restarted!.ReconcileLocal(store);Check(Allowance(restarted)==24 && StoredAllowance(store)==24,"Unreadable startup fabricated stale raw edit after access recovery");return Task.CompletedTask;
+            });
             foreach (var invalid in new[] { "schema-type", "metadata-type" })
                 await Case("malformed-startup-"+invalid,()=> {
                     var (store,hub)=Seed();var before=hub.ClustersJson();var doc=JsonNode.Parse(store.LoadRawJson()!)!.AsObject();
@@ -198,7 +216,7 @@ internal static class NativeDefinitionIntentContracts
             });
         }
         finally {Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT",previousRoot);Directory.Delete(parent,true);}
-        Console.WriteLine($"Native definition intent cases: {27-failures.Count} passed, {failures.Count} failed");
+        Console.WriteLine($"Native definition intent cases: {28-failures.Count} passed, {failures.Count} failed");
         if(failures.Count>0)throw new Exception("Native definition intent failures: "+string.Join(", ",failures));
     }
 }
