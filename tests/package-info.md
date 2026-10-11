@@ -1,8 +1,8 @@
 # Windows Vault tests
 
-The current repair run uses mini1 under the replacement AGENTS. Windows
-process/WebView2 checks require its Windows VM; portable managed hub contracts
-can also run on mini1 macOS and do not establish Windows runtime acceptance.
+The October 11 run uses the owner-selected Mini2 alt1 ARM Windows VM and Mini2
+alt1 Node runtime. Other runs follow the default mini1 rule. Managed source
+contracts and WPF builds do not establish live WebView acceptance.
 
 - `runner-custom-rule-stress.js`, `runner-rule-worker.js`, `runner-editor-syntax.js` — canonical JS rule engine, disposable worker isolation and document-start native bridge/storage.
 - `OverlayContracts/` — actual WPF overlay containment, virtualization, timer formatting and searchable menus.
@@ -21,7 +21,7 @@ can also run on mini1 macOS and do not establish Windows runtime acceptance.
   explicit edit/deletion and malformed registry refusal.
   `NativeDefinitionIntentContracts.cs` / `--definition-intent-only` cover the validated file→hub boundary and precise raw intent.
   `NativeEditorTransactionContracts.cs` / `--editor-transaction-only` passed nine Mini2 guest controls for staged async admission, physical write/rollback refusal, explicit partial-storage holds, and old full-group producer refusal. Canonical admission and transport acceptance remain separate.
-- `NativeEditorAdmissionContracts/`, `native-editor-policy-stdio.js` — prepared console-only actual NativePolicyTools/RuleEngine pipeline with immutable canonical JS evaluated on Mini2 alt1. Initial fixture source is unverified; it does not launch a WPF Application or browser.
+- `NativeEditorAdmissionContracts/`, `native-editor-policy-stdio.js` — console-only actual NativePolicyTools/RuleEngine pipeline with immutable canonical JS evaluated on Mini2 alt1. All thirteen checks passed at source113a58f; it does not launch a WPF Application or browser.
 - `NativeHostContracts/` — actual signed browser/system intermediary verification and denial of nonbrowser proof callers.
 - `browser-native-host.py` — genuine guest Edge/Chrome proof, program binding, frame bounds, process ancestry and authenticated extension tunnel through the canonical CDP driver.
 - `browser-worker-parity.py` — actual YouTube collector/private pill/pending cover, production model, correction, ordinary app outage/reconnect and native Activity privacy through that driver.
