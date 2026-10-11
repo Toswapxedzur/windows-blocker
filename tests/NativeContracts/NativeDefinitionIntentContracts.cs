@@ -111,7 +111,7 @@ internal static class NativeDefinitionIntentContracts
             });
             await Case("native30-then-apps-on-newer-shared",()=> {
                 var (store,hub)=Seed();Edit(store,"allowedMinutes",JsonValue.Create(30));hub.ReconcileLocal(store);
-                var newer=Frame(30,DateTimeOffset.Now.ToUnixTimeMilliseconds()+1);hub.ApplySync("chrome","c",newer);
+                var newer=Frame(30,Shared(hub)["ts"]!.GetValue<double>());hub.ApplySync("chrome","c",newer);
                 Edit(store,"scopes",new JsonArray(new JsonObject { ["surface"]="apps", ["apps"]=new JsonArray() }));hub.ReconcileLocal(store);
                 Check(Allowance(hub)==30 && StoredAllowance(store)==30,"Apps clear erased previous native allowance30");return Task.CompletedTask;
             });
@@ -127,7 +127,7 @@ internal static class NativeDefinitionIntentContracts
                 var doc=JsonNode.Parse(store.LoadRawJson()!)!;Check(doc["cbRuleState"]!["w"]!["count"]!.GetValue<int>()==7 && Shared(hub)["usageMs"]!.GetValue<double>()==1234,"Non-budget intent damaged usage/custom-rule state");return Task.CompletedTask;
             });
             await Case("scalar-removal-is-explicit-intent",()=> {
-                var (store,hub)=Seed();Edit(store,"fallbackUrl",JsonValue.Create("https://example.com/"));hub.ReconcileLocal(store);hub.ApplySync("chrome","c",Frame(24,DateTimeOffset.Now.ToUnixTimeMilliseconds()+1));
+                var (store,hub)=Seed();Edit(store,"fallbackUrl",JsonValue.Create("https://example.com/"));hub.ReconcileLocal(store);hub.ApplySync("chrome","c",Frame(24,Shared(hub)["ts"]!.GetValue<double>()));
                 store.Update(doc=>doc["blockedGroups"]![0]!.AsObject().Remove("fallbackUrl"));hub.ReconcileLocal(store);
                 Check(!Local(store).ContainsKey("fallbackUrl") && !Shared(hub)["scalars"]!.AsObject().ContainsKey("fallbackUrl") && Allowance(hub)==24,"Scalar clear republished stale allowance or failed to remove value");return Task.CompletedTask;
             });
@@ -156,6 +156,21 @@ internal static class NativeDefinitionIntentContracts
                 try {hub.ReconcileLocal(store);}catch(InvalidDataException){refused=true;}
                 Check(refused && hub.ClustersJson()==before && File.ReadAllText(store.FilePath)==bytes,"Mixed nested scopes mutated canonical state");return Task.CompletedTask;
             });
+            foreach (var invalid in new[] { "missing-collection", "missing-id", "empty-id", "numeric-id", "duplicate-id" })
+                await Case("malformed-identity-"+invalid,()=> {
+                    var (store,hub)=Seed();var before=hub.ClustersJson();
+                    store.Update(doc=> {
+                        var group=doc["blockedGroups"]![0]!.AsObject();
+                        if (invalid=="missing-collection") doc.Remove("blockedGroups");
+                        else if (invalid=="missing-id") group.Remove("id");
+                        else if (invalid=="empty-id") group["id"]="";
+                        else if (invalid=="numeric-id") group["id"]=12;
+                        else doc["blockedGroups"]!.AsArray().Add(group.DeepClone());
+                    });
+                    var bytes=File.ReadAllText(store.FilePath);var refused=false;
+                    try {hub.ReconcileLocal(store);}catch(InvalidDataException){refused=true;}
+                    Check(refused && hub.ClustersJson()==before && File.ReadAllText(store.FilePath)==bytes,"Malformed collection/identity detached or changed shared state");return Task.CompletedTask;
+                });
             await Case("future-schema-refuses-hub-mutation",()=> {
                 var (store,hub)=Seed();var before=hub.ClustersJson();var doc=JsonNode.Parse(store.LoadRawJson()!)!.AsObject();
                 doc["schemaVersion"]=99;doc["blockedGroups"]![0]!["allowedMinutes"]=30;File.WriteAllText(store.FilePath,doc.ToJsonString());var bytes=File.ReadAllText(store.FilePath);
@@ -169,7 +184,7 @@ internal static class NativeDefinitionIntentContracts
             });
         }
         finally {Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT",previousRoot);Directory.Delete(parent,true);}
-        Console.WriteLine($"Native definition intent cases: {19-failures.Count} passed, {failures.Count} failed");
+        Console.WriteLine($"Native definition intent cases: {24-failures.Count} passed, {failures.Count} failed");
         if(failures.Count>0)throw new Exception("Native definition intent failures: "+string.Join(", ",failures));
     }
 }

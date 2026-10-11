@@ -681,7 +681,7 @@ public sealed class ConnectionHub
                 var lockChanged = !joined || !JsonNode.DeepEquals(raw.Lock, previous!.Lock);
                 if (lockChanged && raw.Lock.Count > 0) changed = true;
                 if (!changed) continue;
-                var frame = new JsonObject { ["scalars"] = scalars, ["scopes"] = apps, ["ts"] = joined ? Math.Max(DateTimeOffset.Now.ToUnixTimeMilliseconds(), c.Timestamp) : 0 };
+                var frame = new JsonObject { ["scalars"] = scalars, ["scopes"] = apps, ["ts"] = joined ? DateTimeOffset.Now.ToUnixTimeMilliseconds() : 0 };
                 if (!joined)
                 {
                     frame["usageMs"] = document["usageTimersMs"]?[gid]?.DeepClone() ?? JsonValue.Create(0);
