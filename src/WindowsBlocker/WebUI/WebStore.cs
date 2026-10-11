@@ -78,15 +78,18 @@ public sealed class WebStore
             var raw = LoadRawJson() ?? throw new InvalidDataException("Missing local storage; saved links are preserved.");
             var root = JsonNode.Parse(raw) as JsonObject ?? throw new InvalidDataException("Invalid local storage; saved links are preserved.");
             StorageSchema.ValidateWeb(root);
-            if (root.ContainsKey("blockedGroups") && root["blockedGroups"] is not JsonArray)
-                throw new InvalidDataException("Invalid blocking groups; saved links are preserved.");
-            if (root["blockedGroups"] is JsonArray groups)
-                foreach (var node in groups)
-                {
-                    if (node is not JsonObject group || group.ContainsKey("scopes") &&
-                        (group["scopes"] is not JsonArray scopes || scopes.Any(line => line is not JsonObject)))
-                        throw new InvalidDataException("Invalid blocking group scopes; saved links are preserved.");
-                }
+            if (root["blockedGroups"] is not JsonArray groups)
+                throw new InvalidDataException("Missing or invalid blocking groups; saved links are preserved.");
+            var ids = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var node in groups)
+            {
+                if (node is not JsonObject group || group["id"]?.GetValueKind() != JsonValueKind.String ||
+                    string.IsNullOrEmpty(group["id"]!.GetValue<string>()) || !ids.Add(group["id"]!.GetValue<string>()))
+                    throw new InvalidDataException("Invalid or duplicate blocking group identity; saved links are preserved.");
+                if (group.ContainsKey("scopes") &&
+                    (group["scopes"] is not JsonArray scopes || scopes.Any(line => line is not JsonObject)))
+                    throw new InvalidDataException("Invalid blocking group scopes; saved links are preserved.");
+            }
             var saved = root.DeepClone();
             transaction(root, () => {
                 if (JsonNode.DeepEquals(saved, root)) return;
