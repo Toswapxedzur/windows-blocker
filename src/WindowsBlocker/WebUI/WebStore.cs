@@ -69,6 +69,33 @@ public sealed class WebStore
     {
         lock (_gate) { var root = LoadObject() ?? new JsonObject(); var before = root.ToJsonString(); mutation(root); if (root.ToJsonString() != before) Write(root); }
     }
+    // The canonical owner holds this file gate through the hub transaction and
+    // its throwing save. Read fallbacks are never authority to publish/adopt.
+    internal void WithLockedDocument(Action<JsonObject, Action> transaction)
+    {
+        lock (_gate)
+        {
+            var raw = LoadRawJson() ?? throw new InvalidDataException("Missing local storage; saved links are preserved.");
+            var root = JsonNode.Parse(raw) as JsonObject ?? throw new InvalidDataException("Invalid local storage; saved links are preserved.");
+            StorageSchema.ValidateWeb(root);
+            if (root.ContainsKey("blockedGroups") && root["blockedGroups"] is not JsonArray)
+                throw new InvalidDataException("Invalid blocking groups; saved links are preserved.");
+            if (root["blockedGroups"] is JsonArray groups)
+                foreach (var node in groups)
+                {
+                    if (node is not JsonObject group || group.ContainsKey("scopes") &&
+                        (group["scopes"] is not JsonArray scopes || scopes.Any(line => line is not JsonObject)))
+                        throw new InvalidDataException("Invalid blocking group scopes; saved links are preserved.");
+                }
+            var saved = root.DeepClone();
+            transaction(root, () => {
+                if (JsonNode.DeepEquals(saved, root)) return;
+                Write(root); // A refused replacement must propagate before acknowledgment.
+                saved = root.DeepClone();
+            });
+        }
+    }
+
     private static readonly HashSet<string> PerGroupKeys = new() { "usageTimersMs", "usageResetAtMs", "usageBucketsMs", "groupSnoozes", "groupSnoozeTotalsMs", "cbRuleLog", "cbRuleQuarantine", "cbRuleState" };
     private void Write(JsonObject root)
     {
