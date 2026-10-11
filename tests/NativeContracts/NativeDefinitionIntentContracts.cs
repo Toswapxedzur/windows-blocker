@@ -156,6 +156,20 @@ internal static class NativeDefinitionIntentContracts
                 try {hub.ReconcileLocal(store);}catch(InvalidDataException){refused=true;}
                 Check(refused && hub.ClustersJson()==before && File.ReadAllText(store.FilePath)==bytes,"Mixed nested scopes mutated canonical state");return Task.CompletedTask;
             });
+            foreach (var invalid in new[] { "schema-type", "metadata-type" })
+                await Case("malformed-startup-"+invalid,()=> {
+                    var (store,hub)=Seed();var before=hub.ClustersJson();var doc=JsonNode.Parse(store.LoadRawJson()!)!.AsObject();
+                    if (invalid=="schema-type") doc["schemaVersion"]="broken";else doc["storageMetadata"]!["schemaVersion"]="broken";
+                    File.WriteAllText(store.FilePath,doc.ToJsonString());var bytes=File.ReadAllText(store.FilePath);
+                    var restarted=new ConnectionHub(store);typeof(ConnectionHub).GetMethod("Restore",Private)!.Invoke(restarted,null);var refused=false;
+                    try {restarted.ReconcileLocal(store);}catch(InvalidDataException){refused=true;}
+                    Check(refused && restarted.ClustersJson()==before && File.ReadAllText(store.FilePath)==bytes,"Malformed metadata crashed owner construction or changed saved/shared data");return Task.CompletedTask;
+                });
+            await Case("different-canonical-owner-refused",()=> {
+                var (store,hub)=Seed();var before=hub.ClustersJson();var bytes=File.ReadAllText(store.FilePath);var refused=false;
+                try {hub.ReconcileLocal(new WebStore());}catch(InvalidOperationException){refused=true;}
+                Check(refused && hub.ClustersJson()==before && File.ReadAllText(store.FilePath)==bytes,"Different store instance replaced established canonical owner");return Task.CompletedTask;
+            });
             foreach (var invalid in new[] { "missing-collection", "missing-id", "empty-id", "numeric-id", "duplicate-id" })
                 await Case("malformed-identity-"+invalid,()=> {
                     var (store,hub)=Seed();var before=hub.ClustersJson();
@@ -184,7 +198,7 @@ internal static class NativeDefinitionIntentContracts
             });
         }
         finally {Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT",previousRoot);Directory.Delete(parent,true);}
-        Console.WriteLine($"Native definition intent cases: {24-failures.Count} passed, {failures.Count} failed");
+        Console.WriteLine($"Native definition intent cases: {27-failures.Count} passed, {failures.Count} failed");
         if(failures.Count>0)throw new Exception("Native definition intent failures: "+string.Join(", ",failures));
     }
 }
