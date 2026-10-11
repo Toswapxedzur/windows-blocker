@@ -37,6 +37,8 @@ The same 359-file source passed EOF-order 1, worker-client 11, native 236, hub 3
 
 Receipts and exact source/artifact hashes are in the agentic `windows-definition-transaction-review-20261011/VERIFICATION.json` artifact. These are source checks; the WebView editor producer, installed shared worker, browser linking and private package acceptance remain separate. No public build was released.
 
+The subsequent precise WebView editor transaction is currently an **unverified source checkpoint**. It stages canonical reconciliation and hub state, awaits canonical admission outside native locks, rechecks fresh state, and reports ordinary dual-store save/rollback failures. Its new fixture and transport path have not run; shared shim generation and actual canonical admission tests remain pending.
+
 ## Project map
 
 | Area | Source directory |

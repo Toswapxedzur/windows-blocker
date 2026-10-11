@@ -15,7 +15,7 @@ namespace WindowsBlocker.Bridge;
 
 // Protocol-v4 authenticated loopback hub. Links pin explicit group IDs; no
 // display-name pairing and no credentials enter the browser editor.
-public sealed class ConnectionHub
+public sealed partial class ConnectionHub
 {
     public const int ProtocolVersion = 4;
     public const string LocalProgram = "windowsapp";
@@ -295,7 +295,15 @@ public sealed class ConnectionHub
         }
         peer.Socket.Dispose(); BroadcastPeers(); BroadcastRosters(); BroadcastClusters();
     }
-    private void Broadcast(JsonObject frame) { lock (_gate) foreach (var p in _peers.Values.Where(p => p.Connected)) _ = SendAsync(p, frame); }
+    private void Broadcast(JsonObject frame)
+    {
+        lock (_gate)
+        {
+            var recipients = _peers.Values.Where(p => p.Connected).ToArray();
+            if (_editorStage != null) { _editorStage.Frames.Add((recipients, (JsonObject)frame.DeepClone())); return; }
+            foreach (var peer in recipients) _ = SendAsync(peer, frame);
+        }
+    }
     private void BroadcastPeers()
     {
         lock(_gate)
@@ -400,7 +408,7 @@ public sealed class ConnectionHub
     {
         var store = _localStore;
         if (store == null) action(null, () => { });
-        else store.WithLockedDocument((root, save) => { action(root, save); save(); });
+        else store.WithLockedDocument((root, save) => { lock (_gate) RequireNoPartialStorage(); action(root, save); save(); });
     }
     private void RemoveMember(Cluster c, string program, JsonObject? root, Action persistLocal, bool requireLocalSnapshot)
     {
@@ -424,7 +432,7 @@ public sealed class ConnectionHub
     public static bool IsLocked(JsonObject obj) => obj["lockedAtMs"]?.GetValueKind() == JsonValueKind.Number;
     public void ApplySync(string program, string groupId, JsonObject frame)
     {
-        lock (_gate) { ApplySyncLocked(program, groupId, frame); BroadcastClusters(); }
+        lock (_gate) { RequireNoPartialStorage(); ApplySyncLocked(program, groupId, frame); BroadcastClusters(); }
     }
     // Caller holds the same gate from intent rebasing through commit/adoption.
     private void ApplySyncLocked(string program, string groupId, JsonObject frame)
@@ -649,8 +657,11 @@ public sealed class ConnectionHub
     public void ReconcileLocal(WebStore store)
     {
         AttachLocalStore(store);
-        store.WithLockedDocument((document, save) => { lock (_gate)
-        {
+        store.WithLockedDocument((document, save) => { lock (_gate) ReconcileLocalLocked(document, save); });
+    }
+    private void ReconcileLocalLocked(JsonObject document, Action save)
+    {
+            RequireNoPartialStorage();
             var groups = document["blockedGroups"] as JsonArray ?? new();
             var roster = new JsonArray(groups.OfType<JsonObject>().Select(g => (JsonNode)new JsonObject { ["id"] = Text(g["id"]), ["name"] = Text(g["name"]), ["frozen"] = IsLocked(g) }).ToArray());
             if (!_rosters.TryGetValue(LocalProgram, out var oldRoster) || !JsonNode.DeepEquals(oldRoster, roster))
@@ -717,7 +728,6 @@ public sealed class ConnectionHub
             foreach (var group in groups.OfType<JsonObject>())
                 if (Find(LocalProgram, Text(group["id"]))?.Contributed.Contains(LocalProgram) == true) _seenDefinitions[Text(group["id"])] = LocalDefinition.Read(group);
             BroadcastRosters(); BroadcastClusters();
-        }});
     }
     private static void AdoptSharedConfiguration(JsonObject group, Cluster c, bool detached)
     {
@@ -776,6 +786,7 @@ public sealed class ConnectionHub
     private bool _clusterStorageWritable = true;
     private void Persist()
     {
+        if (_editorStage != null || _editorStorageHeld) return;
         if (!_clusterStorageWritable) return;
         try {
             if (File.Exists(Storage.ClustersPath)) RegistryPayload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!);

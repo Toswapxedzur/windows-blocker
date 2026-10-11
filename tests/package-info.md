@@ -19,6 +19,8 @@ can also run on mini1 macOS and do not establish Windows runtime acceptance.
   branches, trusted origin aliases, contribution order/restart, collision
   suffixes, zero-timestamp replay, alias forwarding, native Apps preservation,
   explicit edit/deletion and malformed registry refusal.
+  `NativeDefinitionIntentContracts.cs` / `--definition-intent-only` cover the validated file→hub boundary and precise raw intent.
+  `NativeEditorTransactionContracts.cs` / `--editor-transaction-only` prepare staged async admission, physical write/rollback refusal, explicit partial-storage holds, and old full-group producer refusal. These new editor controls are not yet verified; canonical helper/transport acceptance is separate.
 - `NativeHostContracts/` — actual signed browser/system intermediary verification and denial of nonbrowser proof callers.
 - `browser-native-host.py` — genuine guest Edge/Chrome proof, program binding, frame bounds, process ancestry and authenticated extension tunnel through the canonical CDP driver.
 - `browser-worker-parity.py` — actual YouTube collector/private pill/pending cover, production model, correction, ordinary app outage/reconnect and native Activity privacy through that driver.
