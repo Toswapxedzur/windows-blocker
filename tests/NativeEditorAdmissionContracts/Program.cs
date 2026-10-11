@@ -36,9 +36,9 @@ internal static class Program
     }
     static JsonObject Apps(string path = "C:\\Fixture\\old.exe") => new() { ["surface"] = "apps", ["id"] = "apps-1", ["apps"] = new JsonArray(new JsonObject { ["id"] = path, ["name"] = "Fixture app" }), ["appsExcept"] = false, ["action"] = "block" };
     static JsonObject Site(string site, bool except = false) => new() { ["surface"] = "site", ["id"] = "site-1", ["sites"] = new JsonArray(site), ["sitesExcept"] = except, ["action"] = "block" };
-    static JsonObject NativeGroup(string id = "w") => new() { ["id"] = id, ["name"] = "Fixture " + id, ["enabled"] = true, ["mode"] = "budget", ["groupType"] = "site", ["allowedMinutes"] = 20, ["resetIntervalHours"] = 24, ["resetAtMidnight"] = false, ["rollingLimit"] = false, ["scopes"] = new JsonArray(Apps()) };
+    static JsonObject NativeGroup(string id = "w") => new() { ["id"] = id, ["name"] = "Fixture " + id, ["enabled"] = true, ["mode"] = "after-minutes", ["groupType"] = "site", ["allowedMinutes"] = 20, ["resetIntervalHours"] = 24, ["resetAtMidnight"] = false, ["rollingLimit"] = false, ["scopes"] = new JsonArray(Apps()) };
     static JsonObject Frame(double minutes, double ts, JsonArray? scopes = null) => new() {
-        ["scalars"] = new JsonObject { ["name"] = "Fixture w", ["enabled"] = true, ["mode"] = "budget", ["allowedMinutes"] = minutes, ["resetIntervalHours"] = 24, ["resetAtMidnight"] = false, ["rollingLimit"] = false },
+        ["scalars"] = new JsonObject { ["name"] = "Fixture w", ["enabled"] = true, ["mode"] = "after-minutes", ["allowedMinutes"] = minutes, ["resetIntervalHours"] = 24, ["resetAtMidnight"] = false, ["rollingLimit"] = false },
         ["scopes"] = scopes ?? new JsonArray(Site("example.com")), ["ts"] = ts
     };
     static (WebStore Store, ConnectionHub Hub, NativePolicyTools Tools) Seed(bool linked = true)
@@ -88,10 +88,10 @@ internal static class Program
                 hub.ApplySync("chrome", "c", new JsonObject { ["usageDeltaMs"] = 88, ["usageDeltaAnchorMs"] = anchor, ["usageBuckets"] = new JsonObject { [bucket] = 22 }, ["usageTransferId"] = "fixture-transfer-after-join" });
                 var before = RegistryCluster();
                 Check(before["JoiningUsageBase"]!.GetValue<double>() > 0 && before["JoiningUsageDelta"]!.GetValue<double>() > 0 && before["JoiningBucketBase"]!.AsObject().Count > 0 && before["JoiningBucketDeltas"]!.AsObject().Count > 0 && before["UsageTransferReceipts"]!.AsObject().Count > 0 && before["scopeOrigins"]!.AsObject().Any(pair => pair.Value!.GetValue<string>().StartsWith("safari\0s\0")) && before["Snooze"]!.AsObject().Count > 0 && before["Anchor"]!.GetValue<double>() > 0, "Rich fixture was empty or lacked a genuine incompatible origin");
-                var request = await Request(view, g => g["scopes"]![0]!["apps"] = new JsonArray(new JsonObject { ["id"] = "C:\\Fixture\\new.exe", ["name"] = "New app" }));
+                var request = await Request(view, g => g["scopes"]!.AsArray().OfType<JsonObject>().Single(s => s["surface"]!.GetValue<string>() == "apps")["apps"] = new JsonArray(new JsonObject { ["id"] = "C:\\Fixture\\new.exe", ["name"] = "New app" }));
                 var reply = await tools.ApplyEditorRequest(request); var saved = reply["groups"]![0]!;
                 Check(reply["ok"]!.GetValue<bool>() && saved["allowedMinutes"]!.GetValue<double>() == 24, "Stale Apps edit restored20");
-                Check(saved["scopes"]!.AsArray().OfType<JsonObject>().Count(s => s["surface"]!.GetValue<string>() == "site") == 2 && saved["scopes"]!.AsArray().OfType<JsonObject>().Single(s => s["surface"]!.GetValue<string>() == "apps")["apps"]![0]!["id"]!.GetValue<string>().EndsWith("new.exe"), "Precise Apps or Website retention failed");
+                Check(Shared(hub)["scopes"]!.AsArray().OfType<JsonObject>().Count(s => s["surface"]!.GetValue<string>() == "site") == 2 && saved["scopes"]!.AsArray().OfType<JsonObject>().Single(s => s["surface"]!.GetValue<string>() == "apps")["apps"]![0]!["id"]!.GetValue<string>().EndsWith("new.exe"), "Precise Apps or authoritative Website retention failed");
                 Check(JsonNode.DeepEquals(Runtime(before), Runtime(RegistryCluster())), "Configuration edit lost populated linked runtime/ledger state");
                 Console.WriteLine(new JsonObject { ["kind"] = "rich-state", ["before"] = Runtime(before), ["after"] = Runtime(RegistryCluster()), ["saved"] = saved.DeepClone() }.ToJsonString());
             });
