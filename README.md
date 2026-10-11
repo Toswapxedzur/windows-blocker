@@ -29,6 +29,14 @@ The application project targets `net8.0-windows` and uses WPF plus WebView2. Bui
 
 The [release scripts](scripts/release/README.md) create a self-contained x64 package with the verified Classifier worker. Installation is per user, preserves the separate data directory, registers the browser helper and adds a Start menu shortcut. End users need the WebView2 Runtime; the installer obtains Microsoft's signed bootstrapper when it is absent. They do not need the development SDKs or Node.
 
+## Native reconciliation verification
+
+The October11 definition-transaction source checkpoint was verified on the owner's selected Mini2 alt1 ARM Windows VM. All28 focused controls passed, including unchanged stale startup data, genuine pre-first-reconcile edits, scalar/Apps intent rebasing, interleaved edits, refused writes, lock CAS, malformed/future/unreadable data and exact ACL/file restoration. The prior10-control production baseline failed7 cases and is retained separately.
+
+The same359-file source passed EOF-order1, worker-client11, native236, hub378, MCP35 and package29 contracts; WPF and native-host builds had no warnings or errors. Both conditional test hooks are absent from the actual WPF assembly and present in the test assembly. The earlier379 hub count included a separate optional assembly check; current378 policy/order checks are unchanged and assembly discrimination is recorded independently.
+
+Receipts and exact source/artifact hashes are in the agentic `windows-definition-transaction-review-20261011/VERIFICATION.json` artifact. These are source checks; the WebView editor producer, installed shared worker, browser linking and private package acceptance remain separate. No public build was released.
+
 ## Project map
 
 | Area | Source directory |
