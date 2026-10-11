@@ -159,7 +159,7 @@ internal static class NativeDefinitionIntentContracts
                 Check(refused && hub.ClustersJson()==before && File.ReadAllText(store.FilePath)==bytes,"Mixed nested scopes mutated canonical state");return Task.CompletedTask;
             });
             await Case("unreadable-existing-startup-preserves-file",()=> {
-                var (store,hub)=Seed();hub.ApplySync("chrome","c",Frame(24,2));var before=hub.ClustersJson();var bytes=File.ReadAllBytes(store.FilePath);
+                var (store,hub)=Seed();hub.ApplySync("chrome","c",Frame(24,2));var expectedShared=Shared(hub).DeepClone();var registry=File.ReadAllBytes(Storage.ClustersPath);var bytes=File.ReadAllBytes(store.FilePath);
                 var file=new FileInfo(store.FilePath);var original=file.GetAccessControl();var descriptor=original.GetSecurityDescriptorBinaryForm();
                 ConnectionHub? restarted=null;var denied=false;
                 try
@@ -168,7 +168,10 @@ internal static class NativeDefinitionIntentContracts
                     try {File.ReadAllText(store.FilePath);}catch(UnauthorizedAccessException){denied=true;}
                     Check(denied,"Owned unreadable-file fixture did not deny actual read");
                     restarted=new ConnectionHub(store);typeof(ConnectionHub).GetMethod("Restore",Private)!.Invoke(restarted,null);
-                    Check(restarted.ClustersJson()==before,"Unreadable startup changed saved shared state");
+                    var snapshot=JsonNode.Parse(restarted.ClustersJson());var refused=false;
+                    try {restarted.ReconcileLocal(store);}catch(UnauthorizedAccessException){refused=true;}
+                    Check(refused && JsonNode.DeepEquals(snapshot,JsonNode.Parse(restarted.ClustersJson())) && JsonNode.DeepEquals(Shared(restarted),expectedShared) && File.ReadAllBytes(Storage.ClustersPath).SequenceEqual(registry) &&
+                        ((System.Collections.IDictionary)typeof(ConnectionHub).GetField("_seenDefinitions",Private)!.GetValue(restarted)!).Count==0,"Unreadable startup changed saved shared data or fabricated baseline");
                 }
                 finally {file.SetAccessControl(original);}
                 Check(file.GetAccessControl().GetSecurityDescriptorBinaryForm().SequenceEqual(descriptor) && File.ReadAllBytes(store.FilePath).SequenceEqual(bytes),"Owned ACL or file bytes were not restored exactly");
@@ -176,12 +179,15 @@ internal static class NativeDefinitionIntentContracts
             });
             foreach (var invalid in new[] { "schema-type", "metadata-type" })
                 await Case("malformed-startup-"+invalid,()=> {
-                    var (store,hub)=Seed();var before=hub.ClustersJson();var doc=JsonNode.Parse(store.LoadRawJson()!)!.AsObject();
+                    var (store,hub)=Seed();var expectedShared=Shared(hub).DeepClone();var registry=File.ReadAllBytes(Storage.ClustersPath);var doc=JsonNode.Parse(store.LoadRawJson()!)!.AsObject();
                     if (invalid=="schema-type") doc["schemaVersion"]="broken";else doc["storageMetadata"]!["schemaVersion"]="broken";
                     File.WriteAllText(store.FilePath,doc.ToJsonString());var bytes=File.ReadAllText(store.FilePath);
-                    var restarted=new ConnectionHub(store);typeof(ConnectionHub).GetMethod("Restore",Private)!.Invoke(restarted,null);var refused=false;
+                    var restarted=new ConnectionHub(store);typeof(ConnectionHub).GetMethod("Restore",Private)!.Invoke(restarted,null);var snapshot=restarted.ClustersJson();var refused=false;
                     try {restarted.ReconcileLocal(store);}catch(InvalidDataException){refused=true;}
-                    Check(refused && restarted.ClustersJson()==before && File.ReadAllText(store.FilePath)==bytes,"Malformed metadata crashed owner construction or changed saved/shared data");return Task.CompletedTask;
+                    Check(refused && JsonNode.DeepEquals(JsonNode.Parse(restarted.ClustersJson()),JsonNode.Parse(snapshot)) && JsonNode.DeepEquals(Shared(restarted),expectedShared) &&
+                        File.ReadAllBytes(Storage.ClustersPath).SequenceEqual(registry) && File.ReadAllText(store.FilePath)==bytes &&
+                        ((System.Collections.IDictionary)typeof(ConnectionHub).GetField("_seenDefinitions",Private)!.GetValue(restarted)!).Count==0,
+                        "Malformed metadata crashed owner construction or changed saved/shared data");return Task.CompletedTask;
                 });
             await Case("different-canonical-owner-refused",()=> {
                 var (store,hub)=Seed();var before=hub.ClustersJson();var bytes=File.ReadAllText(store.FilePath);var refused=false;
