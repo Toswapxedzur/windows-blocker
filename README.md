@@ -31,9 +31,9 @@ The [release scripts](scripts/release/README.md) create a self-contained x64 pac
 
 ## Native reconciliation verification
 
-The October11 definition-transaction source checkpoint was verified on the owner's selected Mini2 alt1 ARM Windows VM. All28 focused controls passed, including unchanged stale startup data, genuine pre-first-reconcile edits, scalar/Apps intent rebasing, interleaved edits, refused writes, lock CAS, malformed/future/unreadable data and exact ACL/file restoration. The prior10-control production baseline failed7 cases and is retained separately.
+The October 11 definition-transaction source checkpoint was verified on the owner's selected Mini2 alt1 ARM Windows VM. All 28 focused controls passed, including unchanged stale startup data, genuine pre-first-reconcile edits, scalar/Apps intent rebasing, interleaved edits, refused writes, lock CAS, malformed/future/unreadable data and exact ACL/file restoration. The prior 10-control production baseline failed 7 cases and is retained separately.
 
-The same359-file source passed EOF-order1, worker-client11, native236, hub378, MCP35 and package29 contracts; WPF and native-host builds had no warnings or errors. Both conditional test hooks are absent from the actual WPF assembly and present in the test assembly. The earlier379 hub count included a separate optional assembly check; current378 policy/order checks are unchanged and assembly discrimination is recorded independently.
+The same 359-file source passed EOF-order 1, worker-client 11, native 236, hub 378, MCP 35 and package 29 contracts; WPF and native-host builds had no warnings or errors. Both conditional test hooks are absent from the actual WPF assembly and present in the test assembly. The earlier 379 hub count included a separate optional assembly check; current 378 policy/order checks are unchanged and assembly discrimination is recorded independently.
 
 Receipts and exact source/artifact hashes are in the agentic `windows-definition-transaction-review-20261011/VERIFICATION.json` artifact. These are source checks; the WebView editor producer, installed shared worker, browser linking and private package acceptance remain separate. No public build was released.
 
