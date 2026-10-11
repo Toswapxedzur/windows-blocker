@@ -58,6 +58,13 @@ internal static class Program
     static JsonObject RegistryCluster() => Copy(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!["value"]![0]!.AsObject());
     static JsonObject Runtime(JsonObject cluster)
     { var value = Copy(cluster); foreach (var key in new[] { "Name", "Scalars", "Scopes", "Timestamp" }) value.Remove(key); return value; }
+    static async Task<JsonObject> PrepareCanonicalUnlockedView(WebStore store, ConnectionHub hub)
+    {
+        var raw = Group(store); var unit = (await Change(raw, raw))["lock"]!.AsObject();
+        Check(unit["lockedAtMs"] == null && unit["lockVersion"]!.GetValue<int>() == 0, "Canonical seed is not unlocked/version0");
+        hub.ApplySync("chrome", "c", new JsonObject { ["lockBase"] = 0, ["lock"] = unit.DeepClone() }); hub.ReconcileLocal(store);
+        return Group(store);
+    }
     static async Task Refuse(NativePolicyTools tools, JsonObject request, string fragment)
     { try { await tools.ApplyEditorRequest(request); } catch (Exception ex) { Check(ex.Message.Contains(fragment, StringComparison.Ordinal), "Unexpected refusal: " + ex.Message); return; } throw new Exception("Edit falsely acknowledged: " + fragment); }
     static async Task Main()
@@ -73,7 +80,7 @@ internal static class Program
         }
         try {
             await Case("stale-apps24-retains-rich-linked-state-and-sites", async () => {
-                var (store, hub, tools) = Seed(); var view = Group(store);
+                var (store, hub, tools) = Seed(); var view = await PrepareCanonicalUnlockedView(store, hub);
                 hub.SetRoster("safari", new JsonArray(new JsonObject { ["id"] = "s" })); Check(hub.Link("safari", "s", "windowsapp", "w") == null, "Third member refused");
                 // The real incompatible first contribution mints the alias and source origin.
                 hub.ApplySync("safari", "s", Frame(20, 0, new JsonArray(Site("safe.example", true))));
@@ -95,6 +102,7 @@ internal static class Program
                 var authoritative = RegistryCluster()["Scopes"]!.AsArray().OfType<JsonObject>().ToArray();
                 Check(authoritative.Count(s => s["surface"]!.GetValue<string>() == "site") == 2 && saved["scopes"]!.AsArray().OfType<JsonObject>().Single(s => s["surface"]!.GetValue<string>() == "apps")["apps"]![0]!["id"]!.GetValue<string>().EndsWith("new.exe"), "Precise Apps or authoritative Website retention failed");
                 Check(JsonNode.DeepEquals(Runtime(before), Runtime(RegistryCluster())), "Configuration edit lost populated linked runtime/ledger state");
+                var after = RegistryCluster(); Check(before["Lock"]!["lockedAtMs"] == null && after["Lock"]!["lockedAtMs"] == null && before["Lock"]!["lockVersion"]!.GetValue<int>() == 0 && after["Lock"]!["lockVersion"]!.GetValue<int>() == 0, "Configuration edit altered semantic unlocked/version0 state");
                 Check(authoritative.Single(s => s["surface"]!.GetValue<string>() == "apps")["apps"]![0]!["id"]!.GetValue<string>().EndsWith("new.exe") && authoritative.Any(s => s["entryID"]?.GetValue<string>()?.StartsWith("site:linked_") == true && s["sitesExcept"]!.GetValue<bool>() && s["sites"]![0]!.GetValue<string>() == "safe.example"), "Shared Apps or genuine exclusion alias lost");
                 hub.ApplySync("edge", "e", Frame(24, 0)); hub.ReconcileLocal(store);
                 Check(JsonNode.DeepEquals(Group(store)["scopes"], Shared(hub)["scopes"]) && Group(store)["scopes"]!.AsArray().OfType<JsonObject>().Count(s => s["surface"]!.GetValue<string>() == "site") == 2, "Final contribution did not adopt the complete Website union");
