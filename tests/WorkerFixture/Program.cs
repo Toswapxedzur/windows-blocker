@@ -24,6 +24,13 @@ while(await Console.In.ReadLineAsync() is { } line)
         await Task.Delay(Timeout.Infinite);
     }
     if(operation=="background-error")Console.WriteLine(new JsonObject{["event"]="error",["error"]="worker-response-too-large",["sourceEvent"]="activity"}.ToJsonString());
+    if(operation=="capability-ready")
+    {
+        var ready=new JsonObject{["event"]="ready"};
+        if(request["data"]!.AsObject().ContainsKey("flag"))ready["activitySettingsNotifications"]=request["data"]!["flag"]!.DeepClone();
+        Console.WriteLine(ready.ToJsonString());
+    }
+    if(operation=="exit-normal-held")Console.WriteLine(new JsonObject{["event"]="hold-natural-exit",["pid"]=Environment.ProcessId}.ToJsonString());
     if(operation=="settings-commit-events")
     {
         foreach(var body in request["data"]!["commits"]!.AsArray())
@@ -42,6 +49,7 @@ while(await Console.In.ReadLineAsync() is { } line)
         continue;
     }
     Console.WriteLine(new JsonObject { ["id"]=request["id"]!.DeepClone(),["ok"]=true,["value"]=request["data"]!.DeepClone() }.ToJsonString());
+    if(operation is "exit-normal" or "exit-normal-held")break;
 }
 
 if(hangOnEof)await Task.Delay(10000);

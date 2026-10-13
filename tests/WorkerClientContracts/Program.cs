@@ -24,11 +24,47 @@ if(committedEvents.Count!=2 || !committedEvents.Select(body=>body["revision"]!.G
 await client.Request("echo",new JsonObject{["event"]="activity-settings-committed",["value"]=commitFrames[0]!.DeepClone()});
 if(committedEvents.Count!=2)throw new Exception("Response payload was mistaken for a worker commit event");
 Console.WriteLine("PASS Current owned worker pipe preserves committed settings event order and does not publish reply payloads");
+if(client.SupportsActivitySettingsNotifications)throw new Exception("Old worker without ready capability advertised notifications");
+await client.Request("capability-ready",new());
+if(client.SupportsActivitySettingsNotifications)throw new Exception("Old ready frame advertised notifications");
+await client.Request("echo",new JsonObject{["event"]="ready",["activitySettingsNotifications"]=true});
+if(client.SupportsActivitySettingsNotifications)throw new Exception("Reply payload changed worker capability");
+await client.Request("capability-ready",new JsonObject{["flag"]=true});
+if(!client.SupportsActivitySettingsNotifications)throw new Exception("Current worker ready capability was not observed");
+await client.Request("capability-ready",new JsonObject{["flag"]="true"});
+if(client.SupportsActivitySettingsNotifications)throw new Exception("String ready capability accepted as boolean");
+await client.Request("capability-ready",new JsonObject{["flag"]=true});
+var endedCapability=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+client.ActivitySettingsCapabilityChanged+=()=>{if(!client.SupportsActivitySettingsNotifications)endedCapability.TrySetResult();};
+await client.Request("exit-normal",new());
+await endedCapability.Task.WaitAsync(TimeSpan.FromSeconds(5));
+if(client.SupportsActivitySettingsNotifications)throw new Exception("Exited worker retained notification capability");
+await client.Request("echo",new());
+if(client.SupportsActivitySettingsNotifications)throw new Exception("Replacement worker inherited exited session capability");
+Console.WriteLine("PASS Exact current ready boolean controls capability; natural exit and replacement reset it");
+using(var releaseOldReader=new ManualResetEventSlim())
+{
+    var oldExited=new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+    client.Event+=message=>{if(message["event"]?.GetValue<string>()=="hold-natural-exit"){oldExited.TrySetResult(message["pid"]!.GetValue<int>());releaseOldReader.Wait(TimeSpan.FromSeconds(8));}};
+    var oldRequest=client.Request("exit-normal-held",new());
+    try
+    {
+        var oldPid=await oldExited.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        try {using var oldChild=Process.GetProcessById(oldPid);await oldChild.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));}catch(ArgumentException){}
+        await client.Request("capability-ready",new JsonObject{["flag"]=true}).WaitAsync(TimeSpan.FromSeconds(5));
+    }
+    finally {releaseOldReader.Set();}
+    await oldRequest.WaitAsync(TimeSpan.FromSeconds(5));
+    if(!client.SupportsActivitySettingsNotifications)throw new Exception("Late exited session cleanup cleared current worker ready capability");
+}
+var currentCommitReply=await client.Request("settings-commit-events",new JsonObject{["commits"]=new JsonArray()});
+Console.WriteLine("PASS Late natural old-session cleanup cannot clear replacement ready capability");
 if(args.Contains("--activity-settings-only"))
 {
     var result=await client.ShutdownAsync();
     if(result.Kind!=WorkerShutdownKind.CleanExit || result.ExitCode!=0)throw new Exception("Settings event fixture did not exit normally");
-    try {using var child=Process.GetProcessById(commitReply!["pid"]!.GetValue<int>());if(!child.HasExited)throw new Exception("Settings event fixture still running");}catch(ArgumentException){}
+    foreach(var pid in new[]{commitReply!["pid"]!.GetValue<int>(),currentCommitReply!["pid"]!.GetValue<int>()})
+        try {using var child=Process.GetProcessById(pid);if(!child.HasExited)throw new Exception("Settings event fixture still running");}catch(ArgumentException){}
     Console.WriteLine("PASS Settings event fixture normal EOF exit and independent child absence");
     return;
 }

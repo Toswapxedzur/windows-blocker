@@ -15,6 +15,7 @@ static class HubSnapshotOrderContracts
     {
         readonly object gate=new();readonly List<JsonObject> frames=[];
         public Task? BlockFirst;
+        public WebSocketCloseStatus? NormalClose;
         public override WebSocketState State=>WebSocketState.Open;
         public override WebSocketCloseStatus? CloseStatus=>null;
         public override string? CloseStatusDescription=>null;
@@ -22,7 +23,7 @@ static class HubSnapshotOrderContracts
         public override void Abort() {}
         public override void Dispose() {}
         public override Task CloseAsync(WebSocketCloseStatus status,string? description,CancellationToken token)=>Task.CompletedTask;
-        public override Task CloseOutputAsync(WebSocketCloseStatus status,string? description,CancellationToken token)=>Task.CompletedTask;
+        public override Task CloseOutputAsync(WebSocketCloseStatus status,string? description,CancellationToken token){NormalClose=status;return Task.CompletedTask;}
         public override Task<WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer,CancellationToken token)=>throw new NotSupportedException();
         public override async Task SendAsync(ArraySegment<byte> buffer,WebSocketMessageType type,bool end,CancellationToken token)
         {
@@ -77,6 +78,16 @@ static class HubSnapshotOrderContracts
         JsonObject Commit(long revision) => new() { ["event"] = "activity-settings-committed", ["value"] = new JsonObject {
             ["settings"] = new JsonObject { ["byCategory"] = new JsonObject { ["web-visit"] = new JsonObject { ["enabled"] = false } }, ["idleThresholdSeconds"] = 60 },
             ["epoch"] = epoch, ["revision"] = revision, ["changedAtMs"] = 1_750_000_000_000.0 } };
+        var getResponse = (JsonObject)Commit(0)["value"]!.DeepClone(); getResponse["kind"] = "settings";
+        var getBody = ConnectionHub.ActivitySettingsResponse(getResponse);
+        Check(getBody["epoch"]?.GetValue<string>() == epoch && getBody["revision"]?.GetValue<long>() == 0 && getBody["kind"] == null,
+            "Settings GET preserves authoritative metadata without the private response wrapper");
+        getResponse["settings"]!["byCategory"]!["web-visit"]!["enabled"] = true;
+        Check(getBody["settings"]?["byCategory"]?["web-visit"]?["enabled"]?.GetValue<bool>() == false, "Settings reply captures worker snapshot rather than mutable intent");
+        getResponse.Remove("revision");
+        var invalidReply = false;
+        try { ConnectionHub.ActivitySettingsResponse(getResponse); } catch(InvalidDataException) { invalidReply = true; }
+        Check(invalidReply, "Missing worker response metadata is explicit failure rather than empty settings success");
         Check(!hub.PublishWorkerActivitySettings(Commit(1)), "Unqualified worker cannot publish settings or advertise support");
         hub.ActivitySettingsNotificationsSupported = () => true;
         var commit = Commit(1);
@@ -124,6 +135,22 @@ static class HubSnapshotOrderContracts
         Check(failing.PublishWorkerActivitySettings(Commit(1)), "Native enqueue accepts committed snapshot before asynchronous socket failure");
         await Drain(failedPeer);
         Check(((IDictionary)typeof(ConnectionHub).GetField("_peers", Private)!.GetValue(failing)!).Count == 0, "Failed Activity send removes peer without lock inversion");
+        var reconnectHub = new ConnectionHub { ActivitySettingsNotificationsSupported = () => true };
+        var reconnectSocket = new RecordingSocket(); var reconnectPeer = AddPeer(reconnectHub, reconnectSocket);
+        var retainedSocket = new RecordingSocket(); var retainedPeer = AddPeer(reconnectHub, retainedSocket, "classifier");
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        reconnectSocket.BlockFirst = release.Task;
+        reconnectHub.PublishWorkerActivitySettings(Commit(1));
+        var disconnected = reconnectHub.DisconnectActivityBrowsersAsync();
+        Check(reconnectSocket.NormalClose == null && !disconnected.IsCompleted, "Worker reconnect normal close waits behind admitted snapshot send");
+        Check(!reconnectPeer.GetType().GetField("Connected")!.GetValue(reconnectPeer)!.Equals(true), "Reconnect immediately prevents stale authenticated peer delivery");
+        release.SetResult(); await disconnected.WaitAsync(TimeSpan.FromSeconds(5)); await Drain(retainedPeer);
+        Check(reconnectSocket.NormalClose == WebSocketCloseStatus.NormalClosure && retainedSocket.NormalClose == null &&
+            ((IDictionary)typeof(ConnectionHub).GetField("_peers", Private)!.GetValue(reconnectHub)!).Count == 1,
+            "Worker change normally closes only browser peers and keeps Hub/nonbrowser ownership");
+        var freshSocket = new RecordingSocket(); var freshPeer = AddPeer(reconnectHub, freshSocket);
+        await (Task)typeof(ConnectionHub).GetMethod("QueueWelcome", Private)!.Invoke(reconnectHub, [freshPeer])!;
+        Check(freshSocket.Read().First()["activitySettingsNotifications"]?.GetValue<bool>() == true, "Reauthenticated browser receives current capability in fresh welcome");
     }
     public static async Task Run(string? appAssembly=null)
     {
