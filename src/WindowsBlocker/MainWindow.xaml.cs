@@ -612,12 +612,22 @@ public partial class MainWindow : Window
         if (result is JsonObject error && error["error"] is JsonNode code) throw new InvalidOperationException(code.GetValue<string>());
         return result as JsonObject ?? new();
     }
-    private void OnClassifierEvent(JsonObject evt) => Dispatcher.InvokeAsync(() =>
+    private void OnClassifierEvent(JsonObject evt)
     {
-        if (evt["event"]?.GetValue<string>() == "state" && evt["value"] != null) ApplyClassifierSnapshot(evt["value"]);
-        if (evt["event"]?.GetValue<string>() == "activity") ApplyActivity(evt["value"]);
-        if (evt["event"]?.GetValue<string>() == "broadcast") _hub.BroadcastClassifier(evt);
-    });
+        // This callback is reached only from the current creator-owned worker
+        // stdout session. Publish synchronously in pipe order, before UI awaits.
+        if (evt["event"]?.GetValue<string>() == "activity-settings-committed")
+        {
+            _hub.PublishWorkerActivitySettings(evt);
+            return;
+        }
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (evt["event"]?.GetValue<string>() == "state" && evt["value"] != null) ApplyClassifierSnapshot(evt["value"]);
+            if (evt["event"]?.GetValue<string>() == "activity") ApplyActivity(evt["value"]);
+            if (evt["event"]?.GetValue<string>() == "broadcast") _hub.BroadcastClassifier(evt);
+        });
+    }
     private void ApplyClassifierSnapshot(JsonNode? snapshot)
     {
         PromptDictionaryContribution(snapshot);

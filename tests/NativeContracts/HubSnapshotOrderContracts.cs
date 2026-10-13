@@ -64,6 +64,67 @@ static class HubSnapshotOrderContracts
         if(peer.GetType().GetField("SendTail")?.GetValue(peer) is Task tail)await tail.WaitAsync(TimeSpan.FromSeconds(5));
         else await Task.Delay(300);
     }
+    public static async Task RunActivitySettings()
+    {
+        var hub = new ConnectionHub();
+        var chrome = new RecordingSocket(); var chromePeer = AddPeer(hub, chrome);
+        var edge = new RecordingSocket(); var edgePeer = AddPeer(hub, edge, "edge");
+        var safari = new RecordingSocket(); var safariPeer = AddPeer(hub, safari, "safari");
+        var classifier = new RecordingSocket(); var classifierPeer = AddPeer(hub, classifier, "classifier");
+        var waiting = new RecordingSocket(); var waitingPeer = AddPeer(hub, waiting);
+        waitingPeer.GetType().GetField("Connected")!.SetValue(waitingPeer, false);
+        var epoch = Guid.NewGuid().ToString();
+        JsonObject Commit(long revision) => new() { ["event"] = "activity-settings-committed", ["value"] = new JsonObject {
+            ["settings"] = new JsonObject { ["byCategory"] = new JsonObject { ["web-visit"] = new JsonObject { ["enabled"] = false } }, ["idleThresholdSeconds"] = 60 },
+            ["epoch"] = epoch, ["revision"] = revision, ["changedAtMs"] = 1_750_000_000_000.0 } };
+        Check(!hub.PublishWorkerActivitySettings(Commit(1)), "Unqualified worker cannot publish settings or advertise support");
+        hub.ActivitySettingsNotificationsSupported = () => true;
+        var commit = Commit(1);
+        Check(hub.PublishWorkerActivitySettings(commit), "Successful own worker commit admitted");
+        commit["value"]!["settings"]!["byCategory"]!["web-visit"]!["enabled"] = true;
+        await Task.WhenAll(Drain(chromePeer), Drain(edgePeer), Drain(safariPeer), Drain(classifierPeer), Drain(waitingPeer));
+        Check(new[] { chrome, edge, safari }.All(s => s.Read().Single()["kind"]?.GetValue<string>() == "activity-settings-updated" &&
+            s.Read().Single()["body"]?["settings"]?["byCategory"]?["web-visit"]?["enabled"]?.GetValue<bool>() == false),
+            "All authenticated browsers including origin receive captured committed snapshot");
+        Check(classifier.Read().Length == 0 && waiting.Read().Length == 0, "Classifier and unauthenticated peers receive no Activity settings");
+        Check(!hub.PublishWorkerActivitySettings(Commit(0)) && !hub.PublishWorkerActivitySettings(Commit(1)), "Older and duplicate same-epoch commits cannot overwrite current settings");
+        foreach (var field in new[] { "epoch", "revision", "changedAtMs", "settings" })
+        {
+            var invalid = Commit(2); invalid["value"]!.AsObject().Remove(field);
+            Check(!hub.PublishWorkerActivitySettings(invalid), "Missing " + field + " refuses native settings event");
+        }
+        foreach (var invalidRevision in new JsonNode?[] { JsonValue.Create(-1), JsonValue.Create(9_007_199_254_740_992L), JsonValue.Create(1.5), JsonValue.Create("2") })
+        {
+            var invalid = Commit(2); invalid["value"]!["revision"] = invalidRevision;
+            Check(!hub.PublishWorkerActivitySettings(invalid), "Revision must be a nonnegative JavaScript-safe integer");
+        }
+        var wrongEpoch = Commit(2); wrongEpoch["value"]!["epoch"] = "not-a-store-uuid";
+        var wrongTime = Commit(2); wrongTime["value"]!["changedAtMs"] = -1.0;
+        var oversized = Commit(2); oversized["value"]!["settings"]!["unexpected"] = new string('x', 88_001);
+        Check(!hub.PublishWorkerActivitySettings(wrongEpoch) && !hub.PublishWorkerActivitySettings(wrongTime) && !hub.PublishWorkerActivitySettings(oversized), "Malformed epoch, negative time and oversized snapshots fail closed");
+        var client = Commit(2); client.Remove("event"); client["kind"] = "activity-settings-updated";
+        Check(!hub.PublishWorkerActivitySettings(client), "Client-originated settings kind cannot enter worker-only publisher");
+        var classifierEvent = Commit(2); classifierEvent["event"] = "broadcast"; classifierEvent["operation"] = "activity-settings-updated";
+        hub.BroadcastClassifier(classifierEvent);
+        Check(!hub.PublishWorkerActivitySettings(classifierEvent), "Classifier whitelist does not authorize Activity settings commits");
+        Check(hub.PublishWorkerActivitySettings(Commit(2)), "Newer commit follows older snapshot in peer FIFO");
+        var restarted = Commit(0); restarted["value"]!["epoch"] = Guid.NewGuid().ToString();
+        Check(hub.PublishWorkerActivitySettings(restarted), "New store epoch may begin at revision zero");
+        await Drain(chromePeer);
+        Check(chrome.Read().Select(f => f["body"]!["revision"]!.GetValue<long>()).SequenceEqual(new long[] { 1, 2, 0 }), "Native commit generation enqueue preserves pipe order");
+        var welcomeSocket = new RecordingSocket(); var welcomePeer = AddPeer(hub, welcomeSocket, "edge");
+        await (Task)typeof(ConnectionHub).GetMethod("QueueWelcome", Private)!.Invoke(hub, [welcomePeer])!;
+        Check(welcomeSocket.Read().First()["activitySettingsNotifications"]?.GetValue<bool>() == true, "Supporting worker advertises additive v4 welcome capability");
+        hub.ActivitySettingsNotificationsSupported = () => false;
+        var unsupported = new RecordingSocket(); var unsupportedPeer = AddPeer(hub, unsupported, "safari");
+        await (Task)typeof(ConnectionHub).GetMethod("QueueWelcome", Private)!.Invoke(hub, [unsupportedPeer])!;
+        Check(unsupported.Read().First()["activitySettingsNotifications"]?.GetValue<bool>() == false && !hub.PublishWorkerActivitySettings(Commit(3)), "Unsupported worker neither advertises nor publishes notifications");
+        var failing = new ConnectionHub { ActivitySettingsNotificationsSupported = () => true };
+        var failedPeer = AddPeer(failing, new SynchronousFailureSocket());
+        Check(failing.PublishWorkerActivitySettings(Commit(1)), "Native enqueue accepts committed snapshot before asynchronous socket failure");
+        await Drain(failedPeer);
+        Check(((IDictionary)typeof(ConnectionHub).GetField("_peers", Private)!.GetValue(failing)!).Count == 0, "Failed Activity send removes peer without lock inversion");
+    }
     public static async Task Run(string? appAssembly=null)
     {
         foreach(var phase in new[]{"broadcast","welcome"})

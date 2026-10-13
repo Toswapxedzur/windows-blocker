@@ -24,6 +24,13 @@ while(await Console.In.ReadLineAsync() is { } line)
         await Task.Delay(Timeout.Infinite);
     }
     if(operation=="background-error")Console.WriteLine(new JsonObject{["event"]="error",["error"]="worker-response-too-large",["sourceEvent"]="activity"}.ToJsonString());
+    if(operation=="settings-commit-events")
+    {
+        foreach(var body in request["data"]!["commits"]!.AsArray())
+            Console.WriteLine(new JsonObject { ["event"]="activity-settings-committed", ["value"]=body!.DeepClone() }.ToJsonString());
+        Console.WriteLine(new JsonObject { ["id"]=request["id"]!.DeepClone(),["ok"]=true,["value"]=new JsonObject{["pid"]=Environment.ProcessId} }.ToJsonString());
+        continue;
+    }
     if(operation=="crash") { Console.WriteLine(new JsonObject { ["event"]="hold",["pid"]=Environment.ProcessId }.ToJsonString());Console.Out.Flush();Environment.Exit(7); }
     if(operation=="delay") await Task.Delay(500);
     if(operation=="activity" && request["data"]?["kind"]?.GetValue<string>()=="mcp")
