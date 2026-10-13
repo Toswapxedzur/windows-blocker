@@ -283,7 +283,7 @@ public sealed partial class ConnectionHub
         lock(_gate)
         {
             var welcome=SendAsync(peer,new() { ["kind"]="welcome",["v"]=ProtocolVersion,["hubProgram"]=LocalProgram,["peers"]=PeerList(),["usageTransferReceipts"]=true,
-                ["activitySettingsNotifications"]=ActivitySettingsNotificationsSupported?.Invoke()==true });
+                ["activitySettingsNotifications"]=ActivitySettingsSupported() });
             var frame=ClustersFrame();
 #if VAULT_CONTRACT_TESTS
             ClusterSnapshotCapturedForTests?.Invoke("welcome");

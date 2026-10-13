@@ -6,6 +6,9 @@ using WindowsBlocker.WebUI;
 
 namespace WindowsBlocker.Bridge;
 
+// Creator-owned process identity; never read from the worker JSON payload.
+public sealed record WorkerEvent(long SessionGeneration, JsonObject Message);
+
 public enum WorkerShutdownKind { AlreadyStopped, CleanExit, Failed, ForcedTermination }
 public sealed record WorkerShutdownResult(WorkerShutdownKind Kind, int? ExitCode = null, string? Error = null)
 {
@@ -16,9 +19,10 @@ public sealed record WorkerShutdownResult(WorkerShutdownKind Kind, int? ExitCode
 // stdout is only framed JSONL; stderr goes to developer diagnostics.
 public sealed class ClassifierWorkerClient : IDisposable
 {
-    private sealed class Session(Process process)
+    private sealed class Session(Process process, long generation)
     {
         public Process Process { get; } = process;
+        public long Generation { get; } = generation;
         public StreamWriter Input { get; } = process.StandardInput;
         public Task Writes { get; set; } = Task.CompletedTask;
         public string? WriteError { get; set; }
@@ -29,16 +33,18 @@ public sealed class ClassifierWorkerClient : IDisposable
     private readonly ConcurrentDictionary<string, Pending> _pending = new();
     private readonly object _gate = new();
     private Session? _session;
+    private long _generation;
     private Task<WorkerShutdownResult>? _shutdown;
     private bool _stopping;
     private bool _disposed;
     public WorkerShutdownResult? LastShutdownResult { get; private set; }
-    public event Action<JsonObject>? Event;
-    public event Action? ActivitySettingsCapabilityChanged;
-    public bool SupportsActivitySettingsNotifications
+    public event Action<WorkerEvent>? Event;
+    public event Action<long>? ActivitySettingsCapabilityChanged;
+    public (long Generation, bool Supported) ActivitySettingsAuthority
     {
-        get { lock (_gate) return _session is { } current && !current.Process.HasExited && current.ActivitySettingsNotifications; }
+        get { lock (_gate) return (_generation, _session is { } current && !current.Process.HasExited && current.ActivitySettingsNotifications); }
     }
+    public bool SupportsActivitySettingsNotifications => ActivitySettingsAuthority.Supported;
     private readonly string? _executablePath;
     public ClassifierWorkerClient(string? executablePath = null) => _executablePath = executablePath;
 
@@ -67,7 +73,7 @@ public sealed class ClassifierWorkerClient : IDisposable
         }
         // Never call into the Hub while holding the worker gate. Its welcome
         // capability getter takes this gate while the Hub owns its own gate.
-        if (started) ActivitySettingsCapabilityChanged?.Invoke();
+        if (started) ActivitySettingsCapabilityChanged?.Invoke(session.Generation);
         try
         {
             await write;
@@ -87,8 +93,10 @@ public sealed class ClassifierWorkerClient : IDisposable
         start.Environment["VAULT_ENVIRONMENT"] = Storage.Development ? "development" : "production";
         start.Environment["ADAMANCIA_VAULT_ENVIRONMENT"] = Storage.Development ? "development" : "production";
         start.Environment["VAULT_DATA_ROOT"] = Path.Combine(Storage.RootDirectory, "Classifier");
+        var generation = checked(_generation + 1);
         var process = Process.Start(start) ?? throw new InvalidOperationException("classifier-worker-launch-failed");
-        var session = new Session(process);
+        var session = new Session(process, generation);
+        _generation = generation;
         _session = session;
         _ = Task.Run(() => ReadAsync(session));
         _ = Task.Run(async () => { try { while (await process.StandardError.ReadLineAsync() is { } line) Trace.WriteLine("Classifier: " + line); } catch { } });
@@ -118,11 +126,11 @@ public sealed class ClassifierWorkerClient : IDisposable
                             session.ActivitySettingsNotifications = supported;
                         }
                     }
-                    if (changed) ActivitySettingsCapabilityChanged?.Invoke();
+                    if (changed) ActivitySettingsCapabilityChanged?.Invoke(session.Generation);
                     if (active)
                     {
                         if (message["event"]?.GetValue<string>() == "error") Trace.WriteLine("Classifier background error: " + message["error"]?.GetValue<string>() + " (" + message["sourceEvent"]?.GetValue<string>() + ")");
-                        Event?.Invoke(message);
+                        Event?.Invoke(new WorkerEvent(session.Generation, message));
                     }
                     continue;
                 }
@@ -146,7 +154,7 @@ public sealed class ClassifierWorkerClient : IDisposable
             catch (Exception ex) { session.Exit.TrySetResult(new(WorkerShutdownKind.Failed, Error: ex.Message)); }
             bool ended;
             lock (_gate) { ended = _session == session; if (ended) _session = null; process.Dispose(); }
-            if (ended) ActivitySettingsCapabilityChanged?.Invoke();
+            if (ended) ActivitySettingsCapabilityChanged?.Invoke(session.Generation);
         }
     }
 

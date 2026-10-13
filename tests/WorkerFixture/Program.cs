@@ -36,6 +36,7 @@ while(await Console.In.ReadLineAsync() is { } line)
         foreach(var body in request["data"]!["commits"]!.AsArray())
             Console.WriteLine(new JsonObject { ["event"]="activity-settings-committed", ["value"]=body!.DeepClone() }.ToJsonString());
         Console.WriteLine(new JsonObject { ["id"]=request["id"]!.DeepClone(),["ok"]=true,["value"]=new JsonObject{["pid"]=Environment.ProcessId} }.ToJsonString());
+        if(request["data"]?["exitAfterCommits"]?.GetValue<bool>()==true)break;
         continue;
     }
     if(operation=="crash") { Console.WriteLine(new JsonObject { ["event"]="hold",["pid"]=Environment.ProcessId }.ToJsonString());Console.Out.Flush();Environment.Exit(7); }
