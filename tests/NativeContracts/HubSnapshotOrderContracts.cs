@@ -65,9 +65,11 @@ static class HubSnapshotOrderContracts
         if(peer.GetType().GetField("SendTail")?.GetValue(peer) is Task tail)await tail.WaitAsync(TimeSpan.FromSeconds(5));
         else await Task.Delay(300);
     }
-    public static async Task RunActivitySettings()
+    public static async Task RunActivitySettings(string? fixturePath = null)
     {
-        var hub = new ConnectionHub();
+        var authority = (Generation: 1L, Supported: true);
+        var hub = new ConnectionHub { ActivitySettingsAuthority = () => authority };
+        await hub.ResetActivitySettingsAuthority(1);
         var chrome = new RecordingSocket(); var chromePeer = AddPeer(hub, chrome);
         var edge = new RecordingSocket(); var edgePeer = AddPeer(hub, edge, "edge");
         var safari = new RecordingSocket(); var safariPeer = AddPeer(hub, safari, "safari");
@@ -75,10 +77,10 @@ static class HubSnapshotOrderContracts
         var waiting = new RecordingSocket(); var waitingPeer = AddPeer(hub, waiting);
         waitingPeer.GetType().GetField("Connected")!.SetValue(waitingPeer, false);
         var epoch = Guid.NewGuid().ToString();
-        JsonObject Commit(long revision) => new() { ["event"] = "activity-settings-committed", ["value"] = new JsonObject {
+        JsonObject Commit(long revision) => new() {
             ["settings"] = new JsonObject { ["byCategory"] = new JsonObject { ["web-visit"] = new JsonObject { ["enabled"] = false } }, ["idleThresholdSeconds"] = 60 },
-            ["epoch"] = epoch, ["revision"] = revision, ["changedAtMs"] = 1_750_000_000_000.0 } };
-        var getResponse = (JsonObject)Commit(0)["value"]!.DeepClone(); getResponse["kind"] = "settings";
+            ["epoch"] = epoch, ["revision"] = revision, ["changedAtMs"] = 1_750_000_000_000.0 };
+        var getResponse = (JsonObject)Commit(0).DeepClone(); getResponse["kind"] = "settings";
         var getBody = ConnectionHub.ActivitySettingsResponse(getResponse);
         Check(getBody["epoch"]?.GetValue<string>() == epoch && getBody["revision"]?.GetValue<long>() == 0 && getBody["kind"] == null,
             "Settings GET preserves authoritative metadata without the private response wrapper");
@@ -99,60 +101,63 @@ static class HubSnapshotOrderContracts
         var invalidRecord = false;
         try { ConnectionHub.ActivityRecordResponse(recordResponse); } catch(InvalidDataException) { invalidRecord = true; }
         Check(invalidRecord, "Missing record receipt cannot become a successful zero-count response");
-        Check(!hub.PublishWorkerActivitySettings(Commit(1)), "Unqualified worker cannot publish settings or advertise support");
-        hub.ActivitySettingsNotificationsSupported = () => true;
+        Check(!new ConnectionHub().PublishActivitySettings(1, Commit(1)), "Unqualified worker cannot publish settings or advertise support");
         var commit = Commit(1);
-        Check(hub.PublishWorkerActivitySettings(commit), "Successful own worker commit admitted");
-        commit["value"]!["settings"]!["byCategory"]!["web-visit"]!["enabled"] = true;
+        Check(hub.PublishActivitySettings(1, commit), "Successful own worker commit admitted");
+        commit["settings"]!["byCategory"]!["web-visit"]!["enabled"] = true;
         await Task.WhenAll(Drain(chromePeer), Drain(edgePeer), Drain(safariPeer), Drain(classifierPeer), Drain(waitingPeer));
         Check(new[] { chrome, edge, safari }.All(s => s.Read().Single()["kind"]?.GetValue<string>() == "activity-settings-updated" &&
             s.Read().Single()["body"]?["settings"]?["byCategory"]?["web-visit"]?["enabled"]?.GetValue<bool>() == false),
             "All authenticated browsers including origin receive captured committed snapshot");
         Check(classifier.Read().Length == 0 && waiting.Read().Length == 0, "Classifier and unauthenticated peers receive no Activity settings");
-        Check(!hub.PublishWorkerActivitySettings(Commit(0)) && !hub.PublishWorkerActivitySettings(Commit(1)), "Older and duplicate same-epoch commits cannot overwrite current settings");
+        Check(!hub.PublishActivitySettings(1, Commit(0)) && !hub.PublishActivitySettings(1, Commit(1)), "Older and duplicate same-epoch commits cannot overwrite current settings");
         foreach (var field in new[] { "epoch", "revision", "changedAtMs", "settings" })
         {
-            var invalid = Commit(2); invalid["value"]!.AsObject().Remove(field);
-            Check(!hub.PublishWorkerActivitySettings(invalid), "Missing " + field + " refuses native settings event");
+            var invalid = Commit(2); invalid.AsObject().Remove(field);
+            Check(!hub.PublishActivitySettings(1, invalid), "Missing " + field + " refuses native settings event");
         }
         foreach (var invalidRevision in new JsonNode?[] { JsonValue.Create(-1), JsonValue.Create(9_007_199_254_740_992L), JsonValue.Create(1.5), JsonValue.Create("2") })
         {
-            var invalid = Commit(2); invalid["value"]!["revision"] = invalidRevision;
-            Check(!hub.PublishWorkerActivitySettings(invalid), "Revision must be a nonnegative JavaScript-safe integer");
+            var invalid = Commit(2); invalid["revision"] = invalidRevision;
+            Check(!hub.PublishActivitySettings(1, invalid), "Revision must be a nonnegative JavaScript-safe integer");
         }
-        var wrongEpoch = Commit(2); wrongEpoch["value"]!["epoch"] = "not-a-store-uuid";
-        var wrongTime = Commit(2); wrongTime["value"]!["changedAtMs"] = -1.0;
-        var oversized = Commit(2); oversized["value"]!["settings"]!["unexpected"] = new string('x', 88_001);
-        Check(!hub.PublishWorkerActivitySettings(wrongEpoch) && !hub.PublishWorkerActivitySettings(wrongTime) && !hub.PublishWorkerActivitySettings(oversized), "Malformed epoch, negative time and oversized snapshots fail closed");
-        var client = Commit(2); client.Remove("event"); client["kind"] = "activity-settings-updated";
-        Check(!hub.PublishWorkerActivitySettings(client), "Client-originated settings kind cannot enter worker-only publisher");
-        var classifierEvent = Commit(2); classifierEvent["event"] = "broadcast"; classifierEvent["operation"] = "activity-settings-updated";
+        var wrongEpoch = Commit(2); wrongEpoch["epoch"] = "not-a-store-uuid";
+        var wrongTime = Commit(2); wrongTime["changedAtMs"] = -1.0;
+        var oversized = Commit(2); oversized["settings"]!["unexpected"] = new string('x', 88_001);
+        Check(!hub.PublishActivitySettings(1, wrongEpoch) && !hub.PublishActivitySettings(1, wrongTime) && !hub.PublishActivitySettings(1, oversized), "Malformed epoch, negative time and oversized snapshots fail closed");
+        var client = new JsonObject { ["kind"] = "activity-settings-updated", ["body"] = Commit(2) };
+        Check(!hub.PublishActivitySettings(1, client), "Client-originated settings kind cannot enter worker-only publisher");
+        var classifierEvent = new JsonObject { ["event"] = "broadcast", ["operation"] = "activity-settings-updated", ["body"] = Commit(2) };
         hub.BroadcastClassifier(classifierEvent);
-        Check(!hub.PublishWorkerActivitySettings(classifierEvent), "Classifier whitelist does not authorize Activity settings commits");
-        Check(hub.PublishWorkerActivitySettings(Commit(2)), "Newer commit follows older snapshot in peer FIFO");
-        var restarted = Commit(0); restarted["value"]!["epoch"] = Guid.NewGuid().ToString();
-        Check(hub.PublishWorkerActivitySettings(restarted), "New store epoch may begin at revision zero");
+        Check(!hub.PublishActivitySettings(1, classifierEvent), "Classifier whitelist does not authorize Activity settings commits");
+        Check(hub.PublishActivitySettings(1, Commit(2)), "Newer commit follows older snapshot in peer FIFO");
+        var restarted = Commit(0); restarted["epoch"] = Guid.NewGuid().ToString();
+        Check(hub.PublishActivitySettings(1, restarted), "New store epoch may begin at revision zero");
         await Drain(chromePeer);
         Check(chrome.Read().Select(f => f["body"]!["revision"]!.GetValue<long>()).SequenceEqual(new long[] { 1, 2, 0 }), "Native commit generation enqueue preserves pipe order");
         var welcomeSocket = new RecordingSocket(); var welcomePeer = AddPeer(hub, welcomeSocket, "edge");
         await (Task)typeof(ConnectionHub).GetMethod("QueueWelcome", Private)!.Invoke(hub, [welcomePeer])!;
         Check(welcomeSocket.Read().First()["activitySettingsNotifications"]?.GetValue<bool>() == true, "Supporting worker advertises additive v4 welcome capability");
-        hub.ActivitySettingsNotificationsSupported = () => false;
+        authority = (1, false);
         var unsupported = new RecordingSocket(); var unsupportedPeer = AddPeer(hub, unsupported, "safari");
         await (Task)typeof(ConnectionHub).GetMethod("QueueWelcome", Private)!.Invoke(hub, [unsupportedPeer])!;
-        Check(unsupported.Read().First()["activitySettingsNotifications"]?.GetValue<bool>() == false && !hub.PublishWorkerActivitySettings(Commit(3)), "Unsupported worker neither advertises nor publishes notifications");
-        var failing = new ConnectionHub { ActivitySettingsNotificationsSupported = () => true };
+        Check(unsupported.Read().First()["activitySettingsNotifications"]?.GetValue<bool>() == false && !hub.PublishActivitySettings(1, Commit(3)), "Unsupported worker neither advertises nor publishes notifications");
+        var failing = new ConnectionHub { ActivitySettingsAuthority = () => (1, true) };
+        await failing.ResetActivitySettingsAuthority(1);
         var failedPeer = AddPeer(failing, new SynchronousFailureSocket());
-        Check(failing.PublishWorkerActivitySettings(Commit(1)), "Native enqueue accepts committed snapshot before asynchronous socket failure");
+        Check(failing.PublishActivitySettings(1, Commit(1)), "Native enqueue accepts committed snapshot before asynchronous socket failure");
         await Drain(failedPeer);
         Check(((IDictionary)typeof(ConnectionHub).GetField("_peers", Private)!.GetValue(failing)!).Count == 0, "Failed Activity send removes peer without lock inversion");
-        var reconnectHub = new ConnectionHub { ActivitySettingsNotificationsSupported = () => true };
+        var reconnectAuthority = (Generation: 1L, Supported: true);
+        var reconnectHub = new ConnectionHub { ActivitySettingsAuthority = () => reconnectAuthority };
+        await reconnectHub.ResetActivitySettingsAuthority(1);
         var reconnectSocket = new RecordingSocket(); var reconnectPeer = AddPeer(reconnectHub, reconnectSocket);
         var retainedSocket = new RecordingSocket(); var retainedPeer = AddPeer(reconnectHub, retainedSocket, "classifier");
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         reconnectSocket.BlockFirst = release.Task;
-        reconnectHub.PublishWorkerActivitySettings(Commit(1));
-        var disconnected = reconnectHub.DisconnectActivityBrowsersAsync();
+        reconnectHub.PublishActivitySettings(1, Commit(1));
+        reconnectAuthority = (2, true);
+        var disconnected = reconnectHub.ResetActivitySettingsAuthority(2);
         Check(reconnectSocket.NormalClose == null && !disconnected.IsCompleted, "Worker reconnect normal close waits behind admitted snapshot send");
         Check(!reconnectPeer.GetType().GetField("Connected")!.GetValue(reconnectPeer)!.Equals(true), "Reconnect immediately prevents stale authenticated peer delivery");
         release.SetResult(); await disconnected.WaitAsync(TimeSpan.FromSeconds(5)); await Drain(retainedPeer);
@@ -162,6 +167,87 @@ static class HubSnapshotOrderContracts
         var freshSocket = new RecordingSocket(); var freshPeer = AddPeer(reconnectHub, freshSocket);
         await (Task)typeof(ConnectionHub).GetMethod("QueueWelcome", Private)!.Invoke(reconnectHub, [freshPeer])!;
         Check(freshSocket.Read().First()["activitySettingsNotifications"]?.GetValue<bool>() == true, "Reauthenticated browser receives current capability in fresh welcome");
+        Check(!reconnectHub.PublishActivitySettings(1, Commit(999)), "Delayed old generation cannot publish into new authority");
+        await reconnectHub.ResetActivitySettingsAuthority(1);
+        Check(reconnectHub.PublishActivitySettings(2, Commit(1)), "Late old ready/closed reset cannot roll back current generation");
+        await Drain(freshPeer);
+        Check(!reconnectHub.PublishActivitySettings(2, Commit(1)), "Refused old callback cannot mutate current epoch or revision");
+        reconnectAuthority = (2, false); await reconnectHub.ResetActivitySettingsAuthority(2);
+        var beforeReady = new RecordingSocket(); var beforeReadyPeer = AddPeer(reconnectHub, beforeReady);
+        await (Task)typeof(ConnectionHub).GetMethod("QueueWelcome", Private)!.Invoke(reconnectHub, [beforeReadyPeer])!;
+        Check(beforeReady.Read().First()["activitySettingsNotifications"]?.GetValue<bool>() == false, "Current closed/unsupported generation has false welcome");
+        reconnectAuthority = (2, true); await reconnectHub.ResetActivitySettingsAuthority(2);
+        Check(beforeReady.NormalClose == WebSocketCloseStatus.NormalClosure, "Ready capability after false welcome forces normal reauthentication");
+        if (fixturePath != null) await RunActualActivityOriginRace(fixturePath);
+    }
+    private static async Task RunActualActivityOriginRace(string fixturePath)
+    {
+        using var worker = new ClassifierWorkerClient(fixturePath);
+        var hub = new ConnectionHub { ActivitySettingsAuthority = () => worker.ActivitySettingsAuthority };
+        worker.ActivitySettingsCapabilityChanged += generation => { _ = hub.ResetActivitySettingsAuthority(generation); };
+        var oldEpoch = Guid.NewGuid().ToString(); var newEpoch = Guid.NewGuid().ToString();
+        JsonObject Body(string epoch, long revision) => new() { ["settings"] = new JsonObject { ["idleThresholdSeconds"] = 60 },
+            ["epoch"] = epoch, ["revision"] = revision, ["changedAtMs"] = 1_750_000_000_000.0 };
+        using var admitted = new ManualResetEventSlim(); using var release = new ManualResetEventSlim();
+        var oldCallback = new TaskCompletionSource<(long Generation, bool Accepted)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        worker.Event += received =>
+        {
+            if (received.Message["event"]?.GetValue<string>() == "activity-settings-committed" && received.Message["value"]?["epoch"]?.GetValue<string>() == oldEpoch)
+            { admitted.Set(); if (!release.Wait(TimeSpan.FromSeconds(8))) throw new Exception("Old callback barrier timed out"); }
+        };
+        worker.Event += received =>
+        {
+            if (received.Message["event"]?.GetValue<string>() == "activity-settings-committed" && received.Message["value"] is JsonObject body)
+            {
+                var accepted = hub.PublishActivitySettings(received.SessionGeneration, body);
+                if (body["epoch"]?.GetValue<string>() == oldEpoch) oldCallback.TrySetResult((received.SessionGeneration, accepted));
+            }
+        };
+        var childPIDs = new List<int>();
+        try
+        {
+            await worker.Request("capability-ready", new JsonObject { ["flag"] = true });
+            var originalGeneration = worker.ActivitySettingsAuthority.Generation;
+            var oldIdentity = await worker.Request("settings-commit-events", new JsonObject { ["commits"] = new JsonArray() });
+            var oldPID = oldIdentity!["pid"]!.GetValue<int>(); childPIDs.Add(oldPID);
+            // Retain the client's original creator-owned Process object. An
+            // externally queried PID object cannot report ExitCode on Windows.
+            var ownSession = typeof(ClassifierWorkerClient).GetField("_session", Private)!.GetValue(worker)!;
+            var oldProcess = (System.Diagnostics.Process)ownSession.GetType().GetProperty("Process")!.GetValue(ownSession)!;
+            Check(oldProcess.Id == oldPID && (long)ownSession.GetType().GetProperty("Generation")!.GetValue(ownSession)! == originalGeneration,
+                "Origin race observes the exact creator-owned Process and generation");
+            var delayedRequest = worker.Request("settings-commit-events", new JsonObject { ["commits"] = new JsonArray(Body(oldEpoch, 999)), ["exitAfterCommits"] = true });
+            Check(admitted.Wait(TimeSpan.FromSeconds(5)), "Actual old callback delayed after reader admissibility and before host bridge");
+            await oldProcess.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            Check(oldProcess.ExitCode == 0, "Delayed callback child exits naturally without cancellation");
+            await worker.Request("capability-ready", new JsonObject { ["flag"] = true });
+            var currentGeneration = worker.ActivitySettingsAuthority.Generation;
+            Check(currentGeneration > originalGeneration && worker.ActivitySettingsAuthority.Supported, "Replacement has a newer host-owned ready generation");
+            var socket = new RecordingSocket(); var peer = AddPeer(hub, socket);
+            var replacement = await worker.Request("settings-commit-events", new JsonObject { ["commits"] = new JsonArray(Body(newEpoch, 1)) });
+            childPIDs.Add(replacement!["pid"]!.GetValue<int>());
+            await Drain(peer);
+            Check(socket.Read().Single()["body"]?["epoch"]?.GetValue<string>() == newEpoch, "New session commit arrives before releasing old callback");
+            release.Set(); await delayedRequest.WaitAsync(TimeSpan.FromSeconds(5));
+            var stale = await oldCallback.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await Drain(peer);
+            Check(stale.Generation == originalGeneration && !stale.Accepted && socket.Read().Length == 1, "Creator-owned old callback token refuses publication after replacement");
+            await hub.ResetActivitySettingsAuthority(originalGeneration);
+            Check(!hub.PublishActivitySettings(currentGeneration, Body(newEpoch, 1)) && hub.PublishActivitySettings(currentGeneration, Body(newEpoch, 2)),
+                "Late old callback/ready/close cannot poison new epoch or roll back revision");
+            await Drain(peer);
+            Check(socket.Read().Length == 2 && socket.Read().All(frame => frame["body"]?["epoch"]?.GetValue<string>() == newEpoch && frame["SessionGeneration"] == null && frame["body"]?["SessionGeneration"] == null),
+                "Public Activity wire carries committed body without host generation tokens");
+        }
+        finally
+        {
+            release.Set();
+            var outcome = await worker.ShutdownAsync();
+            Check(outcome.Kind == WorkerShutdownKind.CleanExit && outcome.ExitCode == 0, "Origin race replacement exits by normal EOF");
+            foreach (var pid in childPIDs)
+                try { using var child = System.Diagnostics.Process.GetProcessById(pid); Check(child.HasExited, "Exact origin-race child independently absent"); }
+                catch (ArgumentException) { Console.WriteLine("PASS Exact origin-race child independently absent"); }
+        }
     }
     public static async Task Run(string? appAssembly=null)
     {

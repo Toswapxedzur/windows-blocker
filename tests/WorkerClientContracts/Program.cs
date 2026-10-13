@@ -12,7 +12,7 @@ var roundtrip=await client.Request("echo",new JsonObject { ["text"]=unicode });
 if(roundtrip?["text"]?.GetValue<string>()!=unicode) throw new Exception("Worker JSONL did not preserve Unicode");
 Console.WriteLine("PASS Worker JSONL preserves non-ASCII tags and titles");
 var committedEvents=new List<JsonObject>();
-client.Event+=message=> { if(message["event"]?.GetValue<string>()=="activity-settings-committed")committedEvents.Add((JsonObject)message["value"]!.DeepClone()); };
+client.Event+=received=> { var message=received.Message; if(message["event"]?.GetValue<string>()=="activity-settings-committed")committedEvents.Add((JsonObject)message["value"]!.DeepClone()); };
 var commitEpoch=Guid.NewGuid().ToString();
 var commitFrames=new JsonArray(Enumerable.Range(1,2).Select(revision=>(JsonNode?)new JsonObject {
     ["settings"]=new JsonObject{["byCategory"]=new JsonObject{["web-visit"]=new JsonObject{["enabled"]=revision==1}}},
@@ -35,7 +35,7 @@ await client.Request("capability-ready",new JsonObject{["flag"]="true"});
 if(client.SupportsActivitySettingsNotifications)throw new Exception("String ready capability accepted as boolean");
 await client.Request("capability-ready",new JsonObject{["flag"]=true});
 var endedCapability=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-client.ActivitySettingsCapabilityChanged+=()=>{if(!client.SupportsActivitySettingsNotifications)endedCapability.TrySetResult();};
+client.ActivitySettingsCapabilityChanged+=generation=>{if(!client.SupportsActivitySettingsNotifications)endedCapability.TrySetResult();};
 await client.Request("exit-normal",new());
 await endedCapability.Task.WaitAsync(TimeSpan.FromSeconds(5));
 if(client.SupportsActivitySettingsNotifications)throw new Exception("Exited worker retained notification capability");
@@ -45,7 +45,7 @@ Console.WriteLine("PASS Exact current ready boolean controls capability; natural
 using(var releaseOldReader=new ManualResetEventSlim())
 {
     var oldExited=new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
-    client.Event+=message=>{if(message["event"]?.GetValue<string>()=="hold-natural-exit"){oldExited.TrySetResult(message["pid"]!.GetValue<int>());releaseOldReader.Wait(TimeSpan.FromSeconds(8));}};
+    client.Event+=received=>{var message=received.Message;if(message["event"]?.GetValue<string>()=="hold-natural-exit"){oldExited.TrySetResult(message["pid"]!.GetValue<int>());releaseOldReader.Wait(TimeSpan.FromSeconds(8));}};
     var oldRequest=client.Request("exit-normal-held",new());
     try
     {
@@ -70,13 +70,13 @@ if(args.Contains("--activity-settings-only"))
 }
 using var diagnostic=new StringWriter();using var listener=new TextWriterTraceListener(diagnostic);Trace.Listeners.Add(listener);
 var background=new TaskCompletionSource<JsonObject>(TaskCreationOptions.RunContinuationsAsynchronously);
-client.Event+=message=>{if(message["event"]?.GetValue<string>()=="error")background.TrySetResult(message);};
+client.Event+=received=>{var message=received.Message;if(message["event"]?.GetValue<string>()=="error")background.TrySetResult(message);};
 await client.Request("background-error",new());var refused=await background.Task.WaitAsync(TimeSpan.FromSeconds(5));
 if(refused["error"]?.GetValue<string>()!="worker-response-too-large" || !diagnostic.ToString().Contains("worker-response-too-large (activity)"))throw new Exception("Background worker refusal was silently ignored");
 Trace.Listeners.Remove(listener);Console.WriteLine("PASS Bounded background event refusal reaches diagnostics and the native event adapter");
 using var release=new ManualResetEventSlim();
 var held=new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
-client.Event+=message=> { if(message["event"]?.GetValue<string>()=="hold") { held.TrySetResult(message["pid"]!.GetValue<int>());release.Wait(TimeSpan.FromSeconds(8)); } };
+client.Event+=received=> { var message=received.Message; if(message["event"]?.GetValue<string>()=="hold") { held.TrySetResult(message["pid"]!.GetValue<int>());release.Wait(TimeSpan.FromSeconds(8)); } };
 var stale=client.Request("crash",new());
 var oldPid=await held.Task.WaitAsync(TimeSpan.FromSeconds(5));
 try { using var old=Process.GetProcessById(oldPid);await old.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); } catch(ArgumentException) { }

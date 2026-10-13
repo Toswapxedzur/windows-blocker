@@ -70,8 +70,8 @@ public partial class MainWindow : Window
         _mcp.Tools = McpTools;
         _store.SeedIfNeeded();
         _hub.ClassifierRequest = HubClassifierRequest;
-        _hub.ActivitySettingsNotificationsSupported = () => _classifier.SupportsActivitySettingsNotifications;
-        _classifier.ActivitySettingsCapabilityChanged += () => { _ = _hub.DisconnectActivityBrowsersAsync(); };
+        _hub.ActivitySettingsAuthority = () => _classifier.ActivitySettingsAuthority;
+        _classifier.ActivitySettingsCapabilityChanged += generation => { _ = _hub.ResetActivitySettingsAuthority(generation); };
         _classifier.Event += OnClassifierEvent;
         Loaded += OnLoaded;
         Closing += OnClosing;
@@ -618,13 +618,14 @@ public partial class MainWindow : Window
         if (result is JsonObject error && error["error"] is JsonNode code) throw new InvalidOperationException(code.GetValue<string>());
         return result as JsonObject ?? new();
     }
-    private void OnClassifierEvent(JsonObject evt)
+    private void OnClassifierEvent(WorkerEvent received)
     {
+        var evt = received.Message;
         // This callback is reached only from the current creator-owned worker
         // stdout session. Publish synchronously in pipe order, before UI awaits.
         if (evt["event"]?.GetValue<string>() == "activity-settings-committed")
         {
-            _hub.PublishWorkerActivitySettings(evt);
+            if (evt["value"] is JsonObject committed) _hub.PublishActivitySettings(received.SessionGeneration, committed);
             return;
         }
         Dispatcher.InvokeAsync(() =>

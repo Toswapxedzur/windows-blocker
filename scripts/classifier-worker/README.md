@@ -59,6 +59,11 @@ The host scopes this capability to the live creator-owned worker session and
 reads settings before opening the browser Hub. Worker replacement/exit normally
 closes authenticated browser sockets so a fresh welcome and settings GET use
 the new store epoch. An older worker without the ready flag stays unsupported.
+Each callback carries the host session's monotonic generation in a typed
+envelope outside the worker JSON. Hub authority reset, generation admission and
+snapshot enqueue share one lock, so a delayed old callback or lifecycle signal
+cannot publish into a replacement session or change its epoch. This host token
+is never added to the public Activity wire.
 The native-only `activity-settings-committed` event carries the exact successful
 commit's `settings`, `epoch`, `revision` and `changedAtMs`; the host relays it as
 `activity-settings-updated` only to authenticated browsers, including the writer.
@@ -120,7 +125,7 @@ normal Quit, recording-OFF or inference cancellation with a rebuilt shared Swift
 worker; that installed acceptance remains separate.
 
 Activity notification source validation on Mini2 alt1 (2026-10-13): the focused
-Hub runner passes 32 contracts, the current-session worker-pipe runner passes
+Hub runner passes 48 contracts, the current-session worker-pipe runner passes
 five checks using normal EOF exits, and the required-source table passes 17
 valid/missing/hash-drift controls with three PowerShell parsers. NativeContracts,
 WorkerFixture, WorkerClientContracts and the WPF host compile with zero warnings
@@ -128,3 +133,6 @@ or errors using the private .NET 8.0.425 SDK and one build job. The exact source
 fixtures and their outputs are archived; no production app or shared Swift
 worker was launched. Rebuilt-worker and authenticated live-browser acceptance
 remain pending. These focused runs do not execute the legacy force/crash tests.
+The origin race fixture delays an admitted old callback, lets its exact owned
+child exit normally, publishes from the replacement, then releases the old
+callback and verifies refusal without a notification or epoch mutation.
