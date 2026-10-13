@@ -118,3 +118,13 @@ all 32 admitted observations; 11 worker-client controls, 236 native contracts,
 without warnings/errors. These hermetic transport/build checks do not establish
 normal Quit, recording-OFF or inference cancellation with a rebuilt shared Swift
 worker; that installed acceptance remains separate.
+
+Activity notification source validation on Mini2 alt1 (2026-10-13): the focused
+Hub runner passes 32 contracts, the current-session worker-pipe runner passes
+five checks using normal EOF exits, and the required-source table passes 17
+valid/missing/hash-drift controls with three PowerShell parsers. NativeContracts,
+WorkerFixture, WorkerClientContracts and the WPF host compile with zero warnings
+or errors using the private .NET 8.0.425 SDK and one build job. The exact source
+fixtures and their outputs are archived; no production app or shared Swift
+worker was launched. Rebuilt-worker and authenticated live-browser acceptance
+remain pending. These focused runs do not execute the legacy force/crash tests.
