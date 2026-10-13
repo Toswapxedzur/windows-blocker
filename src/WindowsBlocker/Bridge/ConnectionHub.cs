@@ -78,6 +78,7 @@ public sealed partial class ConnectionHub
         public readonly string Challenge = LocalHubAuthentication.Challenge();
         public string Program = "";
         public bool Connected;
+        public bool ClosingForWorker;
     }
     private sealed record PendingBrowserRequest(Guid PeerId, string Operation, TaskCompletionSource<JsonObject> Reply);
     private sealed class Cluster
@@ -163,17 +164,27 @@ public sealed partial class ConnectionHub
                     data.Write(buffer, 0, part.Count);
                     if (data.Length > 1_048_576) { await Reject(peer, "message-too-large"); return; }
                 } while (!part.EndOfMessage);
+                Task? workerClose;
+                lock (_gate) workerClose = peer.ClosingForWorker ? peer.SendTail : null;
+                if (workerClose != null) { await workerClose; return; }
                 if (JsonNode.Parse(data.ToArray()) is not JsonObject message) { await Reject(peer, "invalid-message"); return; }
                 var kind = Text(message["kind"]);
                 if (!peer.Connected)
                 {
                     var reason = kind == "hello" ? HelloRejectionReason(message, peer.Challenge, LocalHubAuthentication.Secret()) : "authentication-required";
                     Task? initial=null;
+                    bool workerClosing;
                     lock(_gate)
                     {
-                        if(reason==null && _peers.Values.Any(p=>p.Id!=peer.Id && p.Connected && p.Program==Text(message["program"]))) reason="duplicate-program";
-                        if(reason==null) { peer.Program=Text(message["program"]);peer.Connected=true;initial=QueueWelcome(peer); }
+                        workerClosing=peer.ClosingForWorker;
+                        if(workerClosing) initial=peer.SendTail;
+                        else
+                        {
+                            if(reason==null && _peers.Values.Any(p=>p.Id!=peer.Id && p.Connected && p.Program==Text(message["program"]))) reason="duplicate-program";
+                            if(reason==null) { peer.Program=Text(message["program"]);peer.Connected=true;initial=QueueWelcome(peer); }
+                        }
                     }
+                    if(workerClosing) { await initial!; return; }
                     if (reason != null) { await Reject(peer, reason); return; }
                     await initial!;
                     BroadcastPeers(); continue;

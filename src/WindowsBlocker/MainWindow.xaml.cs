@@ -70,6 +70,8 @@ public partial class MainWindow : Window
         _mcp.Tools = McpTools;
         _store.SeedIfNeeded();
         _hub.ClassifierRequest = HubClassifierRequest;
+        _hub.ActivitySettingsNotificationsSupported = () => _classifier.SupportsActivitySettingsNotifications;
+        _classifier.ActivitySettingsCapabilityChanged += () => { _ = _hub.DisconnectActivityBrowsersAsync(); };
         _classifier.Event += OnClassifierEvent;
         Loaded += OnLoaded;
         Closing += OnClosing;
@@ -83,6 +85,10 @@ public partial class MainWindow : Window
         _engine.SetSelfWindow(_selfHwnd);
         await InitWebViewAsync();
         StartMonitorAndTimer();
+        // Establish the creator-owned worker's ready capability before a
+        // browser can receive its first welcome. This is a read-only GET.
+        try { await _classifier.Request("activity", new JsonObject { ["kind"] = "settings" }); }
+        catch (Exception ex) { System.Diagnostics.Trace.WriteLine("Activity startup settings unavailable: " + ex.Message); }
         _hub.Start();
         _mcp.Start();
         if(_mcp.LastError==null) McpConnectorRegistry.ApplyDefaultConnections();
@@ -605,7 +611,7 @@ public partial class MainWindow : Window
         if(operation=="activity-settings")
         {
             var settings=await _classifier.Request("activity",new JsonObject { ["kind"]="settings",["settings"]=body["settings"]?.DeepClone() });
-            return new JsonObject { ["settings"]=settings?["settings"]?.DeepClone() ?? new JsonObject() };
+            return ConnectionHub.ActivitySettingsResponse(settings);
         }
         var result=await _classifier.Request("hub",new JsonObject { ["sourcePeerID"]=sourcePeer,["requestID"]=requestId,["operation"]=operation,["body"]=body.DeepClone() });
         if (result is JsonObject obj && obj["body"] is JsonObject answer) return (JsonObject)answer.DeepClone();

@@ -22,6 +22,7 @@ public sealed class ClassifierWorkerClient : IDisposable
         public StreamWriter Input { get; } = process.StandardInput;
         public Task Writes { get; set; } = Task.CompletedTask;
         public string? WriteError { get; set; }
+        public bool ActivitySettingsNotifications { get; set; }
         public TaskCompletionSource<WorkerShutdownResult> Exit { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
     private sealed record Pending(Session Session, TaskCompletionSource<JsonNode?> Completion);
@@ -33,6 +34,11 @@ public sealed class ClassifierWorkerClient : IDisposable
     private bool _disposed;
     public WorkerShutdownResult? LastShutdownResult { get; private set; }
     public event Action<JsonObject>? Event;
+    public event Action? ActivitySettingsCapabilityChanged;
+    public bool SupportsActivitySettingsNotifications
+    {
+        get { lock (_gate) return _session is { } current && !current.Process.HasExited && current.ActivitySettingsNotifications; }
+    }
     private readonly string? _executablePath;
     public ClassifierWorkerClient(string? executablePath = null) => _executablePath = executablePath;
 
@@ -42,13 +48,16 @@ public sealed class ClassifierWorkerClient : IDisposable
         var completion = new TaskCompletionSource<JsonNode?>(TaskCreationOptions.RunContinuationsAsynchronously);
         Session session;
         Task write;
+        bool started;
         // Admission and FIFO enqueue are one critical section. Shutdown captures
         // this tail, so every admitted frame is written before stdin EOF.
         lock (_gate)
         {
             if (_stopping || _disposed) throw new InvalidOperationException("classifier-worker-stopping");
             var frame = new JsonObject { ["id"] = id, ["operation"] = operation, ["data"] = data.DeepClone() }.ToJsonString();
+            var previous = _session;
             session = EnsureStarted();
+            started = previous != session;
             _pending[id] = new(session, completion);
             write = session.Writes = session.Writes.ContinueWith(async _ =>
             {
@@ -56,6 +65,9 @@ public sealed class ClassifierWorkerClient : IDisposable
                 catch (Exception ex) { lock (_gate) session.WriteError ??= ex.Message; throw; }
             }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default).Unwrap();
         }
+        // Never call into the Hub while holding the worker gate. Its welcome
+        // capability getter takes this gate while the Hub owns its own gate.
+        if (started) ActivitySettingsCapabilityChanged?.Invoke();
         try
         {
             await write;
@@ -95,7 +107,18 @@ public sealed class ClassifierWorkerClient : IDisposable
                 if (JsonNode.Parse(line) is not JsonObject message) continue;
                 if (message["event"] != null)
                 {
-                    bool active; lock (_gate) active = _session == session;
+                    bool active; bool changed = false;
+                    lock (_gate)
+                    {
+                        active = _session == session;
+                        if (active && message["event"]?.GetValue<string>() == "ready")
+                        {
+                            var supported = !process.HasExited && message["activitySettingsNotifications"] is JsonValue flag && flag.TryGetValue<bool>(out var value) && value;
+                            changed = session.ActivitySettingsNotifications != supported;
+                            session.ActivitySettingsNotifications = supported;
+                        }
+                    }
+                    if (changed) ActivitySettingsCapabilityChanged?.Invoke();
                     if (active)
                     {
                         if (message["event"]?.GetValue<string>() == "error") Trace.WriteLine("Classifier background error: " + message["error"]?.GetValue<string>() + " (" + message["sourceEvent"]?.GetValue<string>() + ")");
@@ -121,7 +144,9 @@ public sealed class ClassifierWorkerClient : IDisposable
                 session.Exit.TrySetResult(new(error == null && code == 0 ? WorkerShutdownKind.CleanExit : WorkerShutdownKind.Failed, code, error));
             }
             catch (Exception ex) { session.Exit.TrySetResult(new(WorkerShutdownKind.Failed, Error: ex.Message)); }
-            lock (_gate) { if (_session == session) _session = null; process.Dispose(); }
+            bool ended;
+            lock (_gate) { ended = _session == session; if (ended) _session = null; process.Dispose(); }
+            if (ended) ActivitySettingsCapabilityChanged?.Invoke();
         }
     }
 
