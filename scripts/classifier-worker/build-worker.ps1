@@ -3,13 +3,27 @@ param(
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\..\dist\ClassifierWorker'),
     [string]$DependencyDirectory = (Join-Path $PSScriptRoot '..\..\.native-dependencies'),
     [ValidateSet('debug','release')][string]$Configuration = 'release',
-    [string]$ClassifierRevision = '',
+    [string]$ClassifierRevision = 'cb3f1780e084b8d24adb6baf0c9de62203e4dc93',
     [switch]$RunTests,
     [switch]$NativeOnly
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $ClassifierSource = (Resolve-Path $ClassifierSource).Path
+if (!$NativeOnly) {
+    . (Join-Path $PSScriptRoot 'dictionary-worker-guard.ps1')
+    $accepted = Get-Content (Join-Path $PSScriptRoot 'required-worker-sources.json') -Raw | ConvertFrom-Json
+    if ($ClassifierRevision -cne $accepted.classifierRevision) { throw 'Build from the accepted shared revision; update the reviewed source pins for an intentional integration.' }
+    $sourcePins = @($accepted.sources | ForEach-Object {
+        $path = Join-Path $ClassifierSource $_.path
+        if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "Accepted shared source is missing: $($_.path)" }
+        @{ path=$_.path; sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash }
+    })
+    # Validate the actual exported bytes before any build/dependency mutation.
+    $dictionaryPaths=@('Sources/VaultClassifierCore/OfficialDictionary.swift','Sources/VaultClassifierCore/DictionaryDiskStore.swift','Sources/VaultClassifierApp/OfficialDictionaryService.swift','Sources/VaultClassifierApp/VaultClassifierViewModel+Dictionaries.swift')
+    $dictionaryPins=@($dictionaryPaths | ForEach-Object { @{path=$_;sha256=(Get-FileHash -LiteralPath (Join-Path $ClassifierSource $_) -Algorithm SHA256).Hash} })
+    Assert-VaultDictionaryWorker @{sources=@($sourcePins)+@($dictionaryPins)}
+}
 $DependencyDirectory = [IO.Path]::GetFullPath($DependencyDirectory)
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Force $DependencyDirectory,$OutputDirectory | Out-Null
@@ -146,6 +160,7 @@ $sourceFiles = @(Get-ChildItem (Join-Path $ClassifierSource 'Sources') -Recurse 
 $sourceHashes = $sourceFiles | Sort-Object FullName | ForEach-Object {
     @{ path=$_.FullName.Substring($ClassifierSource.Length + 1).Replace('\','/'); sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
 }
+Assert-VaultDictionaryWorker @{sources=@($sourceHashes)}
 $hashes = Get-ChildItem $OutputDirectory -Recurse -File | Where-Object { $_.Name -ne 'bundle-manifest.json' } | Sort-Object FullName | ForEach-Object {
     @{ path=$_.FullName.Substring($OutputDirectory.Length + 1).Replace('\','/'); sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
 }

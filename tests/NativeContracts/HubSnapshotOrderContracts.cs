@@ -88,6 +88,17 @@ static class HubSnapshotOrderContracts
         var invalidReply = false;
         try { ConnectionHub.ActivitySettingsResponse(getResponse); } catch(InvalidDataException) { invalidReply = true; }
         Check(invalidReply, "Missing worker response metadata is explicit failure rather than empty settings success");
+        var recordResponse = new JsonObject { ["kind"] = "recorded", ["accepted"] = 1L,
+            ["acceptedIDs"] = new JsonArray("new", "persisted-duplicate"), ["rejectedIDs"] = new JsonArray("expired"), ["pendingIDs"] = new JsonArray("retry-write") };
+        var recordBody = ConnectionHub.ActivityRecordResponse(recordResponse);
+        recordResponse["pendingIDs"]!.AsArray().Clear();
+        Check(recordBody["stored"]?.GetValue<long>() == 1 && recordBody["acceptedIDs"]?.AsArray().Count == 2 &&
+            recordBody["rejectedIDs"]?[0]?.GetValue<string>() == "expired" && recordBody["pendingIDs"]?[0]?.GetValue<string>() == "retry-write",
+            "Record route preserves stored count and all exact durable/rejected/pending receipts");
+        recordResponse.Remove("acceptedIDs");
+        var invalidRecord = false;
+        try { ConnectionHub.ActivityRecordResponse(recordResponse); } catch(InvalidDataException) { invalidRecord = true; }
+        Check(invalidRecord, "Missing record receipt cannot become a successful zero-count response");
         Check(!hub.PublishWorkerActivitySettings(Commit(1)), "Unqualified worker cannot publish settings or advertise support");
         hub.ActivitySettingsNotificationsSupported = () => true;
         var commit = Commit(1);

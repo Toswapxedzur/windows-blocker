@@ -65,6 +65,17 @@ public sealed partial class ConnectionHub
         return answer;
     }
 
+    internal static JsonObject ActivityRecordResponse(JsonNode? response)
+    {
+        if (response is not JsonObject body || Text(body["kind"]) != "recorded" ||
+            body["accepted"] is not JsonValue count || !count.TryGetValue<long>(out var stored) || stored < 0 ||
+            body["acceptedIDs"] is not JsonArray || body["rejectedIDs"] is not JsonArray || body["pendingIDs"] is not JsonArray)
+            throw new InvalidDataException("invalid-activity-record-response");
+        var answer = new JsonObject { ["stored"] = body["accepted"]!.DeepClone() };
+        foreach (var key in new[] { "acceptedIDs", "rejectedIDs", "pendingIDs" }) answer[key] = body[key]!.DeepClone();
+        return answer;
+    }
+
     private static bool ValidActivitySettingsBody(JsonObject body, out string? epoch, out long revision)
     {
         epoch = null; revision = -1;
