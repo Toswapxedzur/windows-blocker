@@ -606,7 +606,7 @@ public partial class MainWindow : Window
         if(operation=="activity-record")
         {
             var recorded=await _classifier.Request("activity",new JsonObject { ["kind"]="browser-record",["body"]=body.DeepClone() });
-            return new JsonObject { ["stored"]=recorded?["accepted"]?.DeepClone() ?? JsonValue.Create(0) };
+            return ConnectionHub.ActivityRecordResponse(recorded);
         }
         if(operation=="activity-settings")
         {

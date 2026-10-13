@@ -49,8 +49,8 @@ using(var releaseOldReader=new ManualResetEventSlim())
     var oldRequest=client.Request("exit-normal-held",new());
     try
     {
-        var oldPid=await oldExited.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        try {using var oldChild=Process.GetProcessById(oldPid);await oldChild.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));}catch(ArgumentException){}
+        var naturalOldPid=await oldExited.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        try {using var oldChild=Process.GetProcessById(naturalOldPid);await oldChild.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));}catch(ArgumentException){}
         await client.Request("capability-ready",new JsonObject{["flag"]=true}).WaitAsync(TimeSpan.FromSeconds(5));
     }
     finally {releaseOldReader.Set();}

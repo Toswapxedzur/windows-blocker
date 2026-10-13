@@ -13,10 +13,20 @@ function Assert-VaultDictionaryWorker($Manifest) {
             throw "Classifier worker predates the dictionary feature; rebuild from the accepted shared source. Missing provenance: $path"
         }
     }
-    # These shared worker files existed before Activity MCP routing. Presence
-    # alone cannot establish that the bundled worker implements the new route.
+    # Pin the store/admission contracts as well as the dispatch and ready-event
+    # producers. Handler presence alone does not prove commit notifications or
+    # browser record receipts from the accepted shared source.
     $accepted=Get-Content (Join-Path $PSScriptRoot 'required-worker-sources.json') -Raw|ConvertFrom-Json
-    $paths=@('Sources/VaultClassifierApp/VaultClassifierWorkerActivity.swift','Sources/VaultClassifierApp/VaultClassifierWorkerService.swift')
+    $paths=@(
+        'Sources/VaultActivityCore/ActivitySettingsSnapshot.swift',
+        'Sources/VaultActivityCore/ActivityBrowserRecord.swift',
+        'Sources/VaultActivityCore/ActivityStore.swift',
+        'Sources/VaultActivityCore/ActivityWire.swift',
+        'Sources/VaultClassifierApp/VaultClassifierWorkerActivity.swift',
+        'Sources/VaultClassifierApp/VaultClassifierWorkerWire.swift',
+        'Sources/VaultClassifierWorker/WorkerMain.swift',
+        'Sources/VaultClassifierApp/VaultClassifierWorkerService.swift'
+    )
     if($accepted.classifierRevision -isnot [string] -or $accepted.classifierRevision -notmatch '^[0-9a-fA-F]{40}$' -or @($accepted.sources).Count -ne $paths.Count) {
         throw 'Invalid accepted worker requirements table; restore the reviewed table before rebuilding or launching.'
     }

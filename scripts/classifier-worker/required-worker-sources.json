@@ -1,9 +1,33 @@
 {
-  "classifierRevision": "40f872807f2ac07b9b7ab5441b6f9abdf2ed168f",
+  "classifierRevision": "cb3f1780e084b8d24adb6baf0c9de62203e4dc93",
   "sources": [
     {
+      "path": "Sources/VaultActivityCore/ActivitySettingsSnapshot.swift",
+      "sha256": "bf9f46d714affc9fd1dd3a0a4ecd3153b63316887a47baeacdf9e4ce4df091af"
+    },
+    {
+      "path": "Sources/VaultActivityCore/ActivityBrowserRecord.swift",
+      "sha256": "fe656d5acf18a3f59dc871629b5f5307d726cfaab84f7e5e8caab080643f0ec2"
+    },
+    {
+      "path": "Sources/VaultActivityCore/ActivityStore.swift",
+      "sha256": "cb9ab270bcebb9f5c548f9a2e38110c6381eb677ea130c98e438dfc7afb00f73"
+    },
+    {
+      "path": "Sources/VaultActivityCore/ActivityWire.swift",
+      "sha256": "071c74870cfd97c3ec4b72e4f102ff6ee66d58850b101eba2f95b73fdc8e0b28"
+    },
+    {
       "path": "Sources/VaultClassifierApp/VaultClassifierWorkerActivity.swift",
-      "sha256": "b0bd739805707d801ee44e5817c80d4ee13a7624c1e60a7e858a46f478d86950"
+      "sha256": "ce3a4a587aaf4de12594ff7fd409b088ddac6b6748a4e1007b081fc784c922cc"
+    },
+    {
+      "path": "Sources/VaultClassifierApp/VaultClassifierWorkerWire.swift",
+      "sha256": "4d218648c6453d93c02f489ed96b147a61c9cffd1d01e862ffa1bc0b26be4ed2"
+    },
+    {
+      "path": "Sources/VaultClassifierWorker/WorkerMain.swift",
+      "sha256": "4416cfa90644afb9f86bf4274ddd4ca352c3a3a1fa432643f8b01e2475810ad7"
     },
     {
       "path": "Sources/VaultClassifierApp/VaultClassifierWorkerService.swift",
