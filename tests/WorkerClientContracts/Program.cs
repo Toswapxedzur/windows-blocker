@@ -11,6 +11,27 @@ var unicode="标签 café 🔒";
 var roundtrip=await client.Request("echo",new JsonObject { ["text"]=unicode });
 if(roundtrip?["text"]?.GetValue<string>()!=unicode) throw new Exception("Worker JSONL did not preserve Unicode");
 Console.WriteLine("PASS Worker JSONL preserves non-ASCII tags and titles");
+var committedEvents=new List<JsonObject>();
+client.Event+=message=> { if(message["event"]?.GetValue<string>()=="activity-settings-committed")committedEvents.Add((JsonObject)message["value"]!.DeepClone()); };
+var commitEpoch=Guid.NewGuid().ToString();
+var commitFrames=new JsonArray(Enumerable.Range(1,2).Select(revision=>(JsonNode?)new JsonObject {
+    ["settings"]=new JsonObject{["byCategory"]=new JsonObject{["web-visit"]=new JsonObject{["enabled"]=revision==1}}},
+    ["epoch"]=commitEpoch,["revision"]=revision,["changedAtMs"]=1_750_000_000_000.0+revision }).ToArray());
+var commitReply=await client.Request("settings-commit-events",new JsonObject{["commits"]=commitFrames});
+if(committedEvents.Count!=2 || !committedEvents.Select(body=>body["revision"]!.GetValue<int>()).SequenceEqual(new[]{1,2}) ||
+    committedEvents[1]["epoch"]?.GetValue<string>()!=commitEpoch || committedEvents[1]["settings"]?["byCategory"]?["web-visit"]?["enabled"]?.GetValue<bool>()!=false)
+    throw new Exception("Committed worker events lost their exact snapshot or pipe order");
+await client.Request("echo",new JsonObject{["event"]="activity-settings-committed",["value"]=commitFrames[0]!.DeepClone()});
+if(committedEvents.Count!=2)throw new Exception("Response payload was mistaken for a worker commit event");
+Console.WriteLine("PASS Current owned worker pipe preserves committed settings event order and does not publish reply payloads");
+if(args.Contains("--activity-settings-only"))
+{
+    var result=await client.ShutdownAsync();
+    if(result.Kind!=WorkerShutdownKind.CleanExit || result.ExitCode!=0)throw new Exception("Settings event fixture did not exit normally");
+    try {using var child=Process.GetProcessById(commitReply!["pid"]!.GetValue<int>());if(!child.HasExited)throw new Exception("Settings event fixture still running");}catch(ArgumentException){}
+    Console.WriteLine("PASS Settings event fixture normal EOF exit and independent child absence");
+    return;
+}
 using var diagnostic=new StringWriter();using var listener=new TextWriterTraceListener(diagnostic);Trace.Listeners.Add(listener);
 var background=new TaskCompletionSource<JsonObject>(TaskCreationOptions.RunContinuationsAsynchronously);
 client.Event+=message=>{if(message["event"]?.GetValue<string>()=="error")background.TrySetResult(message);};
@@ -98,7 +119,7 @@ finally
     // removed, including exceptional contract failures.
     try
     {
-        if(args.Length>1)
+        if(args.Length>1 && !args[1].StartsWith("--",StringComparison.Ordinal))
         {
             Directory.CreateDirectory(args[1]);
             foreach(var name in new[]{"shutdown-proof.json","fallback-proof.json"})
