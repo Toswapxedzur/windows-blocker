@@ -125,12 +125,20 @@ public sealed partial class ConnectionHub
         catch (Exception ex) { _error = ex.Message; }
     }
     public void Stop() => StopAsync().GetAwaiter().GetResult();
+#if VAULT_CONTRACT_TESTS
+    internal Func<Task, Task>? ListenerStopCompletionForTests;
+#endif
     public async Task StopAsync()
     {
         var listener=_listener; _listener=null;
         List<Peer> peers; lock (_gate) peers = _peers.Values.ToList();
         foreach (var peer in peers) Remove(peer);
-        await LoopbackServer.StopAsync(listener);
+        var stopped = LoopbackServer.StopAsync(listener);
+#if VAULT_CONTRACT_TESTS
+        stopped = ListenerStopCompletionForTests?.Invoke(stopped) ?? stopped;
+#endif
+        // Stop can be called synchronously by the native UI bridge.
+        await stopped.ConfigureAwait(false);
     }
     private async Task AcceptAsync(HttpContext context)
     {

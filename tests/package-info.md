@@ -7,6 +7,7 @@ contracts and WPF builds do not establish live WebView acceptance.
 - `runner-custom-rule-stress.js`, `runner-rule-worker.js`, `runner-editor-syntax.js` — canonical JS rule engine, disposable worker isolation and document-start native bridge/storage.
 - `OverlayContracts/` — actual WPF overlay containment, virtualization, timer formatting and searchable menus.
 - `NativeContracts/` — source-only native policy, authentication, identity and editor contract fixtures, plus all20 bundled native-language preferences/messages and literal state preservation.
+  `HubStopContextContracts.cs` / `--hub-stop-only` forces an incomplete listener-stop task under a non-pumping UI-like context. The synchronous hub stop must complete without pumping that context; queued callbacks are drained only to clean up a failing regression.
   `WebStoreContracts.cs` verifies atomic state/usage commits while an IPC reader
   holds the previous complete snapshot, preserving unrelated rule state.
   `--hub-only` runs actual managed first-link union, multi-browser joining,

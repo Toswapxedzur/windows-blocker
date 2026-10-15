@@ -6,6 +6,8 @@ using WindowsBlocker.WebUI;
 
 Environment.SetEnvironmentVariable("VAULT_ENVIRONMENT", "development");
 Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT", Path.Combine(Path.GetTempPath(), "vault-contracts-" + Guid.NewGuid()));
+HubStopContextContracts.Run();
+if (args.Contains("--hub-stop-only")) return;
 if (args.Contains("--editor-transaction-only")) { await NativeEditorTransactionContracts.Run(); return; }
 if (args.Contains("--definition-intent-only")) { await NativeDefinitionIntentContracts.Run(); return; }
 if (args.Contains("--ordering-only")) { await HubSnapshotOrderContracts.Run(args.Length>1?args[1]:null); return; }
