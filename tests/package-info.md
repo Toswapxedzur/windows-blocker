@@ -33,3 +33,8 @@ contracts and WPF builds do not establish live WebView acceptance.
 - `ExternalLinkContracts/` — real WebView click/target-blank handling and programmatic-navigation denial using the production URI handler and an owned browser callback.
 - `McpConnectorContracts/` — nondestructive client registration and authenticated bundled stdio framing.
 - `WorkerClientContracts/`, `WorkerFixture/` — backend process replacement, crash/restart and request attribution.
+
+Activity history while recording is OFF is verified against the generated Windows
+assets using the canonical Mac `Tests/WebUI/activity-recording-history.js` fixture
+and `classifier/Tests/WebUI/autosave.mjs`, with `UI_ASSET_ROOT` pointing at
+`src/WindowsBlocker/WebAssets`. Run on the owner-selected Mini2 host.
