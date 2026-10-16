@@ -30,6 +30,7 @@ public partial class MainWindow : Window
     private readonly WebStore _store = new();
     private readonly BlockedAppRegistry _registry = new();
     private readonly ConnectionHub _hub;
+    private readonly HubLifecycleQueue _hubLifecycle;
     private readonly ClassifierWorkerClient _classifier = new();
     private readonly VaultMcpServer _mcp = new();
     private readonly NativePolicyTools _policy;
@@ -58,6 +59,9 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         _hub = new ConnectionHub(_store);
+        _hubLifecycle = new HubLifecycleQueue(
+            () => { _hub.Start(); return Task.CompletedTask; },
+            () => _hub.StopAsync());
         InitializeComponent();
         McpConnectionsMenu.Header = NativeLanguage.Text("windows.connections.menu", "AI connections…");
         NativeMenu.FlowDirection = NativeLanguage.Language == "ar" ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
@@ -89,7 +93,8 @@ public partial class MainWindow : Window
         // browser can receive its first welcome. This is a read-only GET.
         try { await _classifier.Request("activity", new JsonObject { ["kind"] = "settings" }); }
         catch (Exception ex) { System.Diagnostics.Trace.WriteLine("Activity startup settings unavailable: " + ex.Message); }
-        _hub.Start();
+        await _hubLifecycle.SetRunningAsync(true, () => !_closingFlush);
+        if (_closingFlush) return;
         _mcp.Start();
         if(_mcp.LastError==null) McpConnectorRegistry.ApplyDefaultConnections();
         // Show the first-launch choice even when the editor opens before Classifier.
@@ -101,7 +106,7 @@ public partial class MainWindow : Window
         // which auto-starts the hub on launch from the persisted setting).
         if (_store.LoadConnectionServerEnabled())
         {
-            _hub.Start();
+            await _hubLifecycle.SetRunningAsync(true, () => !_closingFlush);
         }
     }
 
@@ -315,12 +320,10 @@ public partial class MainWindow : Window
                 // exactly as the macOS BlockerWebView wires ConnectionHub. Each
                 // message carries the original sendMessage payload under "message".
                 case "connection-server-start":
-                    _hub.Start();
-                    PushConnectionState();
+                    await SetHubRunningAndPushAsync(true);
                     break;
                 case "connection-server-stop":
-                    _hub.Stop();
-                    PushConnectionState();
+                    await SetHubRunningAndPushAsync(false);
                     break;
                 case "connection-status":
                     PushConnectionState();
@@ -907,6 +910,13 @@ public partial class MainWindow : Window
             $"window.__cbConnectionState && window.__cbConnectionState({json});");
     }
 
+    private async Task SetHubRunningAndPushAsync(bool running)
+    {
+        try { await _hubLifecycle.SetRunningAsync(running, () => !_closingFlush); }
+        catch (Exception ex) { Trace.WriteLine("Vault hub lifecycle: " + ex.Message); }
+        if (!_closingFlush) PushConnectionState();
+    }
+
     private void PushClusters()
     {
         if (Web.CoreWebView2 is null)
@@ -967,7 +977,7 @@ public partial class MainWindow : Window
     }
 
     private bool _flushedForClosing;
-    private bool _closingFlush;
+    private volatile bool _closingFlush;
     private async void OnClosing(object? sender, CancelEventArgs e)
     {
         if (_guard.ShouldCancelClose())
@@ -989,7 +999,7 @@ public partial class MainWindow : Window
             // close producer listeners without waiting for their pending replies
             // before sending EOF to the shared cooperative shutdown path.
             var stopMcp = _mcp.StopAsync();
-            var stopHub = _hub.StopAsync();
+            var stopHub = _hubLifecycle.SetRunningAsync(false);
             var shutdown = await _classifier.ShutdownAsync();
             await _lastActivityRequest;
             try { await Task.WhenAll(stopMcp, stopHub); }
@@ -1003,7 +1013,7 @@ public partial class MainWindow : Window
         _classifier.Dispose();
         _timer?.Stop();
         _monitor?.Dispose();
-        _hub.Stop();
+        // The queued asynchronous stop above already completed before Close().
         // Close every auxiliary top-level window too, or the app would keep
         // running (each is a window under the default OnLastWindowClose mode).
         _quickAdd?.Close();
