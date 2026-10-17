@@ -85,14 +85,11 @@ public partial class MainWindow : Window
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        if (_closingFlush) return;
         _selfHwnd = new WindowInteropHelper(this).Handle;
         _engine.SetSelfWindow(_selfHwnd);
-        await InitWebViewAsync();
-        StartMonitorAndTimer();
-        // Establish the creator-owned worker's ready capability before a
-        // browser can receive its first welcome. This is a read-only GET.
-        try { await _classifier.Request("activity", new JsonObject { ["kind"] = "settings" }); }
-        catch (Exception ex) { System.Diagnostics.Trace.WriteLine("Activity startup settings unavailable: " + ex.Message); }
+        await NativeStartup.PrepareAsync(_classifier, InitWebViewAsync, StartMonitorAndTimer, () => _closingFlush);
+        if (_closingFlush) return;
         await _hubLifecycle.SetRunningAsync(true, () => !_closingFlush);
         if (_closingFlush) return;
         _mcp.Start();
