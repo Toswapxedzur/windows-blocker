@@ -1,5 +1,5 @@
 {
-  "classifierRevision": "cb3f1780e084b8d24adb6baf0c9de62203e4dc93",
+  "classifierRevision": "012fd245c00900cd5cd4d6f39bee50f6fa3a322a",
   "sources": [
     {
       "path": "Sources/VaultActivityCore/ActivitySettingsSnapshot.swift",
@@ -11,7 +11,7 @@
     },
     {
       "path": "Sources/VaultActivityCore/ActivityStore.swift",
-      "sha256": "cb9ab270bcebb9f5c548f9a2e38110c6381eb677ea130c98e438dfc7afb00f73"
+      "sha256": "a0868cd4894d8b9b71da5258d03a3db72a4eade5267ea3f53cc84cc60aa469ee"
     },
     {
       "path": "Sources/VaultActivityCore/ActivityWire.swift",

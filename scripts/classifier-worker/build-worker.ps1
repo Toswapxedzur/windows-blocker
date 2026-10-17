@@ -3,7 +3,7 @@ param(
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\..\dist\ClassifierWorker'),
     [string]$DependencyDirectory = (Join-Path $PSScriptRoot '..\..\.native-dependencies'),
     [ValidateSet('debug','release')][string]$Configuration = 'release',
-    [string]$ClassifierRevision = 'cb3f1780e084b8d24adb6baf0c9de62203e4dc93',
+    [string]$ClassifierRevision = '012fd245c00900cd5cd4d6f39bee50f6fa3a322a',
     [switch]$RunTests,
     [switch]$NativeOnly
 )
