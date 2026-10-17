@@ -6,6 +6,8 @@ var storageRoot=Path.Combine(Path.GetTempPath(),"vault-worker-contracts-"+Guid.N
 Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT",storageRoot);
 try
 {
+await StartupSettingsContracts.Run(args[0], storageRoot);
+if(args.Contains("--startup-settings-only")) return;
 using var client=new ClassifierWorkerClient(args[0]);
 var unicode="标签 café 🔒";
 var roundtrip=await client.Request("echo",new JsonObject { ["text"]=unicode });

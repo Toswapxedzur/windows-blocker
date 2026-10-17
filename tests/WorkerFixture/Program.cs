@@ -10,6 +10,28 @@ while(await Console.In.ReadLineAsync() is { } line)
 {
     var request=JsonNode.Parse(line)!;
     var operation=request["operation"]!.GetValue<string>();
+    if(operation=="activity" && request["data"]?["kind"]?.GetValue<string>()=="settings")
+    {
+        Console.WriteLine(new JsonObject{["event"]="ready",["activitySettingsNotifications"]=true}.ToJsonString());
+        Console.WriteLine(new JsonObject{["event"]="startup-settings-request",["pid"]=Environment.ProcessId}.ToJsonString());
+        var startupMode=Environment.GetEnvironmentVariable("VAULT_CONTRACT_STARTUP_SETTINGS");
+        if(startupMode=="wait-for-eof") { await Console.In.ReadToEndAsync(); break; }
+        if(startupMode=="refuse")
+        {
+            Console.WriteLine(new JsonObject{["id"]=request["id"]!.DeepClone(),["ok"]=false,["error"]="startup-settings-fixture-refusal"}.ToJsonString());
+            continue;
+        }
+        if(startupMode=="gated")
+        {
+            var release=Environment.GetEnvironmentVariable("VAULT_CONTRACT_STARTUP_RELEASE");
+            var until=DateTime.UtcNow.AddSeconds(5);
+            while(!File.Exists(release))
+            {
+                if(DateTime.UtcNow>=until)throw new Exception("Startup settings fixture gate expired");
+                await Task.Delay(10);
+            }
+        }
+    }
     if(operation=="shutdown-proof")
     {
         evidencePath=request["data"]?["path"]?.GetValue<string>();

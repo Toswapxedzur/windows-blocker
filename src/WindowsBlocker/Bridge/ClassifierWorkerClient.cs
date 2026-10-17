@@ -76,8 +76,8 @@ public sealed class ClassifierWorkerClient : IDisposable
         if (started) ActivitySettingsCapabilityChanged?.Invoke(session.Generation);
         try
         {
-            await write;
-            return await completion.Task.WaitAsync(TimeSpan.FromSeconds(operation is "action" or "mcp" ? 120 : operation == "hub" ? 30 : 20));
+            await write.ConfigureAwait(false);
+            return await completion.Task.WaitAsync(TimeSpan.FromSeconds(operation is "action" or "mcp" ? 120 : operation == "hub" ? 30 : 20)).ConfigureAwait(false);
         }
         finally { _pending.TryRemove(id, out _); }
     }
