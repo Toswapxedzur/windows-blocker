@@ -1,5 +1,5 @@
 {
-  "classifierRevision": "012fd245c00900cd5cd4d6f39bee50f6fa3a322a",
+  "classifierRevision": "186b30f4b4a27d68edc3f7262c5977e4e982e5a7",
   "sources": [
     {
       "path": "Sources/VaultActivityCore/ActivitySettingsSnapshot.swift",
@@ -32,6 +32,14 @@
     {
       "path": "Sources/VaultClassifierApp/VaultClassifierWorkerService.swift",
       "sha256": "012b859e8aca51a0b6473752269bbf0d00ce61b29ccd01ff3a18c0f7ae064637"
+    },
+    {
+      "path": "Sources/VaultClassifierCore/StorageSchema.swift",
+      "sha256": "6e43ba300411f3ec684f27fb6d82c0a403e43410d11f0025e55b46cff048379e"
+    },
+    {
+      "path": "Sources/VaultClassifierCore/VaultBundledResources.swift",
+      "sha256": "f69b898caf0eebe5107c5c64d87025e0fd481acc0d46c9a5a3b350d504011380"
     }
   ]
 }
