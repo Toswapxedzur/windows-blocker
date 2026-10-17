@@ -25,7 +25,9 @@ function Assert-VaultDictionaryWorker($Manifest) {
         'Sources/VaultClassifierApp/VaultClassifierWorkerActivity.swift',
         'Sources/VaultClassifierApp/VaultClassifierWorkerWire.swift',
         'Sources/VaultClassifierWorker/WorkerMain.swift',
-        'Sources/VaultClassifierApp/VaultClassifierWorkerService.swift'
+        'Sources/VaultClassifierApp/VaultClassifierWorkerService.swift',
+        'Sources/VaultClassifierCore/StorageSchema.swift',
+        'Sources/VaultClassifierCore/VaultBundledResources.swift'
     )
     if($accepted.classifierRevision -isnot [string] -or $accepted.classifierRevision -notmatch '^[0-9a-fA-F]{40}$' -or @($accepted.sources).Count -ne $paths.Count) {
         throw 'Invalid accepted worker requirements table; restore the reviewed table before rebuilding or launching.'
