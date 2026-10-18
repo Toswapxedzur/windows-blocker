@@ -6,6 +6,7 @@ using WindowsBlocker.WebUI;
 
 Environment.SetEnvironmentVariable("VAULT_ENVIRONMENT", "development");
 Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT", Path.Combine(Path.GetTempPath(), "vault-contracts-" + Guid.NewGuid()));
+if (args.Contains("--managed-time-only")) { await ManagedRuleTimeContracts.Run(); return; }
 HubStopContextContracts.Run();
 await HubLifecycleQueueContracts.Run();
 if (args.Contains("--hub-stop-only")) return;

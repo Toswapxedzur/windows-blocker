@@ -99,6 +99,7 @@ public sealed class DispatchResult
 {
     [JsonPropertyName("actions")] public List<RuleAction> Actions { get; set; } = new();
     [JsonPropertyName("logs")] public List<RuntimeLog> Logs { get; set; } = new();
+    [JsonPropertyName("stateFailures")] public List<string> StateFailures { get; set; } = new();
     [JsonPropertyName("diagnostics")] public List<RuntimeLog> Diagnostics { get; set; } = new();
     [JsonPropertyName("panels")] public Dictionary<string,List<PanelSnapshot>> Panels { get; set; } = new();
     [JsonPropertyName("states")] public Dictionary<string,string> States { get; set; } = new();

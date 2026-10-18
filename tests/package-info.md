@@ -38,3 +38,7 @@ Activity history while recording is OFF is verified against the generated Window
 assets using the canonical Mac `Tests/WebUI/activity-recording-history.js` fixture
 and `classifier/Tests/WebUI/autosave.mjs`, with `UI_ASSET_ROOT` pointing at
 `src/WindowsBlocker/WebAssets`. Run on the owner-selected Mini2 host.
+
+- `NativeContracts/ManagedRuleTimeContracts.cs`: event-save ordering and asynchronous hub membership checks; `--managed-time-only` starts no listener and uses disposable storage.
+
+- `runner-rule-time-policy.js`: actual policy-worker JavaScript routing and module/method whitelist tests in an isolated VM; native WebView2 acceptance remains separate.

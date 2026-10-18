@@ -163,11 +163,17 @@ public sealed class RuleEngine(WebStore store, ConnectionHub? hub = null)
             if (_suppressed.Contains(id) || !_loaded.ContainsKey(id)) continue;
             var result = await _runtime.DispatchAsync(new() { Type = type, GroupId = id, Data = data, TimeContext = await TimeContext(id, type, data) });
             if (result == null) continue;
+            try { if (result.StateFailures.Count > 0) throw new InvalidDataException("Invalid event state"); store.CommitRuleDispatch(result.States); }
+            catch (Exception ex) {
+                AppendLogs([new RuntimeLog { GroupId = id, Level = "error", Message = "Event state could not be saved; no actions were performed: " + ex.Message }]);
+                await UnloadCore(id); // No action ran; next reconciliation restores the saved completion state.
+                continue;
+            }
             AppendLogs(result.Logs);
             foreach (var diagnostic in result.Diagnostics) Trace.WriteLine($"Rule {diagnostic.GroupId}: {diagnostic.Message}");
             foreach (var (gid, panels) in result.Panels) _panels[gid] = panels;
-            if (result.States.Count > 0) store.Update(root => { var states = root["cbRuleState"] as JsonObject ?? new(); root["cbRuleState"] = states; foreach (var (gid, json) in result.States) states[gid] = JsonNode.Parse(json); });
-            _ = await TimeContext(id);
+            try { _ = await TimeContext(id); }
+            catch (Exception ex) { Trace.WriteLine($"Rule {id} time transport: {ex.Message}"); }
             foreach (var action in result.Actions)
             {
                 switch (action.Kind)
@@ -183,9 +189,11 @@ public sealed class RuleEngine(WebStore store, ConnectionHub? hub = null)
     }
     private async Task<JsonObject> TimeContext(string groupId, string? type = null, object? data = null)
     {
-        if (hub == null) return new() { ["linked"] = false };
         var root = JsonNode.Parse(store.LoadRawJson() ?? "{}");
         var seed = root?["cbRuleState"]?[groupId]?["$vaultTime"] as JsonObject;
+        if (hub == null) return seed?["scope"]?.GetValue<string>() is { Length: > 0 } scope
+            ? new() { ["linked"] = true, ["ready"] = false, ["clusterId"] = scope }
+            : new() { ["linked"] = false };
         var sample = JsonSerializer.SerializeToNode(data) as JsonObject;
         var usage = type == "tick" ? new JsonObject { ["type"] = type, ["now"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             ["data"] = new JsonObject { ["usageAppId"] = sample?["usageAppId"]?.DeepClone(), ["elapsedMs"] = sample?["elapsedMs"]?.DeepClone() } } : null;
