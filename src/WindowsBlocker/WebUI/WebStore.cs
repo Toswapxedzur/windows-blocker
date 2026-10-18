@@ -74,6 +74,20 @@ public sealed class WebStore
     {
         lock (_gate) { RequireWrites(); var root = LoadObject() ?? new JsonObject(); var before = root.ToJsonString(); mutation(root); if (root.ToJsonString() != before) Write(root); }
     }
+    internal void CommitRuleDispatch(IReadOnlyDictionary<string,string> states)
+    {
+        if (states.Count == 0) return;
+        WithLockedDocument((root, save) => {
+            var current = ((JsonArray)root["blockedGroups"]!).OfType<JsonObject>().Where(g => g["groupType"]?.GetValue<string>() == "custom").Select(g => g["id"]?.GetValue<string>()).ToHashSet();
+            var stored = root["cbRuleState"] as JsonObject ?? new(); root["cbRuleState"] = stored;
+            foreach (var (id, json) in states) {
+                if (!current.Contains(id)) throw new InvalidDataException("Event group no longer exists");
+                if (System.Text.Encoding.UTF8.GetByteCount(json) > 65536 || JsonNode.Parse(json) is not JsonObject state) throw new InvalidDataException("Invalid event state");
+                stored[id] = state;
+            }
+            save();
+        });
+    }
     // The canonical owner holds this file gate through the hub transaction and
     // its throwing save. Read fallbacks are never authority to publish/adopt.
     internal void WithLockedDocument(Action<JsonObject, Action> transaction)

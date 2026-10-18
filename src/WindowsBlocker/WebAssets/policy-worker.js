@@ -6,7 +6,7 @@ self.addEventListener("message", async function (event) {
   const allowed = { CBGroupActions: self.CBGroupActions, CBGroupScopes: self.CBGroupScopes, CBParentalPin: self.CBParentalPin, RuleCore: { mergeTime: self.RuleCore.mergeTime, reduceTime: self.RuleCore.reduceTime, syncTime: self.RuleCore.syncTime } };
   try {
     const api = allowed[request.module];
-    if (!api || !Object.prototype.hasOwnProperty.call(api, request.method) || typeof api[request.method] !== "function" || !Array.isArray(request.args)) throw new Error("unknown-policy-operation");
+    if (!Object.prototype.hasOwnProperty.call(allowed, request.module) || !api || !Object.prototype.hasOwnProperty.call(api, request.method) || typeof api[request.method] !== "function" || !Array.isArray(request.args)) throw new Error("unknown-policy-operation");
     const result = await api[request.method](...request.args);
     self.postMessage({ kind: "rule-runtime-response", requestId: request.requestId, ok: true, result: { value: result === undefined ? null : result } });
   } catch (error) {
