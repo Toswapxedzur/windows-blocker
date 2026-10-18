@@ -1458,7 +1458,7 @@
         binSites.push({ key: piece.site.key, label: piece.site.label || piece.site.key, browserKey: piece.browser ? piece.browser.key : null,
           from: piece.from, to: piece.to, color: color });
         blocks.push({ from: piece.from, to: piece.to, narrow: !!piece.browser, color: color,
-          info: function () { return { title: piece.site.label || piece.site.key, key: piece.site.key, lines: [(piece.browser ? at("websiteIn", "Website · in {browser}", { browser: piece.browser.label || piece.browser.key }) : at("label.Website", "Website")) + " · " + dayName(day.dayStartMs),
+          info: function () { return { title: piece.site.label || piece.site.key, key: piece.site.key, lines: [(piece.browser ? at("websiteIn", "Website · in {browser}", { browser: piece.browser.label || piece.browser.key }) : at("kind.Website", "Website")) + " · " + dayName(day.dayStartMs),
             hourMinute(piece.from) + " – " + hourMinute(piece.to) + " · " + fmt((piece.to - piece.from) * 86400)] }; } });
       });
       ordered.push({ start: day.dayStartMs, blocks: blocks, browserBlocks: blocks.filter(function (block) { return block.browser; }),
