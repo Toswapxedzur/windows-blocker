@@ -42,18 +42,18 @@ public static class StorageSchema
         root["schemaVersion"] = WebSchema;
         root["storageMetadata"] = Metadata("vault.web-store", WebSchema);
     }
-    public static JsonNode Payload(JsonNode root, string format)
+    public static JsonNode Payload(JsonNode root, string format, int currentSchema = 1)
     {
         if (root is JsonObject obj && obj.ContainsKey("storageMetadata"))
         {
             if (obj["storageMetadata"] is not JsonObject metadata) throw new InvalidDataException("Invalid storage metadata.");
-            Validate(metadata, format, 1);
+            Validate(metadata, format, currentSchema);
             return obj["value"]?.DeepClone() ?? throw new InvalidDataException("Missing storage payload.");
         }
-        Validate(null, format, 1);
+        Validate(null, format, currentSchema);
         return root;
     }
-    public static JsonObject Wrap(JsonNode value, string format) => new() { ["storageMetadata"] = Metadata(format, 1), ["value"] = value.DeepClone() };
+    public static JsonObject Wrap(JsonNode value, string format, int currentSchema = 1) => new() { ["storageMetadata"] = Metadata(format, currentSchema), ["value"] = value.DeepClone() };
     public static void AtomicWrite(string path, string json)
     {
         var temp = path + ".tmp";

@@ -45,12 +45,12 @@ public sealed class CustomRuleRuntime
     public async Task<bool> IsReadyAsync()
         => await RequestAsync<object>("ping", "", null, null, StartupTimeout) is not null;
 
-    public Task<LoadResult?> LoadAsync(string groupId, string source, string stateJSON)
-        => RequestAsync<LoadResult>("load", groupId, source, new { stateJSON }, ExecutionTimeout);
+    public Task<LoadResult?> LoadAsync(string groupId, string source, string stateJSON, object? timeContext = null)
+        => RequestAsync<LoadResult>("load", groupId, source, new { stateJSON, timeContext }, ExecutionTimeout);
 
     // The old active worker stays alive until native storage commits.
-    public Task<LoadResult?> PrepareLoadAsync(string groupId, string source, string stateJSON)
-        => RequestAsync<LoadResult>("prepare-load", groupId, source, new { stateJSON }, ExecutionTimeout);
+    public Task<LoadResult?> PrepareLoadAsync(string groupId, string source, string stateJSON, object? timeContext = null)
+        => RequestAsync<LoadResult>("prepare-load", groupId, source, new { stateJSON, timeContext }, ExecutionTimeout);
     public async Task<bool> CommitLoadAsync(string groupId)
         => await RequestAsync<object>("commit-load", groupId, null, null, ExecutionTimeout) is not null;
     public async Task DiscardLoadAsync(string groupId)
@@ -88,6 +88,7 @@ public sealed class CustomRuleRuntime
             ["source"] = source,
             ["event"] = ev,
             ["stateJSON"] = ev is not null && (operation is "load" or "prepare-load") ? ((dynamic)ev).stateJSON : null,
+            ["timeContext"] = ev is not null && (operation is "load" or "prepare-load") ? ((dynamic)ev).timeContext : null,
             ["descriptor"] = ev is not null && operation == "dispatch" ? ((dynamic)ev).descriptor : null,
             ["on"] = ev is not null && operation == "suppress" ? ((dynamic)ev).on : null,
             ["module"] = ev is not null && operation == "policy" ? ((dynamic)ev).module : null,

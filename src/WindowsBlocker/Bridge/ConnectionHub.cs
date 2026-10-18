@@ -100,6 +100,8 @@ public sealed partial class ConnectionHub
         public bool UsageSeeded { get; set; }
         public Dictionary<string,double> UsageTransferReceipts { get; set; } = new();
         public JsonObject Buckets { get; set; } = new();
+        public JsonObject? SharedRuleTime { get; set; }
+        public JsonArray TimeSeeds { get; set; } = new();
         public bool BucketsSeeded { get; set; }
         public double? JoiningUsageBase { get; set; }
         public double JoiningUsageDelta { get; set; }
@@ -205,6 +207,7 @@ public sealed partial class ConnectionHub
                         var refusal = kind == "group-link" ? Link(peer.Program, Text(message["groupId"]), Text(message["targetProgram"]), Text(message["targetGroupId"])) : Unlink(peer.Program, Text(message["groupId"]));
                         if (refusal != null) await SendAsync(peer, new() { ["kind"] = "link-refused", ["reason"] = refusal, ["groupId"] = Text(message["groupId"]) }); break;
                     case "group-sync": ApplySync(peer.Program, Text(message["groupId"]), message); break;
+                    case "rule-time-request": _ = HandleRuleTimeAsync(peer, message); break;
                     case "classifier-request": _ = RouteClassifierAsync(peer, message); break;
                     case "browser-response": ResolveBrowser(peer, message); break;
                     case "ping": await SendAsync(peer, new() { ["kind"] = "pong", ["t"] = Number(message["t"]) }); break;
@@ -291,7 +294,7 @@ public sealed partial class ConnectionHub
         lock(_gate)
         {
             var welcome=SendAsync(peer,new() { ["kind"]="welcome",["v"]=ProtocolVersion,["hubProgram"]=LocalProgram,["peers"]=PeerList(),["usageTransferReceipts"]=true,
-                ["activitySettingsNotifications"]=ActivitySettingsSupported() });
+                ["activitySettingsNotifications"]=ActivitySettingsSupported(),["ruleTimeVersion"]=1 });
             var frame=ClustersFrame();
 #if VAULT_CONTRACT_TESTS
             ClusterSnapshotCapturedForTests?.Invoke("welcome");
@@ -404,6 +407,7 @@ public sealed partial class ConnectionHub
             var c = own ?? other ?? new Cluster { Name = Text(a["name"]), Initiator = program };
             if (IsLocked(c.Lock)) return "group-locked";
             if (c.Members.ContainsKey(program) && c.Members[program] != groupId || c.Members.ContainsKey(targetProgram) && c.Members[targetProgram] != targetGroupId) return "program-already-linked";
+            if (!PrepareTimeLink(c, program, groupId, a["timeState"] as JsonObject, targetProgram, targetGroupId, b["timeState"] as JsonObject)) return "incompatible-custom-time";
             c.Members[program] = groupId; c.Members[targetProgram] = targetGroupId;
             if(!c.JoiningUsageBase.HasValue) BeginJoiningUsage(c); _clusters[c.Id] = c; Persist();
         }
@@ -631,7 +635,7 @@ public sealed partial class ConnectionHub
     }
     private static JsonNode RegistryPayload(JsonNode document)
     {
-        var payload=StorageSchema.Payload(document,"hub.clusters");
+        var payload=StorageSchema.Payload(document,"hub.clusters",2);
         if(payload is not JsonArray entries) throw new InvalidDataException("Invalid cluster registry.");
         foreach(var entry in entries.OfType<JsonObject>()) if(entry.ContainsKey("scopeOrigins")) {
             if(entry["scopeOrigins"] is not JsonObject origins || origins.Any(p=>!ValidScopeOrigin(p.Key,p.Value)))
@@ -684,7 +688,8 @@ public sealed partial class ConnectionHub
     {
             RequireNoPartialStorage();
             var groups = document["blockedGroups"] as JsonArray ?? new();
-            var roster = new JsonArray(groups.OfType<JsonObject>().Select(g => (JsonNode)new JsonObject { ["id"] = Text(g["id"]), ["name"] = Text(g["name"]), ["frozen"] = IsLocked(g) }).ToArray());
+            var roster = new JsonArray(groups.OfType<JsonObject>().Select(g => (JsonNode)new JsonObject { ["id"] = Text(g["id"]), ["name"] = Text(g["name"]), ["frozen"] = IsLocked(g),
+                ["timeState"] = document["cbRuleState"]?[Text(g["id"])]?["$vaultTime"]?.DeepClone() }).ToArray());
             if (!_rosters.TryGetValue(LocalProgram, out var oldRoster) || !JsonNode.DeepEquals(oldRoster, roster))
                 SetRosterLocked(LocalProgram, roster, document, save);
             foreach (var group in groups.OfType<JsonObject>())
@@ -784,6 +789,7 @@ public sealed partial class ConnectionHub
         // anybody adopts the union; publishing Apps-only here erases Websites.
         if(!c.Members.Keys.All(c.Contributed.Contains)) ((JsonObject)snapshot["shared"]!).Remove("scopes");
         ((JsonObject)snapshot["shared"]!)["usageTransferReceipts"]=JsonSerializer.SerializeToNode(c.UsageTransferReceipts);
+        ((JsonObject)snapshot["shared"]!)["ruleTime"]=c.SharedRuleTime?.DeepClone();
         return snapshot;
     }
     private JsonObject ClustersFrame() => new() { ["kind"]="clusters",["clusters"]=new JsonArray(_clusters.Values.Select(c => (JsonNode)Snapshot(c)).ToArray()),["rosters"]=new JsonObject(_rosters.Select(r=>new KeyValuePair<string,JsonNode?>(r.Key,r.Value.DeepClone()))) };
@@ -811,7 +817,7 @@ public sealed partial class ConnectionHub
         if (!_clusterStorageWritable) return;
         try {
             if (File.Exists(Storage.ClustersPath)) RegistryPayload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!);
-            StorageSchema.AtomicWrite(Storage.ClustersPath, StorageSchema.Wrap(JsonSerializer.SerializeToNode(_clusters.Values)!, "hub.clusters").ToJsonString());
+            StorageSchema.AtomicWrite(Storage.ClustersPath, StorageSchema.Wrap(JsonSerializer.SerializeToNode(_clusters.Values)!, "hub.clusters",2).ToJsonString());
         } catch { _clusterStorageWritable = false; }
     }
     private void Restore() { lock (_gate) { if (_clusters.Count > 0 || !File.Exists(Storage.ClustersPath)) return; try { foreach (var c in RegistryPayload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!).Deserialize<List<Cluster>>() ?? []) if (c.Members.Count >= 2 && c.Members.All(m => m.Value.Length > 0 && LocalHubAuthentication.Programs.Contains(m.Key))) { PruneOrigins(c); if(c.Members.Keys.All(c.Contributed.Contains)) ClearJoiningUsage(c); else if(!c.JoiningUsageBase.HasValue) BeginJoiningUsage(c); _clusters[c.Id] = c; } } catch { _clusterStorageWritable = false; } } }

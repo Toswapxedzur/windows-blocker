@@ -16,7 +16,7 @@ public sealed class RuleTickOutput
 
 // Current bare (on,v) rules. The isolated worker retains state on Run and
 // suppresses disabled groups; native code honors only desktop actions.
-public sealed class RuleEngine(WebStore store)
+public sealed class RuleEngine(WebStore store, ConnectionHub? hub = null)
 {
     public const string SystemGroupId = "__system__";
     private CustomRuleRuntime? _runtime;
@@ -37,15 +37,16 @@ public sealed class RuleEngine(WebStore store)
         _runtime = runtime;
         runtime.GroupReset += (id, error) => { _quarantined[id] = _loaded.GetValueOrDefault(id, ""); _loaded.Remove(id); _blocks.Remove(id); _panels.Remove(id); Trace.WriteLine($"Rule {id}: {error}"); };
     }
-    public async Task<RuleTickOutput> TickAsync(AppIdentity foreground,List<AppIdentity> running)
-    { await _operations.WaitAsync(); try { return await TickCore(foreground,running); } finally { _operations.Release(); } }
-    private async Task<RuleTickOutput> TickCore(AppIdentity foreground, List<AppIdentity> running)
+    public async Task<RuleTickOutput> TickAsync(AppIdentity foreground,List<AppIdentity> running, string usageAppId = "", double elapsedMs = 0)
+    { await _operations.WaitAsync(); try { return await TickCore(foreground,running,usageAppId,elapsedMs); } finally { _operations.Release(); } }
+    private async Task<RuleTickOutput> TickCore(AppIdentity foreground, List<AppIdentity> running, string usageAppId, double elapsedMs)
     {
         var output = new RuleTickOutput();
         if (_runtime == null) return output;
         var imported = store.ImportedGroups();
         if (imported == null) return output; // An unreadable/unsupported snapshot cannot retire working rules.
         var groups = imported.Groups;
+        foreach (var group in groups.Where(g => g.GroupType == BlockGroupType.Custom)) _ = await TimeContext(group.Id);
         var wanted = groups.Where(g => g.GroupType == BlockGroupType.Custom && g.CustomRuleSource.Length > 0).ToDictionary(g => g.Id);
         foreach (var id in _loaded.Keys.Concat(_quarantined.Keys).Distinct().Where(id => !wanted.ContainsKey(id)).ToList()) await UnloadCore(id);
         foreach (var (id, group) in wanted)
@@ -66,7 +67,7 @@ public sealed class RuleEngine(WebStore store)
             }
         }
         _seeded = true; _running = next; _front = foreground.Canonical;
-        await Dispatch("tick", new { frontmost = foreground.IsEmpty ? null : new { appId = foreground.Canonical, name = foreground.DisplayName }, running = next.Values.Select(p => new { appId = p.Canonical, name = p.DisplayName }).ToArray() }, null, output);
+        await Dispatch("tick", new { frontmost = foreground.IsEmpty ? null : new { appId = foreground.Canonical, name = foreground.DisplayName }, running = next.Values.Select(p => new { appId = p.Canonical, name = p.DisplayName }).ToArray(), usageAppId, elapsedMs = Math.Clamp(elapsedMs,0,5000) }, null, output);
         return output;
     }
     private async Task<LoadResult?> Load(BlockGroup group, string source, bool saveSource = false)
@@ -78,7 +79,7 @@ public sealed class RuleEngine(WebStore store)
             if (raw is not JsonObject saved) return new() { Error = "invalid-rule-storage" };
             StorageSchema.ValidateWeb(saved);
             var state = saved["cbRuleState"]?[group.Id]?.ToJsonString() ?? "{}";
-            var result = await _runtime.PrepareLoadAsync(group.Id, source, state);
+            var result = await _runtime.PrepareLoadAsync(group.Id, source, state, await TimeContext(group.Id));
             if (result == null || !result.Ok) { await _runtime.DiscardLoadAsync(group.Id); return result; }
             try
             {
@@ -160,12 +161,13 @@ public sealed class RuleEngine(WebStore store)
         foreach (var id in ids)
         {
             if (_suppressed.Contains(id) || !_loaded.ContainsKey(id)) continue;
-            var result = await _runtime.DispatchAsync(new() { Type = type, GroupId = id, Data = data });
+            var result = await _runtime.DispatchAsync(new() { Type = type, GroupId = id, Data = data, TimeContext = await TimeContext(id, type, data) });
             if (result == null) continue;
             AppendLogs(result.Logs);
             foreach (var diagnostic in result.Diagnostics) Trace.WriteLine($"Rule {diagnostic.GroupId}: {diagnostic.Message}");
             foreach (var (gid, panels) in result.Panels) _panels[gid] = panels;
             if (result.States.Count > 0) store.Update(root => { var states = root["cbRuleState"] as JsonObject ?? new(); root["cbRuleState"] = states; foreach (var (gid, json) in result.States) states[gid] = JsonNode.Parse(json); });
+            _ = await TimeContext(id);
             foreach (var action in result.Actions)
             {
                 switch (action.Kind)
@@ -178,6 +180,16 @@ public sealed class RuleEngine(WebStore store)
             }
             if (result.Quarantine.HasValue && result.Quarantine.Value.ValueKind == JsonValueKind.Object) { var source = _loaded.GetValueOrDefault(id, ""); await UnloadCore(id); _quarantined[id] = source; }
         }
+    }
+    private async Task<JsonObject> TimeContext(string groupId, string? type = null, object? data = null)
+    {
+        if (hub == null) return new() { ["linked"] = false };
+        var root = JsonNode.Parse(store.LoadRawJson() ?? "{}");
+        var seed = root?["cbRuleState"]?[groupId]?["$vaultTime"] as JsonObject;
+        var sample = JsonSerializer.SerializeToNode(data) as JsonObject;
+        var usage = type == "tick" ? new JsonObject { ["type"] = type, ["now"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            ["data"] = new JsonObject { ["usageAppId"] = sample?["usageAppId"]?.DeepClone(), ["elapsedMs"] = sample?["elapsedMs"]?.DeepClone() } } : null;
+        return await hub.SyncRuleTimeAsync(ConnectionHub.LocalProgram, groupId, null, seed, seed?["pending"] as JsonArray ?? new(), usage);
     }
     private static void OpenApp(string? appId)
     {
