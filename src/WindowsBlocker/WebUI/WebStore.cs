@@ -74,6 +74,18 @@ public sealed class WebStore
     {
         lock (_gate) { RequireWrites(); var root = LoadObject() ?? new JsonObject(); var before = root.ToJsonString(); mutation(root); if (root.ToJsonString() != before) Write(root); }
     }
+    internal void CommitRuleTimeHandover(string groupId, JsonObject? expected, JsonObject final)
+    {
+        WithLockedDocument((root,save)=>{
+            if(!((JsonArray)root["blockedGroups"]!).OfType<JsonObject>().Any(g=>g["id"]?.GetValue<string>()==groupId && g["groupType"]?.GetValue<string>()=="custom")) throw new InvalidDataException("Time group no longer exists");
+            var states=root["cbRuleState"] as JsonObject ?? new();root["cbRuleState"]=states;
+            var state=states[groupId] as JsonObject ?? new();states[groupId]=state;
+            if(!JsonNode.DeepEquals(state["$vaultTime"],expected)) throw new InvalidDataException("Time state changed; retry transfer");
+            state["$vaultTime"]=final.DeepClone();
+            if(System.Text.Encoding.UTF8.GetByteCount(state.ToJsonString())>65536) throw new InvalidDataException("Final time exceeds rule state capacity");
+            save();
+        });
+    }
     internal void CommitRuleDispatch(IReadOnlyDictionary<string,string> states)
     {
         if (states.Count == 0) return;

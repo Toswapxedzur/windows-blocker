@@ -12,6 +12,14 @@ internal static class Program
 {
     [STAThread] public static void Main(string[] args)
     {
+        var managedTimeOnly = args.Contains("--managed-time-only");
+        if (managedTimeOnly)
+        {
+            if (args.Length < 4 || Directory.Exists(args[1]) || File.Exists(args[1]) || File.Exists(args[2]))
+            { Environment.ExitCode = 2; return; } // Refuse reuse without touching existing paths.
+            Environment.SetEnvironmentVariable("VAULT_ENVIRONMENT", "development");
+            Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT", args[1]);
+        }
         var app = new Application();
         var web = new WebView2();
         var window = new Window { Title = "Owned Vault initialization contracts", Width = 480, Height = 200, Content = web };
@@ -24,7 +32,8 @@ internal static class Program
                 Environment.SetEnvironmentVariable("VAULT_ENVIRONMENT", "development");
                 Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT", args[1]);
                 web.CreationProperties = new() { UserDataFolder = Path.Combine(args[1], "WebView2") };
-                await web.EnsureCoreWebView2Async();
+                if (managedTimeOnly) await web.EnsureCoreWebView2Async().WaitAsync(TimeSpan.FromSeconds(15));
+                else await web.EnsureCoreWebView2Async();
                 web.CoreWebView2.SetVirtualHostNameToFolderMapping("appassets.windowsblocker", args[0], CoreWebView2HostResourceAccessKind.DenyCors);
                 var navigated = new TaskCompletionSource<bool>();
                 web.CoreWebView2.NavigationCompleted += (_, ev) => navigated.TrySetResult(ev.IsSuccess);
@@ -32,6 +41,12 @@ internal static class Program
                 Check(await navigated.Task.WaitAsync(TimeSpan.FromSeconds(10)), "Actual WebView2 native rule host navigates");
                 var runtime = new CustomRuleRuntime(web.CoreWebView2);
                 Check(await runtime.IsReadyAsync(), "Actual isolated worker host ready");
+                if (managedTimeOnly)
+                {
+                    await ManagedTimeContracts.Run(runtime, Check).WaitAsync(TimeSpan.FromSeconds(90));
+                    File.WriteAllText(args[2], new JsonObject { ["ok"] = true, ["mode"] = "managed-time-only", ["checks"] = JsonSerializerNodes(checks) }.ToJsonString());
+                    return;
+                }
                 var store = new WebStore();
                 store.SaveRaw("{\"blockedGroups\":[{\"id\":\"init\",\"name\":\"Init\",\"groupType\":\"custom\",\"enabled\":true,\"activeEventSource\":\"\",\"blockingRulesText\":\"\"}],\"cbRuleState\":{\"other\":{\"keep\":7}}}");
                 var engine = new RuleEngine(store); engine.AttachRuntime(runtime);

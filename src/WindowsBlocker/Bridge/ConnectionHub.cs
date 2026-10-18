@@ -101,6 +101,7 @@ public sealed partial class ConnectionHub
         public Dictionary<string,double> UsageTransferReceipts { get; set; } = new();
         public JsonObject Buckets { get; set; } = new();
         public JsonObject? SharedRuleTime { get; set; }
+        public Dictionary<string,JsonObject> DetachedRuleTime { get; set; } = new();
         public JsonArray TimeSeeds { get; set; } = new();
         public bool BucketsSeeded { get; set; }
         public double? JoiningUsageBase { get; set; }
@@ -351,7 +352,7 @@ public sealed partial class ConnectionHub
     }
     public string CurrentStatusJson() => new JsonObject { ["running"] = _listener != null, ["state"] = _error.Length > 0 ? "error" : _listener != null ? "running" : "off", ["address"] = $"ws://127.0.0.1:{Storage.HubPort}", ["peers"] = PeerList(), ["error"] = _error, ["hubProgram"] = LocalProgram }.ToJsonString();
     public void BroadcastClassifier(JsonObject evt) { if(Text(evt["operation"]) is not ("video-tags-updated" or "classifier-state-updated") || evt["body"] is not JsonObject body || Encoding.UTF8.GetByteCount(body.ToJsonString())>88_000) return; Broadcast(new JsonObject { ["kind"] = "classifier-broadcast", ["operation"] = evt["operation"]?.DeepClone(), ["body"] = body.DeepClone() }); }
-    public int ActiveClusterCount() { lock (_gate) return _clusters.Count; }
+    public int ActiveClusterCount() { lock (_gate) return _clusters.Values.Count(c => c.Members.Count >= 2); }
     public string? TakeLocalRejectionJson() { var r = _rejection?.ToJsonString(); _rejection = null; return r; }
     public void AnnounceFromBridge(string json) { if (JsonNode.Parse(json) is JsonObject m) SetRoster(LocalProgram, m["groups"] as JsonArray ?? new()); }
     public void ConnectFromBridge(string json) => LinkFromBridge("group-link", json);
@@ -376,6 +377,12 @@ public sealed partial class ConnectionHub
         foreach (var c in _clusters.Values.Where(c => c.Members.ContainsKey(program)).ToList())
             if (!groups.OfType<JsonObject>().Any(g => Text(g["id"]) == c.Members[program])) RemoveMember(c, program, root, persistLocal, false);
         _rosters[program] = (JsonArray)groups.DeepClone();
+        var prefix=program+"/";
+        var ids=groups.OfType<JsonObject>().Select(g=>Text(g["id"])).ToHashSet();
+        foreach(var retained in _clusters.Values.ToList()) {
+            foreach(var member in retained.DetachedRuleTime.Keys.Where(m=>m.StartsWith(prefix,StringComparison.Ordinal) && !ids.Contains(m[prefix.Length..])).ToList()) retained.DetachedRuleTime.Remove(member);
+            if(retained.Members.Count==0 && retained.DetachedRuleTime.Count==0) _clusters.Remove(retained.Id);
+        }
         Persist();
     }
     private void BroadcastRosters()
@@ -407,9 +414,38 @@ public sealed partial class ConnectionHub
             var c = own ?? other ?? new Cluster { Name = Text(a["name"]), Initiator = program };
             if (IsLocked(c.Lock)) return "group-locked";
             if (c.Members.ContainsKey(program) && c.Members[program] != groupId || c.Members.ContainsKey(targetProgram) && c.Members[targetProgram] != targetGroupId) return "program-already-linked";
-            if (!PrepareTimeLink(c, program, groupId, a["timeState"] as JsonObject, targetProgram, targetGroupId, b["timeState"] as JsonObject)) return "incompatible-custom-time";
-            c.Members[program] = groupId; c.Members[targetProgram] = targetGroupId;
-            if(!c.JoiningUsageBase.HasValue) BeginJoiningUsage(c); _clusters[c.Id] = c; Persist();
+            var original = EditorStateNow(); var registry = ReadEditorRegistry();
+            InstallEditorState(CloneEditorState(original)); _editorStage = new EditorStage();
+            try
+            {
+                c = Find(program, groupId) ?? Find(targetProgram, targetGroupId) ?? new Cluster { Name = Text(a["name"]), Initiator = program };
+                if (!PrepareTimeLink(c, program, groupId, a["timeState"] as JsonObject, targetProgram, targetGroupId, b["timeState"] as JsonObject))
+                { InstallEditorState(original); return "incompatible-custom-time"; }
+                c.Members[program] = groupId; c.Members[targetProgram] = targetGroupId;
+                if (!c.JoiningUsageBase.HasValue) BeginJoiningUsage(c); _clusters[c.Id] = c;
+                var bytes = StorageSchema.Wrap(JsonSerializer.SerializeToNode(_clusters.Values)!, "hub.clusters", 2).ToJsonString();
+#if VAULT_CONTRACT_TESTS
+                LinkDiskPhaseForTests?.Invoke("registry-save");
+#endif
+                StorageSchema.AtomicWrite(Storage.ClustersPath, bytes);
+                if (File.ReadAllText(Storage.ClustersPath) != bytes) throw new IOException("Linked shared state was not saved");
+            }
+            catch (Exception commitError)
+            {
+                InstallEditorState(original);
+                try
+                {
+                    if (!SameBytes(File.Exists(Storage.ClustersPath) ? File.ReadAllBytes(Storage.ClustersPath) : null, registry))
+                    { if (registry == null) File.Delete(Storage.ClustersPath); else AtomicRegistryBytes(registry); }
+                }
+                catch (Exception rollbackError)
+                {
+                    _clusterStorageWritable = false;
+                    throw new AggregateException("link-storage-save-failed; storage repair required", commitError, rollbackError);
+                }
+                throw;
+            }
+            finally { _editorStage = null; }
         }
         BroadcastClusters(); return null;
     }
@@ -417,16 +453,65 @@ public sealed partial class ConnectionHub
     {
         string? refusal = null;
         WithLocalStore((root, persistLocal) => { lock (_gate) {
-            if (!_clusterStorageWritable) { refusal = "unsupported-storage"; return; }
-            var c = Find(program, groupId); if (c == null) { refusal = "not-linked"; return; }
-            var localGroup = c.Members.TryGetValue(LocalProgram, out var localId)
-                ? (root?["blockedGroups"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault(g => Text(g["id"]) == localId) : null;
-            if (IsLocked(c.Lock) || localGroup != null && Number(localGroup["lockVersion"]) > Number(c.Lock["lockVersion"]) && IsLocked(localGroup)) { refusal = "group-locked"; return; }
-            RemoveMember(c, program, root, persistLocal, true); Persist();
-        }});
+                if (!_clusterStorageWritable) { refusal = "unsupported-storage"; return; }
+                var c = Find(program, groupId); if (c == null) { refusal = "not-linked"; return; }
+                var localGroup = c.Members.TryGetValue(LocalProgram, out var localId)
+                    ? (root?["blockedGroups"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault(g => Text(g["id"]) == localId) : null;
+                if (IsLocked(c.Lock) || localGroup != null && Number(localGroup["lockVersion"]) > Number(c.Lock["lockVersion"]) && IsLocked(localGroup)) { refusal = "group-locked"; return; }
+                // Stage memory/notifications as the native editor does. A final
+                // snapshot is retained only after both normal writes succeed;
+                // reported IO failure restores the original link and bytes.
+                var original = EditorStateNow();
+                var canonical = root != null && _localStore != null ? File.ReadAllBytes(_localStore.FilePath) : null;
+                var registry = ReadEditorRegistry();
+                var stage = new EditorStage();
+                InstallEditorState(CloneEditorState(original)); _editorStage = stage;
+                try
+                {
+                    RemoveMember(Find(program, groupId)!, program, root, persistLocal, true);
+                    var bytes = StorageSchema.Wrap(JsonSerializer.SerializeToNode(_clusters.Values)!, "hub.clusters", 2).ToJsonString();
+#if VAULT_CONTRACT_TESTS
+                    UnlinkDiskPhaseForTests?.Invoke("registry-save");
+#endif
+                    StorageSchema.AtomicWrite(Storage.ClustersPath, bytes);
+                    if (File.ReadAllText(Storage.ClustersPath) != bytes) throw new IOException("Final shared snapshot was not saved");
+                    _editorStage = null;
+                    foreach (var frame in stage.Frames) foreach (var peer in frame.Recipients) _ = SendAsync(peer, frame.Frame);
+                }
+                catch (Exception commitError)
+                {
+                    var rollbackErrors = new List<Exception>();
+                    try
+                    {
+                        if (canonical != null && _localStore != null && !SameBytes(File.ReadAllBytes(_localStore.FilePath), canonical))
+                            _localStore.RestoreValidatedBytes(canonical);
+                    }
+                    catch (Exception ex) { rollbackErrors.Add(ex); }
+                    try
+                    {
+                        if (!SameBytes(File.Exists(Storage.ClustersPath) ? File.ReadAllBytes(Storage.ClustersPath) : null, registry))
+                        {
+                            if (registry == null) File.Delete(Storage.ClustersPath); else AtomicRegistryBytes(registry);
+                        }
+                    }
+                    catch (Exception ex) { rollbackErrors.Add(ex); }
+                    InstallEditorState(original);
+                    if (rollbackErrors.Count > 0)
+                    {
+                        _editorStorageHeld = true; _localStore?.HoldEditorWrites();
+                        throw new AggregateException("unlink-storage-partial-failure; storage repair required", new[] { commitError }.Concat(rollbackErrors));
+                    }
+                    throw; // Preserve the existing writer's concrete failure contract.
+                }
+                finally { _editorStage = null; }
+            }});
         if (refusal != null) return refusal;
         BroadcastClusters(); return null;
     }
+#if VAULT_CONTRACT_TESTS
+    internal Action<string>? UnlinkDiskPhaseForTests;
+    internal Action<string>? LinkDiskPhaseForTests;
+#endif
     // Keep store -> hub lock ordering, matching ReconcileLocal's adoption.
     // Snapshot the authoritative budget while the member is still attached.
     private void WithLocalStore(Action<JsonObject?, Action> action)
@@ -437,6 +522,9 @@ public sealed partial class ConnectionHub
     }
     private void RemoveMember(Cluster c, string program, JsonObject? root, Action persistLocal, bool requireLocalSnapshot)
     {
+        var retainedBefore = c.DetachedRuleTime;
+        RetainDetachedRuleTime(c, program);
+        try {
         if (c.Members.TryGetValue(LocalProgram, out var localId)) {
             var localGroup = (root?["blockedGroups"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault(g => Text(g["id"]) == localId);
             if (root != null && localGroup == null && requireLocalSnapshot) throw new InvalidDataException("Missing local group snapshot; link is preserved.");
@@ -450,9 +538,11 @@ public sealed partial class ConnectionHub
             }
             _unlinkedLocal.Add(localId); _seenDefinitions.Remove(localId);
         }
+        if(c.SharedRuleTime?["confirmed"] is JsonObject confirmed && c.Members.TryGetValue(program,out var oldId)) confirmed.Remove(program+"/"+oldId);
         c.Members.Remove(program); c.Contributed.Remove(program);
         if (c.Members.Keys.All(c.Contributed.Contains)) ClearJoiningUsage(c);
-        if (c.Members.Count < 2) _clusters.Remove(c.Id);
+        if (c.Members.Count < 2) { c.Members.Clear(); if(c.DetachedRuleTime.Count == 0) _clusters.Remove(c.Id); }
+        } catch { c.DetachedRuleTime = retainedBefore; throw; }
     }
     public static bool IsLocked(JsonObject obj) => obj["lockedAtMs"]?.GetValueKind() == JsonValueKind.Number;
     public void ApplySync(string program, string groupId, JsonObject frame)
@@ -792,7 +882,7 @@ public sealed partial class ConnectionHub
         ((JsonObject)snapshot["shared"]!)["ruleTime"]=c.SharedRuleTime?.DeepClone();
         return snapshot;
     }
-    private JsonObject ClustersFrame() => new() { ["kind"]="clusters",["clusters"]=new JsonArray(_clusters.Values.Select(c => (JsonNode)Snapshot(c)).ToArray()),["rosters"]=new JsonObject(_rosters.Select(r=>new KeyValuePair<string,JsonNode?>(r.Key,r.Value.DeepClone()))) };
+    private JsonObject ClustersFrame() => new() { ["kind"]="clusters",["clusters"]=new JsonArray(_clusters.Values.Where(c => c.Members.Count >= 2).Select(c => (JsonNode)Snapshot(c)).ToArray()),["rosters"]=new JsonObject(_rosters.Select(r=>new KeyValuePair<string,JsonNode?>(r.Key,r.Value.DeepClone()))) };
     public string ClustersJson() { lock (_gate) { var frame=ClustersFrame();frame.Remove("kind");return frame.ToJsonString(); } }
 #if VAULT_CONTRACT_TESTS
     internal Action<string>? ClusterSnapshotCapturedForTests;
@@ -802,7 +892,7 @@ public sealed partial class ConnectionHub
     {
         lock(_gate)
         {
-            foreach(var c in _clusters.Values) Broadcast(new() { ["kind"]="cluster-updated",["cluster"]=Snapshot(c) });
+            foreach(var c in _clusters.Values.Where(c => c.Members.Count >= 2)) Broadcast(new() { ["kind"]="cluster-updated",["cluster"]=Snapshot(c) });
             var frame=ClustersFrame();
 #if VAULT_CONTRACT_TESTS
             ClusterSnapshotCapturedForTests?.Invoke("broadcast");
@@ -820,7 +910,36 @@ public sealed partial class ConnectionHub
             StorageSchema.AtomicWrite(Storage.ClustersPath, StorageSchema.Wrap(JsonSerializer.SerializeToNode(_clusters.Values)!, "hub.clusters",2).ToJsonString());
         } catch { _clusterStorageWritable = false; }
     }
-    private void Restore() { lock (_gate) { if (_clusters.Count > 0 || !File.Exists(Storage.ClustersPath)) return; try { foreach (var c in RegistryPayload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!).Deserialize<List<Cluster>>() ?? []) if (c.Members.Count >= 2 && c.Members.All(m => m.Value.Length > 0 && LocalHubAuthentication.Programs.Contains(m.Key))) { PruneOrigins(c); if(c.Members.Keys.All(c.Contributed.Contains)) ClearJoiningUsage(c); else if(!c.JoiningUsageBase.HasValue) BeginJoiningUsage(c); _clusters[c.Id] = c; } } catch { _clusterStorageWritable = false; } } }
+    private void Restore()
+    {
+        lock (_gate)
+        {
+            if (_clusters.Count > 0 || !File.Exists(Storage.ClustersPath)) return;
+            try
+            {
+                var rows = RegistryPayload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!).Deserialize<List<Cluster>>() ?? [];
+                // A receipt must never acknowledge/discard an unsupported final
+                // namespace. Validate retained envelopes before installing any
+                // restored row; unknown bytes remain untouched and read-only.
+                if (rows.Sum(c => c.DetachedRuleTime.Count) > 1024 ||
+                    Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(rows.Select(c => c.DetachedRuleTime))) > 8 * 1024 * 1024 ||
+                    rows.Any(c => c.DetachedRuleTime.Count > 16 || c.DetachedRuleTime.Values.Any(record =>
+                        Number(record["version"]) != 1 || record["state"] is not JsonObject state || Number(state["version"]) != 1 || state["objects"] is not JsonObject ||
+                        Text(record["token"]).Length == 0 || Text(record["initiator"]).Length == 0)))
+                    throw new InvalidDataException("Unsupported final time snapshots");
+                foreach (var c in rows)
+                {
+                    if ((c.Members.Count < 2 && c.DetachedRuleTime.Count == 0) ||
+                        !c.Members.All(m => m.Value.Length > 0 && LocalHubAuthentication.Programs.Contains(m.Key))) continue;
+                    PruneOrigins(c);
+                    if (c.Members.Keys.All(c.Contributed.Contains)) ClearJoiningUsage(c);
+                    else if (!c.JoiningUsageBase.HasValue) BeginJoiningUsage(c);
+                    _clusters[c.Id] = c;
+                }
+            }
+            catch { _clusterStorageWritable = false; }
+        }
+    }
     private static double Number(JsonNode? node) => node?.GetValueKind() == JsonValueKind.Number && double.TryParse(node.ToJsonString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value) && double.IsFinite(value) ? value : 0;
     private static string Text(JsonNode? node) => node?.GetValueKind() == JsonValueKind.String ? node.GetValue<string>() : "";
 }
