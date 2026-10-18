@@ -66,7 +66,7 @@ public partial class MainWindow : Window
         McpConnectionsMenu.Header = NativeLanguage.Text("windows.connections.menu", "AI connections…");
         NativeMenu.FlowDirection = NativeLanguage.Language == "ar" ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         _engine = new EnforcementEngine(_store, _registry, _hub);
-        _ruleEngine = new RuleEngine(_store);
+        _ruleEngine = new RuleEngine(_store, _hub);
         _policy = new NativePolicyTools(_store,_hub,_ruleEngine);
         _policy.Policy = InvokeCanonicalPolicy;
         _policy.RulesEvent = output => { foreach(var app in output.CloseOnce) _engine.CloseMatching([app]); _panel?.ReplaceAll(_ruleEngine.PanelsSnapshot()); };
@@ -182,6 +182,12 @@ public partial class MainWindow : Window
             {
                 _runtime = runtime;
                 _ruleEngine.AttachRuntime(runtime);
+                _hub.RuleTimePolicy = async (method, args) => await Dispatcher.InvokeAsync(async () =>
+                {
+                    var reply = await runtime.PolicyAsync("RuleCore", method, args);
+                    return reply != null && reply.TryGetValue("value", out var value)
+                        ? JsonNode.Parse(value.GetRawText()) as JsonObject : null;
+                }).Task.Unwrap();
             }
         }
         catch
@@ -527,7 +533,7 @@ public partial class MainWindow : Window
                 try
                 {
                     var running = _engine.SnapshotRunningIdentities();
-                    var ruleOut = await _ruleEngine.TickAsync(foreground, running);
+                    var ruleOut = await _ruleEngine.TickAsync(foreground, running, status.UsageAppId, status.ObservedElapsedMs);
 
                     if (ruleOut.CloseOnce.Count > 0)
                     {

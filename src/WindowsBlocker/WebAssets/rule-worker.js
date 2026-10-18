@@ -60,6 +60,7 @@
       var result;
       if (request.operation === "load") {
         try {
+          if (request.timeContext) runtime.setTimeContext(groupId, JSON.stringify(request.timeContext));
           result = JSON.parse(runtime.load(groupId, String(request.source || ""), request.stateJSON || "{}"));
         } catch (error) {
           runtime.unload(groupId);

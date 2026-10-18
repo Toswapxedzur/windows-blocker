@@ -18,6 +18,7 @@ public sealed class CustomRuleEvent
     [JsonPropertyName("targetGroupId")] public string GroupId { get; set; } = "";
     [JsonPropertyName("now")] public long Now { get; set; } = DateTimeOffset.Now.ToUnixTimeMilliseconds();
     [JsonPropertyName("data")] public object? Data { get; set; }
+    [JsonPropertyName("timeContext")] public object? TimeContext { get; set; }
 }
 public sealed class RuleAction
 {

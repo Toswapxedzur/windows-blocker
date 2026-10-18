@@ -11,6 +11,8 @@ namespace WindowsBlocker.Enforcement;
 public sealed class EnforcementStatus
 {
     public List<TimerDisplayItem> Timers { get; init; } = new();
+    public string UsageAppId { get; init; } = "";
+    public double ObservedElapsedMs { get; init; }
 }
 
 // The Windows analog of the native half of MacEnforcementBridge: on each tick it
@@ -242,7 +244,9 @@ public sealed class EnforcementEngine
             _store.WriteUsage(usageUpdates, resetUpdates, bucketUpdates,snoozeGiven);
         }
 
-        return new EnforcementStatus { Timers = timerItems };
+        return new EnforcementStatus { Timers = timerItems,
+            UsageAppId = NativeAppSafety.CanControl(fg) && !_registry.IsBlocked(fg) ? fg.Canonical : "",
+            ObservedElapsedMs = Math.Clamp(_elapsed * 1000, 0, 5000) };
     }
 
     // Seed from the local store before adopting the shared budget. This also

@@ -1,9 +1,9 @@
 /* Trusted pure policy functions. This worker never loads user source. */
 "use strict";
-importScripts("platform-profiles.js", "group-actions.js", "group-scopes.js", "parental-pin.js");
+importScripts("platform-profiles.js", "group-actions.js", "group-scopes.js", "parental-pin.js", "rule-core.js");
 self.addEventListener("message", async function (event) {
   const request = event.data || {};
-  const allowed = { CBGroupActions: self.CBGroupActions, CBGroupScopes: self.CBGroupScopes, CBParentalPin: self.CBParentalPin };
+  const allowed = { CBGroupActions: self.CBGroupActions, CBGroupScopes: self.CBGroupScopes, CBParentalPin: self.CBParentalPin, RuleCore: { mergeTime: self.RuleCore.mergeTime, reduceTime: self.RuleCore.reduceTime, syncTime: self.RuleCore.syncTime } };
   try {
     const api = allowed[request.module];
     if (!api || !Object.prototype.hasOwnProperty.call(api, request.method) || typeof api[request.method] !== "function" || !Array.isArray(request.args)) throw new Error("unknown-policy-operation");
