@@ -75,11 +75,14 @@ public sealed class RuleEngine(WebStore store, ConnectionHub? hub = null)
         if (_runtime == null) return null;
         try
         {
+            // Reconnection can commit a final shared namespace. Capture the
+            // initializer state only after that handover has been saved.
+            var timeContext = await TimeContext(group.Id);
             var raw = JsonNode.Parse(store.LoadRawJson() ?? "{}");
             if (raw is not JsonObject saved) return new() { Error = "invalid-rule-storage" };
             StorageSchema.ValidateWeb(saved);
             var state = saved["cbRuleState"]?[group.Id]?.ToJsonString() ?? "{}";
-            var result = await _runtime.PrepareLoadAsync(group.Id, source, state, await TimeContext(group.Id));
+            var result = await _runtime.PrepareLoadAsync(group.Id, source, state, timeContext);
             if (result == null || !result.Ok) { await _runtime.DiscardLoadAsync(group.Id); return result; }
             try
             {
@@ -189,16 +192,28 @@ public sealed class RuleEngine(WebStore store, ConnectionHub? hub = null)
     }
     private async Task<JsonObject> TimeContext(string groupId, string? type = null, object? data = null)
     {
-        var root = JsonNode.Parse(store.LoadRawJson() ?? "{}");
-        var seed = root?["cbRuleState"]?[groupId]?["$vaultTime"] as JsonObject;
-        if (hub == null) return seed?["scope"]?.GetValue<string>() is { Length: > 0 } scope
-            ? new() { ["linked"] = true, ["ready"] = false, ["clusterId"] = scope }
-            : new() { ["linked"] = false };
-        var sample = JsonSerializer.SerializeToNode(data) as JsonObject;
-        var usage = type == "tick" ? new JsonObject { ["type"] = type, ["now"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            ["data"] = new JsonObject { ["usageAppId"] = sample?["usageAppId"]?.DeepClone(), ["elapsedMs"] = sample?["elapsedMs"]?.DeepClone() } } : null;
-        return await hub.SyncRuleTimeAsync(ConnectionHub.LocalProgram, groupId, null, seed, seed?["pending"] as JsonArray ?? new(), usage);
+        var nextLink="unavailable";
+        for(var round=0;round<3;round++) {
+            var root = JsonNode.Parse(store.LoadRawJson() ?? "{}");
+            var seed = root?["cbRuleState"]?[groupId]?["$vaultTime"] as JsonObject;
+            if (hub == null) return seed?["scope"]?.GetValue<string>() is { Length: > 0 } scope
+                ? new() { ["linked"] = true, ["ready"] = false, ["clusterId"] = scope }
+                : new() { ["linked"] = false };
+            var sample = JsonSerializer.SerializeToNode(data) as JsonObject;
+            var usage = type == "tick" ? new JsonObject { ["type"] = type, ["now"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                ["data"] = new JsonObject { ["usageAppId"] = sample?["usageAppId"]?.DeepClone(), ["elapsedMs"] = sample?["elapsedMs"]?.DeepClone() } } : null;
+            var context=await hub.SyncRuleTimeAsync(ConnectionHub.LocalProgram, groupId, null, seed, seed?["pending"] as JsonArray ?? new(), usage);
+            if(context["detached"]?.GetValue<bool>()==true && context["state"] is JsonObject final) {
+                nextLink=context["relinkClusterId"]?.GetValue<string>() ?? "";
+                try { store.CommitRuleTimeHandover(groupId,seed,final); }
+                catch { return new(){["linked"]=true,["ready"]=false,["clusterId"]=context["clusterId"]?.DeepClone() ?? JsonValue.Create(nextLink),["error"]="detached-time-save-failed"}; }
+                if(nextLink.Length>0 || context["handoverPending"]?.GetValue<bool>()==true) continue;
+            }
+            return context;
+        }
+        return new(){["linked"]=true,["ready"]=false,["clusterId"]=nextLink};
     }
+
     private static void OpenApp(string? appId)
     {
         appId=WindowsAppId.Normalize(appId ?? ""); if(appId==null) return;

@@ -32,7 +32,7 @@ public sealed partial class ConnectionHub
         return objects;
     }
 
-    private static bool PrepareTimeLink(Cluster cluster, string program, string groupId, JsonObject? own, string otherProgram, string otherGroupId, JsonObject? other)
+    private bool PrepareTimeLink(Cluster cluster, string program, string groupId, JsonObject? own, string otherProgram, string otherGroupId, JsonObject? other)
     {
         try
         {
@@ -40,9 +40,10 @@ public sealed partial class ConnectionHub
             var combined = (JsonObject)objects.DeepClone();
             var seeds = (JsonArray)cluster.TimeSeeds.DeepClone();
             foreach (var previous in seeds.OfType<JsonObject>()) foreach (var (id, value) in TimeObjects(previous["state"] as JsonObject)) combined[id] = value?.DeepClone();
-            foreach (var (peer, id, seed) in new[] { (program, groupId, own), (otherProgram, otherGroupId, other) })
+            foreach (var (peer, id, original) in new[] { (program, groupId, own), (otherProgram, otherGroupId, other) })
             {
                 if (cluster.Members.ContainsKey(peer)) continue;
+                var seed = PrelinkTimeSeed(peer,id,original);
                 var incoming = TimeObjects(seed);
                 foreach (var (objectId, node) in incoming)
                 {
@@ -61,6 +62,91 @@ public sealed partial class ConnectionHub
             return true;
         }
         catch { return false; }
+    }
+
+    private JsonObject? PrelinkTimeSeed(string program,string groupId,JsonObject? seed)
+    {
+        if(seed?["detachedReceipt"]!=null) return seed;
+        var member=program+"/"+groupId;
+        var record=_clusters.Values.Where(c=>c.DetachedRuleTime.ContainsKey(member)).Select(c=>c.DetachedRuleTime[member]).OrderByDescending(r=>Number(r["atMs"])).FirstOrDefault();
+        if(record?["state"] is not JsonObject shared) return seed;
+        var final=(JsonObject)shared.DeepClone();
+        foreach(var (id,value) in final["objects"] as JsonObject ?? new()) if(value is JsonObject tracker && Text(tracker["kind"])=="rolling") {
+            var own=seed?["ownTargets"]?[id] as JsonObject ?? shared["targets"]?[id]?[member] as JsonObject;
+            tracker["websites"]=own?["websites"]?.DeepClone() ?? new JsonArray();
+            tracker["apps"]=own?["apps"]?.DeepClone() ?? new JsonArray();
+        }
+        final["ownTargets"]=seed?["ownTargets"]?.DeepClone();
+        return final;
+    }
+
+    private void RetainDetachedRuleTime(Cluster cluster, string program)
+    {
+        if (cluster.SharedRuleTime == null) return;
+        var retained = new Dictionary<string,JsonObject>(cluster.DetachedRuleTime);
+        var atMs = Math.Max(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            _clusters.Values.SelectMany(c => c.DetachedRuleTime.Values).Select(r => (long)Number(r["atMs"])).DefaultIfEmpty(0).Max() + 1);
+        foreach (var peer in cluster.Members.Where(m => m.Key == program || cluster.Members.Count == 2)) {
+            var member = peer.Key + "/" + peer.Value;
+            retained[member] = new() { ["version"] = 1, ["token"] = Guid.NewGuid().ToString("N"),
+                ["state"] = cluster.SharedRuleTime.DeepClone(), ["initiator"] = cluster.Initiator + "/" + cluster.Members.GetValueOrDefault(cluster.Initiator, ""),
+                ["atMs"] = atMs };
+        }
+        if (_clusters.Values.Sum(c => ReferenceEquals(c,cluster) ? retained.Count : c.DetachedRuleTime.Count) > 1024 ||
+            Encoding.UTF8.GetByteCount(System.Text.Json.JsonSerializer.Serialize(_clusters.Values.Select(c => ReferenceEquals(c,cluster) ? retained : c.DetachedRuleTime))) > 8 * 1024 * 1024)
+            throw new InvalidDataException("Reconnect detached members before unlinking more groups");
+        cluster.DetachedRuleTime = retained;
+    }
+
+    // Called while _timeOperations serializes policy requests. The ordinary
+    // hub/editor gate is reacquired around commit; it is never held awaiting JS.
+    private async Task<JsonObject?> DetachedTimeAsync(string program, string groupId, string? requested, JsonObject? seed, Guid? originPeer)
+    {
+        var receipt = seed?["detachedReceipt"] as JsonObject;
+        var scope = Text(seed?["scope"]);
+        // A saved receipt completes that exact transfer. Otherwise drain the
+        // member's retained chain chronologically, before accepting any current
+        // scope/request: an older final snapshot must never follow a newer one.
+        var remembered = receipt != null ? Text(receipt["clusterId"]) : "";
+        if (remembered.Length == 0) lock (_gate)
+            remembered = _clusters.Values.Where(c => c.DetachedRuleTime.ContainsKey(program + "/" + groupId))
+                .OrderBy(c => Number(c.DetachedRuleTime[program + "/" + groupId]["atMs"]))
+                .ThenBy(c => c.Id, StringComparer.Ordinal).FirstOrDefault()?.Id ?? "";
+        if (remembered.Length == 0) remembered = scope.Length > 0 ? scope : requested ?? "";
+        var member=program+"/"+groupId;
+        Cluster retired; JsonObject record; bool acknowledged;
+        JsonObject Refused(string error) => new() { ["linked"]=true,["ready"]=false,["clusterId"]=remembered,["error"]=error };
+        bool Live() => !originPeer.HasValue || _peers.TryGetValue(originPeer.Value,out var peer) && peer.Connected && peer.Program==program;
+        lock(_gate) {
+            if(!Live() || !_clusterStorageWritable || _editorStorageHeld || _editorStage!=null) return Refused("custom-time-storage-unavailable");
+            if(!_clusters.TryGetValue(remembered,out retired!) || !retired.DetachedRuleTime.TryGetValue(member,out record!)) {
+                if(receipt!=null && Find(program,groupId)?.Id!=remembered) {
+                    var final=seed==null?new JsonObject():(JsonObject)seed.DeepClone(); final.Remove("detachedReceipt");
+                    return new(){["linked"]=false,["detached"]=true,["clusterId"]=remembered,["state"]=final,["relinkClusterId"]=Find(program,groupId)?.Id ?? "",["handoverPending"]=_clusters.Values.Any(c=>c.Id!=remembered && c.DetachedRuleTime.ContainsKey(member))};
+                }
+                return null;
+            }
+            if(RuleTimePolicy==null) return Refused("custom-time-runtime-unavailable");
+            acknowledged=receipt!=null && Text(receipt["token"])==Text(record["token"]);
+            record=(JsonObject)record.DeepClone();
+        }
+        JsonObject? result;
+        try { result=await RuleTimePolicy!("detachTime",new object?[]{seed,record["state"],member,Text(record["initiator"]),remembered,Text(record["token"]),DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),acknowledged}); }
+        catch { return Refused("detached-time-runtime-unavailable"); }
+        lock(_gate) {
+            if(!Live() || !_clusterStorageWritable || _editorStorageHeld || _editorStage!=null || !_clusters.TryGetValue(remembered,out var current) || !ReferenceEquals(current,retired) || !current.DetachedRuleTime.TryGetValue(member,out var latest) || Text(latest["token"])!=Text(record["token"])) return Refused("detached-time-changed");
+            if(result?["ok"]?.GetValue<bool>()!=true || result["state"] is not JsonObject final) return Refused("detached-time-refused");
+            if(acknowledged) {
+                current.DetachedRuleTime.Remove(member);
+                if(current.Members.Count<2 && current.DetachedRuleTime.Count==0) _clusters.Remove(current.Id);
+                Persist();
+                try {
+                    var saved=RegistryPayload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!).AsArray().OfType<JsonObject>().FirstOrDefault(c=>Text(c["Id"])==remembered);
+                    if(!_clusterStorageWritable || saved?["DetachedRuleTime"]?[member]!=null) throw new IOException("detached-time-save-failed");
+                } catch { _clusterStorageWritable=false; return Refused("detached-time-save-failed"); }
+            }
+            return new(){["linked"]=false,["detached"]=true,["clusterId"]=remembered,["state"]=final.DeepClone(),["relinkClusterId"]=Find(program,groupId)?.Id ?? "",["handoverPending"]=_clusters.Values.Any(c=>c.Id!=remembered && c.DetachedRuleTime.ContainsKey(member))};
+        }
     }
 
     private async Task HandleRuleTimeAsync(Peer peer, JsonObject frame)
@@ -85,6 +171,8 @@ public sealed partial class ConnectionHub
         await _timeOperations.WaitAsync();
         try
         {
+            var detached=await DetachedTimeAsync(program,groupId,clusterId,seed,originPeer);
+            if(detached!=null) return detached;
             Cluster cluster;
             string membership;
             JsonObject request;
