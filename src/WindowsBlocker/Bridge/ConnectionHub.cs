@@ -77,6 +77,7 @@ public sealed partial class ConnectionHub
         public Task SendTail = Task.CompletedTask;
         public readonly string Challenge = LocalHubAuthentication.Challenge();
         public string Program = "";
+        public LocalHubAuthentication.VerifiedBrowserIdentity? BrowserIdentity;
         public bool Connected;
         public bool ClosingForWorker;
     }
@@ -150,12 +151,17 @@ public sealed partial class ConnectionHub
         var peer=new Peer(socket); lock(_gate) _peers[peer.Id]=peer;
         await ReceiveAsync(peer);
     }
-    internal static string? HelloRejectionReason(JsonObject message, string challenge, byte[] secret)
+    internal static string? HelloRejectionReason(JsonObject message, string challenge, byte[] secret, int? localAppMajor = null) =>
+        AuthenticateHello(message, challenge, secret, localAppMajor, out _);
+    private static string? AuthenticateHello(JsonObject message, string challenge, byte[] secret, int? localAppMajor, out LocalHubAuthentication.VerifiedBrowserIdentity? identity)
     {
+        identity = null;
         if (Number(message["v"]) != ProtocolVersion) return "protocol-mismatch";
         var program = Text(message["program"]);
         if (!LocalHubAuthentication.BrowserPrograms.Contains(program)) return "invalid-program";
-        return Text(message["challenge"]) == challenge && LocalHubAuthentication.Verify(program, challenge, Text(message["proof"]), secret) ? null : "authentication-failed";
+        if (Text(message["challenge"]) != challenge || !LocalHubAuthentication.Verify(program, challenge, Text(message["proof"]), secret)) return "authentication-failed";
+        var ownMajor = localAppMajor ?? (int.TryParse(StorageSchema.AppVersion.Split('.')[0], out var major) ? major : -1);
+        return LocalHubAuthentication.ValidateBrowserIdentity(message, program, challenge, secret, ownMajor, out identity);
     }
     private async Task ReceiveAsync(Peer peer)
     {
@@ -182,7 +188,8 @@ public sealed partial class ConnectionHub
                 var kind = Text(message["kind"]);
                 if (!peer.Connected)
                 {
-                    var reason = kind == "hello" ? HelloRejectionReason(message, peer.Challenge, LocalHubAuthentication.Secret()) : "authentication-required";
+                    LocalHubAuthentication.VerifiedBrowserIdentity? browserIdentity = null;
+                    var reason = kind == "hello" ? AuthenticateHello(message, peer.Challenge, LocalHubAuthentication.Secret(), null, out browserIdentity) : "authentication-required";
                     Task? initial=null;
                     bool workerClosing;
                     lock(_gate)
@@ -192,7 +199,7 @@ public sealed partial class ConnectionHub
                         else
                         {
                             if(reason==null && _peers.Values.Any(p=>p.Id!=peer.Id && p.Connected && p.Program==Text(message["program"]))) reason="duplicate-program";
-                            if(reason==null) { peer.Program=Text(message["program"]);peer.Connected=true;initial=QueueWelcome(peer); }
+                            if(reason==null) { peer.Program=Text(message["program"]);peer.BrowserIdentity=browserIdentity;peer.Connected=true;initial=QueueWelcome(peer); }
                         }
                     }
                     if(workerClosing) { await initial!; return; }
@@ -295,7 +302,7 @@ public sealed partial class ConnectionHub
         lock(_gate)
         {
             var welcome=SendAsync(peer,new() { ["kind"]="welcome",["v"]=ProtocolVersion,["hubProgram"]=LocalProgram,["peers"]=PeerList(),["usageTransferReceipts"]=true,
-                ["activitySettingsNotifications"]=ActivitySettingsSupported(),["ruleTimeVersion"]=1 });
+                ["activitySettingsNotifications"]=ActivitySettingsSupported(),["ruleTimeVersion"]=1,["browserIdentityVersion"]=LocalHubAuthentication.BrowserIdentityVersion });
             var frame=ClustersFrame();
 #if VAULT_CONTRACT_TESTS
             ClusterSnapshotCapturedForTests?.Invoke("welcome");
@@ -312,6 +319,8 @@ public sealed partial class ConnectionHub
     {
         lock (_gate)
         {
+            peer.BrowserIdentity = null;
+            peer.Connected = false;
             if (!_peers.Remove(peer.Id)) return;
             RemoveClassifierRequests(peer.Id);
             _rosters.Remove(peer.Program);

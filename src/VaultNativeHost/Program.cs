@@ -12,8 +12,8 @@ var development = VaultNativeHost.NativeHostProtocol.DevelopmentAlias(Environmen
 Environment.SetEnvironmentVariable("VAULT_ENVIRONMENT", development ? "development" : "production");
 var origin = args.FirstOrDefault() ?? "";
 if (!VaultNativeHost.NativeHostProtocol.AllowedOrigin(origin, development)) return;
-var browserProgram = VaultNativeHost.NativeBrowserParent.CurrentProgram(development);
-if (browserProgram == null) return;
+var browser = VaultNativeHost.NativeBrowserParent.CurrentIdentity(development);
+if (browser == null) return;
 using var input = Console.OpenStandardInput(); using var output = Console.OpenStandardOutput();
 var lengthBytes = new byte[4];
 while (true)
@@ -27,9 +27,20 @@ while (true)
     {
         var request = JsonNode.Parse(body) as JsonObject ?? throw new InvalidDataException();
         var program = request["program"]?.GetValue<string>() ?? "";
-        if (request["kind"]?.GetValue<string>() != "local-hub-challenge" || request["v"]?.GetValue<int>() != 4 || program != browserProgram) throw new InvalidDataException();
+        if (request["kind"]?.GetValue<string>() != "local-hub-challenge" || request["v"]?.GetValue<int>() != 4 || program != browser.Program) throw new InvalidDataException();
+        if (request.ContainsKey("browserIdentityVersion") && !LocalHubAuthentication.IsBrowserIdentityVersionOne(request["browserIdentityVersion"])) throw new InvalidDataException();
+        var current = VaultNativeHost.NativeBrowserParent.CurrentIdentity(development);
+        if (!VaultNativeHost.NativeBrowserParent.SameLaunch(browser, current)) throw new InvalidDataException();
         var challenge = request["challenge"]?.GetValue<string>() ?? "";
-        reply = new() { ["ok"] = true, ["proof"] = LocalHubAuthentication.Proof(program, challenge, LocalHubAuthentication.Secret()) };
+        var secret = LocalHubAuthentication.Secret();
+        reply = new() { ["ok"] = true, ["proof"] = LocalHubAuthentication.Proof(program, challenge, secret) };
+        if (request.ContainsKey("browserIdentityVersion"))
+        {
+            var value = current!.Value;
+            reply["browserIdentityVersion"] = LocalHubAuthentication.BrowserIdentityVersion;
+            reply["browserIdentity"] = new JsonObject { ["v"] = LocalHubAuthentication.BrowserIdentityVersion, ["kind"] = LocalHubAuthentication.BrowserIdentityKind,
+                ["value"] = value, ["proof"] = LocalHubAuthentication.BrowserIdentityProof(program, challenge, LocalHubAuthentication.BrowserIdentityKind, value, secret) };
+        }
     }
     catch { reply = new() { ["ok"] = false, ["error"] = "authentication-failed" }; }
     var bytes = System.Text.Encoding.UTF8.GetBytes(reply.ToJsonString()); BinaryPrimitives.WriteUInt32LittleEndian(lengthBytes, (uint)bytes.Length); output.Write(lengthBytes); output.Write(bytes); output.Flush();

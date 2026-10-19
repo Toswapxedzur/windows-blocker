@@ -8,6 +8,24 @@ Check(NativeBrowserParent.BrowserIdentity("msedge.exe","Microsoft Edge","Microso
 Check(NativeBrowserParent.BrowserIdentity("msedge.exe","Malicious Edge","Microsoft Corporation",true)==null && NativeBrowserParent.BrowserIdentity("msedge.exe","Microsoft Edge","Untrusted",true)==null, "Name-only and wrong-publisher browser identities refused");
 Check(NativeBrowserParent.BrowserIdentity("chrome.exe","Google Chrome for Testing","Google LLC",true)=="chrome" && NativeBrowserParent.BrowserIdentity("chrome.exe","Google Chrome for Testing","Google LLC",false)==null, "Signed Chrome for Testing is development-only");
 Check(NativeBrowserParent.CurrentProgram(true)==null, "Ordinary test launcher is not trusted as a browser parent");
+var snapshots = new[] { new NativeBrowserParent.ProcessSnapshot(20, 10, @"c:\vault\host.exe", 200), new NativeBrowserParent.ProcessSnapshot(10, 1, @"c:\browser\chrome.exe", 100) };
+var observed = new NativeBrowserParent.BrowserLaunch("chrome", @"c:\browser\chrome.exe", snapshots);
+Check(NativeBrowserParent.SameLaunch(observed, observed with { Chain = snapshots.ToArray() }), "Repeated native creator snapshots preserve exact launch identity");
+Check(!NativeBrowserParent.SameLaunch(observed, null) && !NativeBrowserParent.SameLaunch(observed, observed with { Program = "edge" }), "Unavailable or different native browser family cannot reuse a launch attestation");
+foreach(var field in new[]{"path","birth","parent","id"})
+{
+    var changed = snapshots.ToArray();
+    changed[1] = field switch { "path" => changed[1] with { Path = @"c:\other\chrome.exe" }, "birth" => changed[1] with { Created = 101 }, "parent" => changed[1] with { ParentId = 2 }, _ => changed[1] with { Id = 11 } };
+    Check(!NativeBrowserParent.SameLaunch(observed, observed with { Chain = changed }), "Native request recheck refuses changed creator " + field);
+}
+Check(!NativeBrowserParent.SameLaunch(observed, observed with { ExecutablePath = @"c:\other\chrome.exe" }), "Same browser family at another canonical path is a distinct native identity");
+Check(NativeBrowserParent.HashExecutableIdentity(@"C:\Browser\sub\..\CHROME.EXE") == NativeBrowserParent.HashExecutableIdentity(@"c:\browser\chrome.exe"), "Executable descriptor hashes existing full-path normalization and lowercase exactly");
+Check(NativeBrowserParent.HashExecutableIdentity(@"c:\other\chrome.exe") != observed.Value, "Two same-named browser installs have different executable descriptors");
+foreach(var invalid in new[]{"chrome.exe","Package_123!App", "C:\\browser\\chrome.exe\n"})
+{
+    var refused = false; try { _ = NativeBrowserParent.HashExecutableIdentity(invalid); } catch(ArgumentException) { refused = true; }
+    Check(refused, "Browser executable identity never widens to an unsupported identifier: " + invalid.Replace("\n","newline"));
+}
 Environment.SetEnvironmentVariable("VAULT_ENVIRONMENT","development");
 Check(!NativeHostProtocol.DevelopmentAlias(@"C:\Vault\vault-local-hub-native-host.exe") && NativeHostProtocol.DevelopmentAlias(@"C:\Vault\vault-local-hub-native-host-development.exe") && !NativeHostProtocol.DevelopmentAlias(@"C:\Vault\other-development.exe"), "Registered helper alias binds environment independently of inherited development variables");
 Check(NativeHostProtocol.AllowedOrigin("chrome-extension://mcbmcmephdaapjepopobikobjmfdeamm/",false) && !NativeHostProtocol.AllowedOrigin("chrome-extension://fjichnkbaoilbfbjcjkggllmbicmeegk/",false) && !NativeHostProtocol.AllowedOrigin("chrome-extension://mcbmcmephdaapjepopobikobjmfdeamm:444/",false), "Production browser helper refuses development and altered origins");
@@ -23,6 +41,7 @@ try
     Check(NativeBrowserParent.BrowserFile(damaged,true)==null, "Modified browser binary fails verified signature even in development");
 }
 finally { File.Delete(damaged); }
+if (args.Contains("--browser-identity-only")) return; // Screen-free identity checks; the separate caller-refusal fixture owns its child process.
 var start = new ProcessStartInfo(args[0]) {UseShellExecute=false,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true};
 start.Environment["VAULT_ENVIRONMENT"]="development";start.ArgumentList.Add("chrome-extension://mcbmcmephdaapjepopobikobjmfdeamm/");
 using(var child=Process.Start(start)!)

@@ -45,6 +45,7 @@ public sealed partial class ConnectionHub
         _peers.Values.Where(p => p.Connected && LocalHubAuthentication.BrowserPrograms.Contains(p.Program)).Select(peer =>
         {
             peer.Connected = false;
+            peer.BrowserIdentity = null;
             peer.ClosingForWorker = true;
             // CloseOutput shares the normal send FIFO, behind accepted frames.
             lock (peer.SendGate)
