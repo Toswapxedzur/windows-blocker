@@ -4,6 +4,7 @@ The October 11 run uses the owner-selected Mini2 alt1 ARM Windows VM and Mini2
 alt1 Node runtime. Other runs follow the default mini1 rule. Managed source
 contracts and WPF builds do not establish live WebView acceptance.
 
+- `runner-native-rule-log.js` — actual Windows native shim error source/level, live messages, per-rule persistence/recreation, clear and deleted-group pruning. Execute with Mini2 alt1 Node.
 - `runner-custom-rule-stress.js`, `runner-rule-worker.js`, `runner-editor-syntax.js` — canonical JS rule engine, disposable worker isolation and document-start native bridge/storage.
 - `OverlayContracts/` — actual WPF overlay containment, virtualization, timer formatting and searchable menus.
 - `NativeContracts/` — source-only native policy, authentication, identity and editor contract fixtures, plus all20 bundled native-language preferences/messages and literal state preservation.

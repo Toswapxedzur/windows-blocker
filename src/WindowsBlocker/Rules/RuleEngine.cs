@@ -166,6 +166,9 @@ public sealed class RuleEngine(WebStore store, ConnectionHub? hub = null)
             if (_suppressed.Contains(id) || !_loaded.ContainsKey(id)) continue;
             var result = await _runtime.DispatchAsync(new() { Type = type, GroupId = id, Data = data, TimeContext = await TimeContext(id, type, data) });
             if (result == null) continue;
+            // Handler/delivery failures belong in the rule's visible Log even
+            // if its resulting state cannot be saved. Never replay the event.
+            AppendLogs(result.Diagnostics);
             try { if (result.StateFailures.Count > 0) throw new InvalidDataException("Invalid event state"); store.CommitRuleDispatch(result.States); }
             catch (Exception ex) {
                 AppendLogs([new RuntimeLog { GroupId = id, Level = "error", Message = "Event state could not be saved; no actions were performed: " + ex.Message }]);
@@ -207,6 +210,14 @@ public sealed class RuleEngine(WebStore store, ConnectionHub? hub = null)
                 nextLink=context["relinkClusterId"]?.GetValue<string>() ?? "";
                 try { store.CommitRuleTimeHandover(groupId,seed,final); }
                 catch { return new(){["linked"]=true,["ready"]=false,["clusterId"]=context["clusterId"]?.DeepClone() ?? JsonValue.Create(nextLink),["error"]="detached-time-save-failed"}; }
+                // Preflight and post-dispatch callers may discard this frame.
+                // Deliver it before ACK drains the retained snapshot, otherwise
+                // the active worker keeps its stale shared scope indefinitely.
+                if (_loaded.ContainsKey(groupId) && _runtime != null && !await _runtime.SetTimeContextAsync(groupId, context))
+                {
+                    await UnloadCore(groupId); // Reload the already-saved final state next time.
+                    return new(){["linked"]=true,["ready"]=false,["clusterId"]=context["clusterId"]?.DeepClone(),["error"]="detached-time-refresh-failed"};
+                }
                 if(nextLink.Length>0 || context["handoverPending"]?.GetValue<bool>()==true) continue;
             }
             return context;
@@ -230,7 +241,7 @@ public sealed class RuleEngine(WebStore store, ConnectionHub? hub = null)
         {
             if (store.ImportedGroups()?.Groups.Any(g=>g.Id==log.GroupId)!=true) continue;
             var name = store.ImportedGroups()?.Groups.FirstOrDefault(g => g.Id == log.GroupId)?.Name ?? "";
-            _logs.Add(new() { Timestamp = DateTimeOffset.Now.ToString("o"), GroupId = log.GroupId, Group = name, Message = log.Message });
+            _logs.Add(new() { Timestamp = DateTimeOffset.Now.ToString("o"), GroupId = log.GroupId, Group = name, Message = log.Message, Level = log.Level, Source = log.Level == "error" ? "page-error" : "v.log" });
             while (_logs.Count(l => l.GroupId == log.GroupId) > 200) _logs.RemoveAt(_logs.FindIndex(l => l.GroupId == log.GroupId));
         }
     }

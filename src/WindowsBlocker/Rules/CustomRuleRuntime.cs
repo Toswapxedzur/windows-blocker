@@ -64,6 +64,14 @@ public sealed class CustomRuleRuntime
     public Task<DispatchResult?> DispatchAsync(CustomRuleEvent ev)
         => RequestAsync<DispatchResult>("dispatch", ev.GroupId, null, new { descriptor = ev }, ExecutionTimeout);
 
+    // Refresh a live worker after native storage has saved a final handover.
+    // This changes only trusted time context; it runs no rule handlers/actions.
+    public async Task<bool> SetTimeContextAsync(string groupId, object timeContext)
+    {
+        var result = await RequestAsync<Dictionary<string,JsonElement>>("time-context", groupId, null, new { timeContext }, ExecutionTimeout);
+        return result != null && result.TryGetValue("ok", out var ok) && ok.ValueKind == JsonValueKind.True;
+    }
+
     public Task<Dictionary<string,JsonElement>?> PolicyAsync(string module, string method, object?[] args)
         => RequestAsync<Dictionary<string,JsonElement>>("policy", "", null, new { module, method, args }, TimeSpan.FromSeconds(4));
 
@@ -88,7 +96,7 @@ public sealed class CustomRuleRuntime
             ["source"] = source,
             ["event"] = ev,
             ["stateJSON"] = ev is not null && (operation is "load" or "prepare-load") ? ((dynamic)ev).stateJSON : null,
-            ["timeContext"] = ev is not null && (operation is "load" or "prepare-load") ? ((dynamic)ev).timeContext : null,
+            ["timeContext"] = ev is not null && (operation is "load" or "prepare-load" or "time-context") ? ((dynamic)ev).timeContext : null,
             ["descriptor"] = ev is not null && operation == "dispatch" ? ((dynamic)ev).descriptor : null,
             ["on"] = ev is not null && operation == "suppress" ? ((dynamic)ev).on : null,
             ["module"] = ev is not null && operation == "policy" ? ((dynamic)ev).module : null,
