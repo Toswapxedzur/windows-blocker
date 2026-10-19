@@ -81,6 +81,9 @@ internal static class ManagedTimeContracts
         var acknowledged=await Policy("detachTime",detached["state"],shared,"chrome/c","chrome/c","cluster","token",at+5000,true);
         Check(acknowledged["ok"]!.GetValue<bool>() && acknowledged["state"]!["detachedReceipt"]==null && Used(acknowledged["state"]!.AsObject())==5000,"Actual policy worker acknowledges saved handover without discarding usage");
         await HandoverInitializer(runtime,Check);
+        await HandoverActive(runtime,Check,false);
+        await HandoverActive(runtime,Check,true);
+        await DiagnosticFeed(runtime,Check);
     }
     private static async Task HandoverInitializer(CustomRuleRuntime runtime, Action<bool,string> Check)
     {
@@ -111,6 +114,82 @@ internal static class ManagedTimeContracts
         Check(loaded["ok"]?.GetValue<bool>()==true && saved["initialized"]?.GetValue<bool>()==true && saved["keep"]?.GetValue<int>()==7 && saved["$vaultTime"]?["objects"]?["clock"]?["generation"]?.GetValue<int>()==1,
             "Initializer reads saved post-handover state and cannot overwrite it with its stale preflight seed");
         await engine.UnloadGroupAsync("handover");
+    }
+    private static async Task HandoverActive(CustomRuleRuntime runtime, Action<bool,string> Check, bool disabled)
+    {
+        var id=disabled?"handover-disabled":"handover-active";
+        var store=new WebStore();
+        store.SaveRaw(new JsonObject { ["blockedGroups"]=new JsonArray(new JsonObject { ["id"]=id,["name"]=id,["groupType"]="custom",["enabled"]=true }) }.ToJsonString());
+        var hub=new ConnectionHub(store);
+        hub.RuleTimePolicy=async(method,args)=>{
+            var reply=await runtime.PolicyAsync("RuleCore",method,args);
+            return reply!=null && reply.TryGetValue("value",out var value)?JsonNode.Parse(value.GetRawText()) as JsonObject:null;
+        };
+        var engine=new RuleEngine(store,hub);engine.AttachRuntime(runtime);
+        const string source="""
+        (on,v)=>{
+          const clock=v.timer("clock",{durationMs:10000});
+          const budget=v.rolling("budget",{windowMs:10000,limitMs:3000});
+          budget.assign({apps:["C:\\Apps\\owned.exe"]});
+          on("tick",()=>{v.state.clock=clock.snapshot();v.state.budget=budget.snapshot();});
+          on("localReset",()=>{clock.reset();v.state.localReset=true;});
+        }
+        """;
+        Check((await engine.RunRuleAsync(id,source))["ok"]?.GetValue<bool>()==true,"Active handover fixture loads "+id);
+        JsonObject Saved()=>JsonNode.Parse(store.LoadRawJson()!)!["cbRuleState"]![id]!.AsObject();
+        var seed=Saved()["$vaultTime"]!.AsObject();
+        var browser=(JsonObject)seed.DeepClone();
+        browser["ownTargets"]=new JsonObject{["budget"]=new JsonObject{["websites"]=new JsonArray("example.org"),["apps"]=new JsonArray()}};
+        browser["objects"]!["budget"]!["websites"]=new JsonArray("example.org");browser["objects"]!["budget"]!["apps"]=new JsonArray();
+        JsonArray Roster(string group,JsonObject time)=>new(new JsonObject{["id"]=group,["name"]=group,["timeState"]=time.DeepClone()});
+        hub.SetRoster("windowsapp",Roster(id,seed));hub.SetRoster("chrome",Roster(id+"-browser",browser));
+        Check(hub.Link("windowsapp",id,"chrome",id+"-browser")==null,"Active handover fixture links "+id);
+        var cluster=JsonNode.Parse(hub.ClustersJson())!["clusters"]!.AsArray().OfType<JsonObject>().Single(c=>c["members"]!.AsArray().OfType<JsonObject>().Any(m=>m["groupId"]?.GetValue<string>()==id))["id"]!.GetValue<string>();
+        await hub.SyncRuleTimeAsync("windowsapp",id,cluster,seed,new());
+        await hub.SyncRuleTimeAsync("chrome",id+"-browser",cluster,browser,new());
+        await engine.TickAsync(new(),new());
+        Check(Saved()["clock"]?["ready"]?.GetValue<bool>()==true && Saved()["$vaultTime"]?["scope"]?.GetValue<string>()==cluster,"Active worker receives shared context before unlink "+id);
+        var reset=await hub.SyncRuleTimeAsync("chrome",id+"-browser",cluster,browser,new JsonArray(new JsonObject{["id"]="clock",["op"]="reset",["serial"]=1,["scope"]=cluster,["atMs"]=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}));
+        Check(reset["state"]?["objects"]?["clock"]?["generation"]?.GetValue<int>()==1,"Shared final timer generation advances "+id);
+        if(disabled) store.Update(root=>root["blockedGroups"]![0]!["enabled"]=false);
+        Check(hub.Unlink("chrome",id+"-browser")==null,"Active worker fixture unlinks "+id);
+        await engine.TickAsync(new(),new());
+        var final=Saved()["$vaultTime"]!;
+        Check(final["scope"]==null && final["objects"]?["clock"]?["generation"]?.GetValue<int>()==1 && final["objects"]?["budget"]?["apps"]?[0]?.GetValue<string>()=="c:\\apps\\owned.exe" && final["objects"]?["budget"]?["websites"]?.AsArray().Count==0,
+            "Saved final handover retains generation and native own targets "+id);
+        if(disabled) {store.Update(root=>root["blockedGroups"]![0]!["enabled"]=true);await engine.TickAsync(new(),new());}
+        Check(Saved()["clock"]?["ready"]?.GetValue<bool>()==true && Saved()["budget"]?["ready"]?.GetValue<bool>()==true,"Live worker becomes locally ready after unlink "+id);
+        await engine.FireUserEventAsync("localReset",id,new(),new());
+        final=Saved();
+        Check(final["localReset"]?.GetValue<bool>()==true && final["$vaultTime"]?["objects"]?["clock"]?["generation"]?.GetValue<int>()==2 && final["$vaultTime"]?["pending"]?.AsArray().Count==0,
+            "Post-unlink timer control executes locally without stale shared scope "+id);
+        await engine.UnloadGroupAsync(id);
+    }
+    private static async Task DiagnosticFeed(CustomRuleRuntime runtime, Action<bool,string> Check)
+    {
+        var store=new WebStore();store.SaveRaw("{\"blockedGroups\":[{\"id\":\"diagnostics\",\"name\":\"Diagnostics\",\"groupType\":\"custom\",\"enabled\":true}]}");
+        var engine=new RuleEngine(store);engine.AttachRuntime(runtime);
+        const string source="""
+        (on,v)=>{
+          on("fail",()=>{v.state.calls=(v.state.calls||0)+1;v.log("ordinary-log");throw new Error("actual-handler-error");});
+          on("invalid",()=>{v.state.large="x".repeat(70000);throw new Error("actual-unsaved-handler-error");});
+        }
+        """;
+        Check((await engine.RunRuleAsync("diagnostics",source))["ok"]?.GetValue<bool>()==true,"Actual diagnostic fixture loads");
+        engine.DrainLogJson();
+        await engine.FireUserEventAsync("fail","diagnostics",new(),new());
+        var logs=JsonNode.Parse(engine.DrainLogJson()!)!.AsArray().OfType<JsonObject>().ToArray();
+        Check(logs.Count(e=>e["source"]?.GetValue<string>()=="page-error" && e["level"]?.GetValue<string>()=="error" && e["message"]!.GetValue<string>().Contains("actual-handler-error"))==1 &&
+            logs.Count(e=>e["source"]?.GetValue<string>()=="v.log" && e["level"]?.GetValue<string>()=="log" && e["message"]?.GetValue<string>()=="ordinary-log")==1,
+            "Actual uncaught handler error and ordinary v.log remain distinct visible-feed entries");
+        await engine.TickAsync(new(),new());
+        Check(JsonNode.Parse(store.LoadRawJson()!)?["cbRuleState"]?["diagnostics"]?["calls"]?.GetValue<int>()==1 && engine.DrainLogJson()==null,"Uncaught error is not replayed on the next tick");
+        await engine.FireUserEventAsync("invalid","diagnostics",new(),new());
+        logs=JsonNode.Parse(engine.DrainLogJson()!)!.AsArray().OfType<JsonObject>().ToArray();
+        Check(logs.Any(e=>e["source"]?.GetValue<string>()=="page-error" && e["level"]?.GetValue<string>()=="error" && e["message"]!.GetValue<string>().Contains("actual-unsaved-handler-error")) &&
+            logs.Any(e=>e["message"]!.GetValue<string>().Contains("Event state could not be saved")),"Handler error remains visible when its resulting state is refused");
+        Check(JsonNode.Parse(store.LoadRawJson()!)?["cbRuleState"]?["diagnostics"]?["large"]==null,"Invalid diagnostic-event state is preserved unsaved");
+        await engine.UnloadGroupAsync("diagnostics");
     }
     private static double Used(JsonObject state) => ((JsonObject)state["objects"]!["budget"]!["bucketsMs"]!).Sum(p=>p.Value!.GetValue<double>());
 }

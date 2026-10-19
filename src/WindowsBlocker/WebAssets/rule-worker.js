@@ -66,6 +66,8 @@
           runtime.unload(groupId);
           throw error;
         }
+      } else if (request.operation === "time-context") {
+        result = JSON.parse(runtime.setTimeContext(groupId, JSON.stringify(request.timeContext)));
       } else if (request.operation === "dispatch") {
         result = JSON.parse(runtime.dispatch(JSON.stringify({ ...(request.descriptor || {}), targetGroupId: groupId })));
       } else if (request.operation === "suppress") {
