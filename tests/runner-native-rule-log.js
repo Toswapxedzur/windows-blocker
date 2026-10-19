@@ -27,6 +27,31 @@ function rig(storage = new Map()) {
   assert.equal((await r.feed('b'))[0].level, 'error');
   assert.equal((await r.feed('gone')).length, 0);
   assert.equal(delivered.filter(e => e.groupId === 'a').length, 3);
+  // Render the real native-shim feed through the actual popup renderer.
+  const popup = fs.readFileSync(path.join(__dirname, '../src/WindowsBlocker/WebAssets/popup.js'), 'utf8');
+  const element = () => ({ children: [], textContent: '', setAttribute() {}, appendChild(child) { this.children.push(child); } });
+  const list = element();
+  const renderer = vm.createContext({ document: { createElement: element }, logFeedList: list,
+    logFeedSeenIds: new Set(), state: { selectedGroupId: 'a' }, logFeedGroupId: 'a',
+    LOG_FEED_MAX_RENDER: 200, formatLogFeedTime: () => '', updateLogFeedVisibleCount() {} });
+  vm.runInContext(popup.slice(popup.indexOf('function renderLogFeedEntry('), popup.indexOf('function updateLogFeedVisibleCount(')), renderer);
+  feed.forEach(entry => renderer.renderLogFeedEntry(entry));
+  assert.equal(list.children.length, 3);
+  assert.match(list.children[1].children[0].textContent, /ERROR/);
+  assert.equal(list.children[1].children[1].textContent, 'handler failed');
+  assert.match(list.children[2].children[0].textContent, /ERROR/);
+  feed.forEach(entry => renderer.renderLogFeedEntry(entry)); assert.equal(list.children.length, 3);
+  const html = fs.readFileSync(path.join(__dirname, '../src/WindowsBlocker/WebAssets/popup.html'), 'utf8');
+  const english = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/WindowsBlocker/WebAssets/translation/en.json'), 'utf8'));
+  assert.match(english['logFeed.hint'], /execution or delivery errors/);
+  assert(html.includes(english['logFeed.hint']) && html.includes(english['logFeed.empty']));
+  const manual = fs.readFileSync(path.join(__dirname, '../src/WindowsBlocker/WebAssets/code-manual/en.md'), 'utf8');
+  const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/WindowsBlocker/WebAssets/mcp-tools.json'), 'utf8'));
+  const ruleTool = catalog.find(tool => tool.name === 'run_custom_rule');
+  assert(ruleTool.description.endsWith(manual), 'MCP callers receive the current Windows managed-time/error contract');
+  assert(ruleTool.description.includes('v.timer') && ruleTool.description.includes('eventName !== "click"'));
+  const browserRuleTool = catalog.find(tool => tool.name === 'extension_run_custom_rule');
+  assert(browserRuleTool.description.includes('v.timer') && browserRuleTool.description.includes('v.rolling') && !browserRuleTool.description.includes('no timers,'), 'Browser MCP entrypoint exposes the current managed-time API');
   const restarted = rig(r.storage);
   assert.deepEqual(await restarted.feed('a'), feed, 'Errors survive ordinary editor recreation independently of config');
   await restarted.context.chrome.runtime.sendMessage({ type: 'clear-log-feed', groupId: 'a' });
@@ -34,5 +59,5 @@ function rig(storage = new Map()) {
   assert.equal((await restarted.feed('b')).length, 1);
   restarted.context.__cbApplyNativeStore({ blockedGroups: [{ id: 'a' }] });
   assert.equal((await restarted.feed('b')).length, 0, 'Deleted groups cannot retain another rule\'s errors');
-  console.log('PASS actual Windows shim error source/level, live delivery, per-rule persistence/recreation/clear/pruning');
+  console.log('PASS actual Windows shim-to-popup ERROR rows, UI/MCP contract, live delivery, per-rule persistence/recreation/clear/pruning');
 })().catch(error => { console.error(error); process.exitCode = 1; });
