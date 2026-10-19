@@ -368,14 +368,19 @@ public sealed partial class ConnectionHub
     {
         WithLocalStore((root, persistLocal) => { lock (_gate)
         {
-            SetRosterLocked(program, groups, root, persistLocal);
-            BroadcastRosters(); BroadcastClusters();
+            var membershipChanged = SetRosterLocked(program, groups, root, persistLocal);
+            BroadcastRosters();
+            // Shared-definition adoption announces the roster back to the hub.
+            // Echoing clusters for that unchanged membership recursively starts
+            // another adoption and can starve rule-event state commits.
+            if (membershipChanged) BroadcastClusters();
         }});
     }
-    private void SetRosterLocked(string program, JsonArray groups, JsonObject? root, Action persistLocal)
+    private bool SetRosterLocked(string program, JsonArray groups, JsonObject? root, Action persistLocal)
     {
-        foreach (var c in _clusters.Values.Where(c => c.Members.ContainsKey(program)).ToList())
-            if (!groups.OfType<JsonObject>().Any(g => Text(g["id"]) == c.Members[program])) RemoveMember(c, program, root, persistLocal, false);
+        var affected = _clusters.Values.Where(c => c.Members.ContainsKey(program) &&
+            !groups.OfType<JsonObject>().Any(g => Text(g["id"]) == c.Members[program])).ToList();
+        foreach (var c in affected) RemoveMember(c, program, root, persistLocal, false);
         _rosters[program] = (JsonArray)groups.DeepClone();
         var prefix=program+"/";
         var ids=groups.OfType<JsonObject>().Select(g=>Text(g["id"])).ToHashSet();
@@ -384,6 +389,7 @@ public sealed partial class ConnectionHub
             if(retained.Members.Count==0 && retained.DetachedRuleTime.Count==0) _clusters.Remove(retained.Id);
         }
         Persist();
+        return affected.Count > 0;
     }
     private void BroadcastRosters()
     {
