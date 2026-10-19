@@ -6,6 +6,12 @@ using WindowsBlocker.WebUI;
 
 Environment.SetEnvironmentVariable("VAULT_ENVIRONMENT", "development");
 Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT", Path.Combine(Path.GetTempPath(), "vault-contracts-" + Guid.NewGuid()));
+if (args.Contains("--browser-identity-only"))
+{
+    try { await BrowserIdentityContracts.Run(); }
+    finally { var owned = Environment.GetEnvironmentVariable("VAULT_STORAGE_ROOT")!; if (Directory.Exists(owned)) Directory.Delete(owned, true); }
+    return;
+}
 if (args.Contains("--roster-echo-only")) { await HubSnapshotOrderContracts.RunRosterEcho(); return; }
 if (args.Contains("--managed-time-only")) { await ManagedRuleTimeContracts.Run(); return; }
 HubStopContextContracts.Run();

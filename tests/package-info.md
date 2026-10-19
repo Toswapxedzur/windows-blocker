@@ -8,6 +8,7 @@ contracts and WPF builds do not establish live WebView acceptance.
 - `runner-custom-rule-stress.js`, `runner-rule-worker.js`, `runner-editor-syntax.js` — canonical JS rule engine, disposable worker isolation and document-start native bridge/storage.
 - `OverlayContracts/` — actual WPF overlay containment, virtualization, timer formatting and searchable menus.
 - `NativeContracts/` — source-only native policy, authentication, identity and editor contract fixtures, plus all20 bundled native-language preferences/messages and literal state preservation.
+  `BrowserIdentityContracts.cs` / `--browser-identity-only` checks optional identity-v1 HMAC binding alongside mandatory v4 authentication, strict paired metadata, local-major legacy retirement, and actual in-memory hub receive/disconnect/reconnect cleanup. It starts no listener or GUI.
   `HubStopContextContracts.cs` / `--hub-stop-only` forces an incomplete listener-stop task under a non-pumping UI-like context. The synchronous hub stop must complete without pumping that context; queued callbacks are drained only to clean up a failing regression.
   `WebStoreContracts.cs` verifies atomic state/usage commits while an IPC reader
   holds the previous complete snapshot, preserving unrelated rule state.
@@ -24,7 +25,7 @@ contracts and WPF builds do not establish live WebView acceptance.
   `NativeDefinitionIntentContracts.cs` / `--definition-intent-only` cover the validated file→hub boundary and precise raw intent.
   `NativeEditorTransactionContracts.cs` / `--editor-transaction-only` passed nine Mini2 guest controls for staged async admission, physical write/rollback refusal, explicit partial-storage holds, and old full-group producer refusal. Canonical admission and transport acceptance remain separate.
 - `NativeEditorAdmissionContracts/`, `native-editor-policy-stdio.js` — console-only actual NativePolicyTools/RuleEngine pipeline with immutable canonical JS evaluated on Mini2 alt1. All thirteen checks passed at source113a58f; it does not launch a WPF Application or browser.
-- `NativeHostContracts/` — actual signed browser/system intermediary verification and denial of nonbrowser proof callers.
+- `NativeHostContracts/` — actual signed browser/system intermediary verification and denial of nonbrowser proof callers. `--browser-identity-only` runs executable-hash, original creator-chain rechecks, and signed-file controls without launching the separate caller-refusal child fixture.
 - `browser-native-host.py` — genuine guest Edge/Chrome proof, program binding, frame bounds, process ancestry and authenticated extension tunnel through the canonical CDP driver.
 - `browser-worker-parity.py` — actual YouTube collector/private pill/pending cover, production model, correction, ordinary app outage/reconnect and native Activity privacy through that driver.
 - `FolderBrokerContracts/` — production broker with actual Windows existing/dangling junctions, UTF-8 BOM text/JSON, sharing violations and revocation.

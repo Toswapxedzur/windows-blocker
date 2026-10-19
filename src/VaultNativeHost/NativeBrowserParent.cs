@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.Cryptography;
 using System.Text;
+using WindowsBlocker.Bridge;
 
 namespace VaultNativeHost;
 
@@ -10,7 +12,26 @@ namespace VaultNativeHost;
 /// recycled parent IDs; the verified signer and signed PE metadata establish identity.</summary>
 public static class NativeBrowserParent
 {
-    public static string? CurrentProgram(bool development)
+    public static string? CurrentProgram(bool development) => CurrentIdentity(development)?.Program;
+
+    internal sealed record ProcessSnapshot(uint Id, uint ParentId, string Path, long Created);
+    internal sealed record BrowserLaunch(string Program, string ExecutablePath, ProcessSnapshot[] Chain)
+    {
+        public string Value => HashExecutableIdentity(ExecutablePath);
+    }
+    internal static string HashExecutableIdentity(string path)
+    {
+        if (path.Any(char.IsControl)) throw new ArgumentException("Exact browser executable required");
+        var canonical = WindowsAppId.Normalize(path);
+        if (canonical == null || !Path.IsPathFullyQualified(canonical)) throw new ArgumentException("Exact browser executable required");
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToLowerInvariant()))).ToLowerInvariant();
+    }
+    internal static bool SameLaunch(BrowserLaunch expected, BrowserLaunch? current) => current != null &&
+        expected.Program == current.Program && expected.ExecutablePath == current.ExecutablePath && expected.Chain.SequenceEqual(current.Chain);
+
+    // Capture again for every proof request. No caller-supplied path, browser
+    // label or saved mapping participates in this creator-chain identity.
+    internal static BrowserLaunch? CurrentIdentity(bool development)
     {
         try
         {
@@ -18,11 +39,24 @@ public static class NativeBrowserParent
             if (child == null) return null;
             var parent = ReadProcess(child.ParentId);
             if (parent == null || parent.Created > child.Created) return null;
-            var program = BrowserFile(parent.Path, development);
-            if (program != null) return program;
-            if (!TrustedCommandFile(parent.Path)) return null;
-            var browser = ReadProcess(parent.ParentId);
-            return browser != null && browser.Created <= parent.Created ? BrowserFile(browser.Path, development) : null;
+            var browser = parent;
+            var program = BrowserFile(browser.Path, development);
+            ProcessSnapshot[] chain = [child, parent];
+            if (program == null)
+            {
+                if (!TrustedCommandFile(parent.Path)) return null;
+                browser = ReadProcess(parent.ParentId);
+                if (browser == null || browser.Created > parent.Created) return null;
+                program = BrowserFile(browser.Path, development);
+                if (program == null) return null;
+                chain = [child, parent, browser];
+            }
+            var canonical = WindowsAppId.Normalize(browser.Path)?.ToLowerInvariant();
+            if (canonical == null || !Path.IsPathFullyQualified(canonical)) return null;
+            // Recycled IDs, changed parent links or paths cannot survive the
+            // verification work. The same snapshots are checked on each frame.
+            foreach (var process in chain) if (ReadProcess(process.Id) != process) return null;
+            return new(program, canonical, chain);
         }
         catch { return null; }
     }
@@ -47,8 +81,7 @@ public static class NativeBrowserParent
         string.Equals(Path.GetFullPath(path), Path.Combine(Environment.SystemDirectory, "cmd.exe"), StringComparison.OrdinalIgnoreCase) &&
         VerifiedSigner(path) == "Microsoft Windows";
 
-    private sealed record ProcessIdentity(uint ParentId, string Path, long Created);
-    private static ProcessIdentity? ReadProcess(uint id)
+    private static ProcessSnapshot? ReadProcess(uint id)
     {
         if (id == 0) return null;
         using var handle = OpenProcess(0x1000, false, id);
@@ -61,7 +94,7 @@ public static class NativeBrowserParent
         {
             var entry = new ProcessEntry { Size = (uint)Marshal.SizeOf<ProcessEntry>() };
             if (!Process32First(snapshot, ref entry)) return null;
-            do { if (entry.Id == id) return new(entry.ParentId, path.ToString(), created); } while (Process32Next(snapshot, ref entry));
+            do { if (entry.Id == id) return new(id, entry.ParentId, path.ToString(), created); } while (Process32Next(snapshot, ref entry));
             return null;
         }
         finally { CloseHandle(snapshot); }
