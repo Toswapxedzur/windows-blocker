@@ -249,8 +249,55 @@ static class HubSnapshotOrderContracts
                 catch (ArgumentException) { Console.WriteLine("PASS Exact origin-race child independently absent"); }
         }
     }
+    public static async Task RunRosterEcho()
+    {
+        Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT",Path.Combine(Path.GetTempPath(),"vault-roster-echo-"+Guid.NewGuid()));
+        var hub=Seed();
+        var retainedState=new JsonObject{["version"]=1,["objects"]=new JsonObject{["focus"]=new JsonObject{["kind"]="timer",["direction"]="down",["durationMs"]=12000,["elapsedMs"]=1234}}};
+        hub.RuleTimePolicy=(_,_)=>Task.FromResult<JsonObject?>(new JsonObject{["ok"]=true,["ready"]=true,["state"]=retainedState.DeepClone()});
+        await hub.SyncRuleTimeAsync("chrome","c",null,new JsonObject{["version"]=1,["objects"]=new JsonObject()},new());
+        var socket=new RecordingSocket();var peer=AddPeer(hub,socket);
+        JsonArray Roster(string name="Chrome",int seed=1)=>new(new JsonObject{["id"]="c",["name"]=name,["timeState"]=new JsonObject{["version"]=1,["objects"]=new JsonObject(),["sample"]=seed}});
+        // Chrome acknowledges each shared snapshot by announcing its roster.
+        // Exercise actual hub capture + SendTail with that consumer behavior;
+        // repeated cluster snapshots must not amplify this acknowledgement.
+        typeof(ConnectionHub).GetMethod("BroadcastClusters",Private)!.Invoke(hub,null);
+        var cursor=0;var handled=0;
+        for(var round=0;round<4;round++)
+        {
+            await Drain(peer);var incoming=socket.Read().Skip(cursor).ToArray();cursor+=incoming.Length;
+            var shared=incoming.Where(f=>f["kind"]?.GetValue<string>() is "clusters" or "cluster-updated").ToArray();
+            if(shared.Length==0)break;
+            handled+=shared.Length;
+            foreach(var _ in shared)hub.SetRoster("chrome",Roster());
+        }
+        await Drain(peer);
+        Check(handled==2 && socket.Read().Skip(cursor).All(f=>f["kind"]?.GetValue<string>()=="rosters"),
+            "Shared-snapshot roster acknowledgements quiesce without recursive cluster broadcasts");
+        var start=socket.Read().Length;
+        hub.SetRoster("chrome",Roster());hub.SetRoster("chrome",Roster("Renamed",2));await Drain(peer);
+        var rosterOnly=socket.Read().Skip(start).ToArray();
+        Check(rosterOnly.Length==2 && rosterOnly.All(f=>f["kind"]?.GetValue<string>()=="rosters") &&
+            rosterOnly[^1]["rosters"]?["chrome"]?[0]?["name"]?.GetValue<string>()=="Renamed" &&
+            rosterOnly[^1]["rosters"]?["chrome"]?[0]?["timeState"]?["sample"]?.GetValue<int>()==2,
+            "Unchanged membership still publishes current roster names and managed-time seeds without shared adoption echoes");
+        start=socket.Read().Length;hub.SetRoster("chrome",new JsonArray());await Drain(peer);
+        var removal=socket.Read().Skip(start).ToArray();var clusters=removal.Last(f=>f["kind"]?.GetValue<string>()=="clusters")["clusters"]!.AsArray();
+        Check(removal.Any(f=>f["kind"]?.GetValue<string>()=="cluster-updated") && clusters.Count==1 &&
+            clusters[0]!["members"]!.AsArray().Count==2 && clusters[0]!["members"]!.AsArray().All(m=>m!["program"]?.GetValue<string>()!="chrome"),
+            "Actual roster deletion publishes the new surviving linked membership");
+        // A deleted group's retained record is intentionally pruned; the final
+        // state for surviving members remains the shared snapshot unchanged.
+        Check(JsonNode.DeepEquals(clusters[0]!["shared"]?["ruleTime"],retainedState),
+            "Roster deletion preserves the final managed-time snapshot for surviving linked members");
+        hub.SetRoster("edge",new JsonArray());await Drain(peer);
+        var registry=JsonNode.Parse(File.ReadAllText(WindowsBlocker.WebUI.Storage.ClustersPath))!["value"]!.AsArray();
+        Check(hub.ActiveClusterCount()==0 && registry.OfType<JsonObject>().Any(c=>JsonNode.DeepEquals(c["DetachedRuleTime"]?["windowsapp/w"]?["state"],retainedState)),
+            "Removing the second of three members durably retains the surviving member's final shared snapshot");
+    }
     public static async Task Run(string? appAssembly=null)
     {
+        await RunRosterEcho();
         foreach(var phase in new[]{"broadcast","welcome"})
         {
             Environment.SetEnvironmentVariable("VAULT_STORAGE_ROOT",Path.Combine(Path.GetTempPath(),"vault-order-"+Guid.NewGuid()));
@@ -283,7 +330,7 @@ static class HubSnapshotOrderContracts
             var latest=socket.Read().Last(f=>f["kind"]?.GetValue<string>()=="clusters");
             Check(latest["clusters"]![0]!["shared"]!["ts"]!.GetValue<double>()==before &&
                 latest["clusters"]![0]!["shared"]!["usageMs"]!.GetValue<double>()>=100 &&
-                latest["rosters"]!["edge"]!.AsArray().Count==2,"Usage and roster changes survive at unchanged policy timestamp");
+                socket.Read().Last(f=>f["kind"]?.GetValue<string>()=="rosters")["rosters"]!["edge"]!.AsArray().Count==2,"Usage and roster discovery changes survive independently at unchanged policy timestamp");
             typeof(ConnectionHub).GetMethod("Remove",Private)!.Invoke(hub,[peer]);await Drain(observerPeer);
             var removed=observer.Read().Last(f=>f["kind"]?.GetValue<string>()=="clusters")["clusters"]![0]!;
             Check(removed["shared"]!["ts"]!.GetValue<double>()==before && removed["shared"]!["scopes"]!.AsArray().Count==3 &&
