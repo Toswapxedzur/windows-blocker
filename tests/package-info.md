@@ -47,3 +47,5 @@ and `classifier/Tests/WebUI/autosave.mjs`, with `UI_ASSET_ROOT` pointing at
 
 - `sync-webui-preservation.py` — default and explicit browser-only generation preserve Windows Activity/native templates/guides and platform messages while copying canonical browser resources.
 - `runner-native-popup-snooze.js` — the actual canonical popup snooze producer through the actual Windows shim; native keyed writes preserve concurrent other-group entries and never use the browser-only snooze IPC. Run both on the authorized Mini2 host.
+
+- `NativeContracts/BootstrapUsageContracts.cs` / `--bootstrap-usage-only`: split config/original usage retention, durable pending state, fixed/rolling MAX plus joining increments, save failure/retry, expiry, bounded legacy rolling refusal and schema2→3 migration/downgrade refusal. Uses actual Hub methods with disposable data and unstarted sockets.

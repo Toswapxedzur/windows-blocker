@@ -127,7 +127,7 @@ public sealed partial class ConnectionHub
                 }
                 ReconcileLocalLocked(root, () => { });
                 var staged = EditorStateNow();
-                var registry = StorageSchema.Wrap(JsonSerializer.SerializeToNode(_clusters.Values)!, "hub.clusters",2).ToJsonString();
+                var registry = StorageSchema.Wrap(JsonSerializer.SerializeToNode(_clusters.Values)!, "hub.clusters",3).ToJsonString();
                 try
                 {
 #if VAULT_CONTRACT_TESTS

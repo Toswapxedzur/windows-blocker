@@ -62,7 +62,7 @@ internal static class ManagedRuleTimeContracts
             JsonObject State(int generation) => new() { ["version"] = 1, ["objects"] = new JsonObject {
                 ["clock"] = new JsonObject { ["kind"] = "timer", ["direction"] = "down", ["durationMs"] = 10000,
                     ["elapsedMs"] = 0, ["startedAtMs"] = null, ["notified"] = false, ["generation"] = generation, ["incarnation"] = "fixture" } } };
-            JsonArray Saved() => StorageSchema.Payload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!, "hub.clusters", 2).AsArray();
+            JsonArray Saved() => StorageSchema.Payload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!, "hub.clusters", 3).AsArray();
             ConnectionHub Reload()
             {
                 var value = new ConnectionHub();
@@ -86,10 +86,11 @@ internal static class ManagedRuleTimeContracts
             var first = JsonNode.Parse(hub.ClustersJson())!["clusters"]![0]!["id"]!.GetValue<string>();
             await hub.SyncRuleTimeAsync("chrome", "c", first, State(0), new());
             Check(hub.Unlink("chrome", "c") == null && hub.ActiveClusterCount() == 0, "unlink retains final snapshots while hiding inactive cluster");
+            Check(Saved().OfType<JsonObject>().All(row => row["OriginalUsagePending"] is JsonArray pending && pending.Count == 0), "dissolved named-time link has no active original-usage waiters");
             var future = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60000;
             var saved = Saved();
             foreach (var row in saved.OfType<JsonObject>()) foreach (var record in ((JsonObject)row["DetachedRuleTime"]!).Select(p => (JsonObject)p.Value!)) record["atMs"] = future;
-            File.WriteAllText(Storage.ClustersPath, StorageSchema.Wrap(saved, "hub.clusters", 2).ToJsonString());
+            File.WriteAllText(Storage.ClustersPath, StorageSchema.Wrap(saved, "hub.clusters", 3).ToJsonString());
             hub = Reload(); hub.RuleTimePolicy = Policy; hub.SetRoster("chrome", Roster("c")); hub.SetRoster("safari", Roster("s"));
             Check(hub.Link("chrome", "c", "safari", "s") == null, "retained snapshot survives restart and permits relink preflight");
             var second = JsonNode.Parse(hub.ClustersJson())!["clusters"]![0]!["id"]!.GetValue<string>();
@@ -133,7 +134,7 @@ internal static class ManagedRuleTimeContracts
                         clone["DetachedRuleTime"] = records; rows.Add(clone);
                     }
                 }
-                var unsupported = StorageSchema.Wrap(rows,"hub.clusters",2).ToJsonString(); File.WriteAllText(Storage.ClustersPath, unsupported);
+                var unsupported = StorageSchema.Wrap(rows,"hub.clusters",3).ToJsonString(); File.WriteAllText(Storage.ClustersPath, unsupported);
                 var guarded = Reload(); guarded.RuleTimePolicy = (_,_) => throw new Exception("Unsupported retained state reached policy ACK");
                 var answer = await guarded.SyncRuleTimeAsync("chrome", "c", null, new JsonObject { ["version"] = 1, ["objects"] = new JsonObject(),
                     ["detachedReceipt"] = new JsonObject { ["clusterId"] = row["Id"]!.DeepClone(), ["token"] = record["token"]!.DeepClone() } },new());
