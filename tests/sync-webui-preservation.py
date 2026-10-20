@@ -8,7 +8,8 @@ import tempfile
 
 SOURCE = Path(__file__).resolve().parents[1] / "sync-webui.sh"
 KEYS = ["link.browserUpgradeRequired", "link.browserIdentitySyncPending",
-        "link.browserIdentityPendingEditsInvalid", "link.browserConnectRequired"]
+        "link.browserIdentityPendingEditsInvalid", "link.browserConnectRequired",
+        "logFeed.hint", "logFeed.empty"]
 with tempfile.TemporaryDirectory(prefix="vault-windows-browser-sync-") as temporary:
     base = Path(temporary)
     windows = base / "windowsBlocker"
@@ -45,4 +46,25 @@ with tempfile.TemporaryDirectory(prefix="vault-windows-browser-sync-") as tempor
             assert (assets / name).read_bytes() == (browser / name).read_bytes()
         assert json.loads((assets / "translation/en.json").read_text()) == dict(original, **{key: incoming[key] for key in KEYS})
         assert (assets / "translation/fr.json").read_bytes() == b'{"platform":"Windows"}\n'
+    for folder in ["manual", "code-manual"]:
+        canonical = windows / "localization" / folder
+        canonical.mkdir(parents=True)
+        (canonical / "fr.md").write_text("Guide Windows traduit : " + folder)
+        (canonical / "en.md").write_text("Must not replace the Windows English guide")
+        (canonical / "package-info.md").write_text("Must not be shipped as a guide")
+    (assets / "popup.js").write_text("Windows popup must remain unchanged during localization")
+    (assets / "rule-core.js").write_text("Windows runtime must remain unchanged during localization")
+    incoming["logFeed.hint"] = "Fresh translated log hint"
+    incoming["logFeed.empty"] = "Fresh translated empty log"
+    (browser / "translation/en.json").write_text(json.dumps(incoming))
+    localized_before = {name: hashlib.sha256((assets / name).read_bytes()).hexdigest()
+                        for name in preserved + ["popup.js", "rule-core.js"]}
+    subprocess.run(["bash", str(windows / "sync-webui.sh"), "--localization-only"], check=True)
+    assert localized_before == {name: hashlib.sha256((assets / name).read_bytes()).hexdigest()
+                                for name in localized_before}
+    for folder in ["manual", "code-manual"]:
+        assert (assets / folder / "fr.md").read_bytes() == (windows / "localization" / folder / "fr.md").read_bytes()
+    assert json.loads((assets / "translation/en.json").read_text()) == dict(original, **{key: incoming[key] for key in KEYS})
+    assert (assets / "translation/fr.json").read_bytes() == b'{"platform":"Windows"}\n'
     print("PASS ordinary and explicit browser refresh preserve Windows platform resources and copy canonical selected assets/messages")
+    print("PASS localization-only refresh copies canonical translated guides and shared prose without changing Windows English/native assets or runtime")
