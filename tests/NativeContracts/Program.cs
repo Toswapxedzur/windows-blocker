@@ -12,6 +12,7 @@ if (args.Contains("--browser-identity-only"))
     finally { var owned = Environment.GetEnvironmentVariable("VAULT_STORAGE_ROOT")!; if (Directory.Exists(owned)) Directory.Delete(owned, true); }
     return;
 }
+if (args.Contains("--bootstrap-usage-only")) { await BootstrapUsageContracts.Run(); return; }
 if (args.Contains("--roster-echo-only")) { await HubSnapshotOrderContracts.RunRosterEcho(); return; }
 if (args.Contains("--managed-time-only")) { await ManagedRuleTimeContracts.Run(); return; }
 HubStopContextContracts.Run();
@@ -21,7 +22,7 @@ if (args.Contains("--editor-transaction-only")) { await NativeEditorTransactionC
 if (args.Contains("--definition-intent-only")) { await NativeDefinitionIntentContracts.Run(); return; }
 if (args.Contains("--ordering-only")) { await HubSnapshotOrderContracts.Run(args.Length>1?args[1]:null); return; }
 if (args.Contains("--activity-settings-only")) { await HubSnapshotOrderContracts.RunActivitySettings(args.FirstOrDefault(arg => arg.EndsWith("WorkerFixture.exe", StringComparison.OrdinalIgnoreCase))); return; }
-if (args.Contains("--hub-only")) { HubFirstLinkContracts.Run(); await HubSnapshotOrderContracts.Run(args.Length>1?args[1]:null); return; }
+if (args.Contains("--hub-only")) { await BootstrapUsageContracts.Run(); HubFirstLinkContracts.Run(); await HubSnapshotOrderContracts.Run(args.Length>1?args[1]:null); return; }
 static void Check(bool passed, string description) { if (!passed) throw new Exception(description); Console.WriteLine("PASS " + description); }
 NativeLanguageContracts.Run(Check);
 await HubSnapshotOrderContracts.RunActivitySettings();

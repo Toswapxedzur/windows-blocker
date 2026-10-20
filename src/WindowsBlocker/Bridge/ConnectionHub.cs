@@ -78,6 +78,7 @@ public sealed partial class ConnectionHub
         public readonly string Challenge = LocalHubAuthentication.Challenge();
         public string Program = "";
         public LocalHubAuthentication.VerifiedBrowserIdentity? BrowserIdentity;
+        public bool SupportsOriginalUsage;
         public bool Connected;
         public bool ClosingForWorker;
     }
@@ -90,6 +91,8 @@ public sealed partial class ConnectionHub
         public string Initiator { get; set; } = "";
         public Dictionary<string, string> Members { get; set; } = new();
         public HashSet<string> Contributed { get; set; } = new();
+        // Null is a historical row; Restore bounds/defaults it before use.
+        public HashSet<string>? OriginalUsagePending { get; set; } = new();
         public JsonObject Scalars { get; set; } = new();
         public JsonArray Scopes { get; set; } = new();
         [JsonPropertyName("scopeOrigins")]
@@ -160,9 +163,11 @@ public sealed partial class ConnectionHub
         var program = Text(message["program"]);
         if (!LocalHubAuthentication.BrowserPrograms.Contains(program)) return "invalid-program";
         if (Text(message["challenge"]) != challenge || !LocalHubAuthentication.Verify(program, challenge, Text(message["proof"]), secret)) return "authentication-failed";
+        if (message.ContainsKey("originalUsageVersion") && !IsOriginalUsageVersion(message["originalUsageVersion"])) return "invalid-original-usage-version";
         var ownMajor = localAppMajor ?? (int.TryParse(StorageSchema.AppVersion.Split('.')[0], out var major) ? major : -1);
         return LocalHubAuthentication.ValidateBrowserIdentity(message, program, challenge, secret, ownMajor, out identity);
     }
+    internal static bool IsOriginalUsageVersion(JsonNode? value) => value is JsonValue version && version.TryGetValue<int>(out var number) && number == 1;
     private async Task ReceiveAsync(Peer peer)
     {
         try
@@ -172,6 +177,9 @@ public sealed partial class ConnectionHub
             var buffer = new byte[8192];
             while (peer.Socket.State == WebSocketState.Open)
             {
+                Task? retiring;
+                lock (_gate) retiring = peer.ClosingForWorker ? peer.SendTail : null;
+                if (retiring != null) { await retiring; return; }
                 using var data = new MemoryStream();
                 WebSocketReceiveResult part;
                 do
@@ -199,7 +207,8 @@ public sealed partial class ConnectionHub
                         else
                         {
                             if(reason==null && _peers.Values.Any(p=>p.Id!=peer.Id && p.Connected && p.Program==Text(message["program"]))) reason="duplicate-program";
-                            if(reason==null) { peer.Program=Text(message["program"]);peer.BrowserIdentity=browserIdentity;peer.Connected=true;initial=QueueWelcome(peer); }
+                            if(reason==null && !IsOriginalUsageVersion(message["originalUsageVersion"]) && _clusters.Values.Any(c=>UnsafeLegacyRollingJoin(c,Text(message["program"])))) reason="browser-upgrade-required";
+                            if(reason==null) { peer.Program=Text(message["program"]);peer.BrowserIdentity=browserIdentity;peer.SupportsOriginalUsage=IsOriginalUsageVersion(message["originalUsageVersion"]);peer.Connected=true;initial=QueueWelcome(peer); }
                         }
                     }
                     if(workerClosing) { await initial!; return; }
@@ -303,7 +312,7 @@ public sealed partial class ConnectionHub
         {
             var welcome=SendAsync(peer,new() { ["kind"]="welcome",["v"]=ProtocolVersion,["hubProgram"]=LocalProgram,["peers"]=PeerList(),["usageTransferReceipts"]=true,
                 ["activitySettingsNotifications"]=ActivitySettingsSupported(),["ruleTimeVersion"]=1,["browserIdentityVersion"]=LocalHubAuthentication.BrowserIdentityVersion });
-            var frame=ClustersFrame();
+            var frame=ProjectForPeer(ClustersFrame(),peer);
 #if VAULT_CONTRACT_TESTS
             ClusterSnapshotCapturedForTests?.Invoke("welcome");
 #endif
@@ -333,8 +342,12 @@ public sealed partial class ConnectionHub
         lock (_gate)
         {
             var recipients = _peers.Values.Where(p => p.Connected).ToArray();
-            if (_editorStage != null) { _editorStage.Frames.Add((recipients, (JsonObject)frame.DeepClone())); return; }
-            foreach (var peer in recipients) _ = SendAsync(peer, frame);
+            foreach (var peer in recipients)
+            {
+                var projected=ProjectForPeer(frame,peer);
+                if (_editorStage != null) _editorStage.Frames.Add(([peer],projected));
+                else _ = SendAsync(peer,projected);
+            }
         }
     }
     private void BroadcastPeers()
@@ -429,6 +442,12 @@ public sealed partial class ConnectionHub
             var c = own ?? other ?? new Cluster { Name = Text(a["name"]), Initiator = program };
             if (IsLocked(c.Lock)) return "group-locked";
             if (c.Members.ContainsKey(program) && c.Members[program] != groupId || c.Members.ContainsKey(targetProgram) && c.Members[targetProgram] != targetGroupId) return "program-already-linked";
+            var initiatingProgram=c.Members.Count>0 ? c.Initiator : program;
+            var nativeId=c.Members.GetValueOrDefault(LocalProgram) ?? (program==LocalProgram ? groupId : targetProgram==LocalProgram ? targetGroupId : "");
+            var policy=c.Contributed.Contains(c.Initiator) && c.Scalars.Count>0 ? c.Scalars : initiatingProgram==LocalProgram ? _seenDefinitions.GetValueOrDefault(nativeId)?.Scalars : null;
+            if (policy != null && RequiresOriginalBudgetUsage(policy) && policy["rollingLimit"]?.GetValueKind()==JsonValueKind.True)
+                foreach(var peer in _peers.Values.Where(p=>p.Connected && !p.SupportsOriginalUsage && (p.Program==program || p.Program==targetProgram)).ToArray())
+                    if(!c.Members.ContainsKey(peer.Program) || PendingOriginals(c).Contains(peer.Program)) { RetireOriginalUsagePeer(peer); return "browser-upgrade-required"; }
             var original = EditorStateNow(); var registry = ReadEditorRegistry();
             InstallEditorState(CloneEditorState(original)); _editorStage = new EditorStage();
             try
@@ -436,9 +455,11 @@ public sealed partial class ConnectionHub
                 c = Find(program, groupId) ?? Find(targetProgram, targetGroupId) ?? new Cluster { Name = Text(a["name"]), Initiator = program };
                 if (!PrepareTimeLink(c, program, groupId, a["timeState"] as JsonObject, targetProgram, targetGroupId, b["timeState"] as JsonObject))
                 { InstallEditorState(original); return "incompatible-custom-time"; }
+                foreach(var member in new[]{program,targetProgram})
+                    if(LocalHubAuthentication.BrowserPrograms.Contains(member) && !c.Members.ContainsKey(member)) PendingOriginals(c).Add(member);
                 c.Members[program] = groupId; c.Members[targetProgram] = targetGroupId;
                 if (!c.JoiningUsageBase.HasValue) BeginJoiningUsage(c); _clusters[c.Id] = c;
-                var bytes = StorageSchema.Wrap(JsonSerializer.SerializeToNode(_clusters.Values)!, "hub.clusters", 2).ToJsonString();
+                var bytes = StorageSchema.Wrap(JsonSerializer.SerializeToNode(_clusters.Values)!, "hub.clusters", 3).ToJsonString();
 #if VAULT_CONTRACT_TESTS
                 LinkDiskPhaseForTests?.Invoke("registry-save");
 #endif
@@ -484,7 +505,7 @@ public sealed partial class ConnectionHub
                 try
                 {
                     RemoveMember(Find(program, groupId)!, program, root, persistLocal, true);
-                    var bytes = StorageSchema.Wrap(JsonSerializer.SerializeToNode(_clusters.Values)!, "hub.clusters", 2).ToJsonString();
+                    var bytes = StorageSchema.Wrap(JsonSerializer.SerializeToNode(_clusters.Values)!, "hub.clusters", 3).ToJsonString();
 #if VAULT_CONTRACT_TESTS
                     UnlinkDiskPhaseForTests?.Invoke("registry-save");
 #endif
@@ -554,9 +575,9 @@ public sealed partial class ConnectionHub
             _unlinkedLocal.Add(localId); _seenDefinitions.Remove(localId);
         }
         if(c.SharedRuleTime?["confirmed"] is JsonObject confirmed && c.Members.TryGetValue(program,out var oldId)) confirmed.Remove(program+"/"+oldId);
-        c.Members.Remove(program); c.Contributed.Remove(program);
-        if (c.Members.Keys.All(c.Contributed.Contains)) ClearJoiningUsage(c);
-        if (c.Members.Count < 2) { c.Members.Clear(); if(c.DetachedRuleTime.Count == 0) _clusters.Remove(c.Id); }
+        c.Members.Remove(program); c.Contributed.Remove(program); PendingOriginals(c).Remove(program);
+        if (OriginalsReady(c)) ClearJoiningUsage(c);
+        if (c.Members.Count < 2) { c.Members.Clear(); PendingOriginals(c).Clear(); if(c.DetachedRuleTime.Count == 0) _clusters.Remove(c.Id); }
         } catch { c.DetachedRuleTime = retainedBefore; throw; }
     }
     public static bool IsLocked(JsonObject obj) => obj["lockedAtMs"]?.GetValueKind() == JsonValueKind.Number;
@@ -568,6 +589,7 @@ public sealed partial class ConnectionHub
     private void ApplySyncLocked(string program, string groupId, JsonObject frame)
     {
         var c = Find(program, groupId); if (c == null) return;
+        var pendingBefore=PendingOriginals(c).Contains(program) ? JsonSerializer.Deserialize<Cluster>(JsonSerializer.Serialize(c)) : null;
         var first = !c.Contributed.Contains(program); var carriesConfig = frame.ContainsKey("scalars") || frame.ContainsKey("scopes");
         var firstConfig = first && carriesConfig; var ts = Number(frame["ts"]); var priority = firstConfig && program == c.Initiator;
         // A repeated zero-timestamp original is a replay, not an acknowledged edit.
@@ -592,13 +614,18 @@ public sealed partial class ConnectionHub
         foreach(var expired in c.UsageTransferReceipts.Where(p=>p.Value<now-receiptLifetime).Select(p=>p.Key).ToList()) c.UsageTransferReceipts.Remove(expired);
         var duplicateTransfer=transferKey!=null && c.UsageTransferReceipts.ContainsKey(transferKey);
         var delta = Number(frame["usageDeltaMs"]);
-        if (!duplicateTransfer && firstConfig && frame.ContainsKey("usageMs") && (c.JoiningSeedFloor <= 0 || Number(frame["usageResetAtMs"]) >= c.JoiningSeedFloor))
+        var rollingOriginal=c.Scalars["rollingLimit"]?.GetValueKind()==JsonValueKind.True;
+        var firstUsageOriginal=PendingOriginals(c).Contains(program) && transferKey==null && (rollingOriginal ? ValidOriginalBuckets(frame["usageBucketsSeed"]) : ValidOriginalTotal(frame["usageMs"]));
+        var admittedOriginalUsage=false;
+        if (!duplicateTransfer && (firstConfig || firstUsageOriginal) && ValidOriginalTotal(frame["usageMs"]) && (c.JoiningSeedFloor <= 0 || Number(frame["usageResetAtMs"]) >= c.JoiningSeedFloor))
         {
             c.JoiningUsageBase = Math.Max(c.JoiningUsageBase ?? Math.Max(0,c.Usage-c.JoiningUsageDelta),Number(frame["usageMs"]));
             c.Usage = Math.Max(0,c.JoiningUsageBase.Value+c.JoiningUsageDelta);
             c.UsageSeeded=true;
         }
-        if (!duplicateTransfer && delta != 0 && (!frame.ContainsKey("usageDeltaAnchorMs") || Number(frame["usageDeltaAnchorMs"]) == c.Anchor)) { if(c.Scalars["rollingLimit"]?.GetValueKind()!=JsonValueKind.True) CountBudgetSnooze(c,c.Usage,delta,now); c.Usage = Math.Max(0, c.Usage + delta); if(c.JoiningUsageBase.HasValue) c.JoiningUsageDelta+=delta; c.UsageSeeded = true; }
+        // The pending browser absolute already includes its reported delta.
+        // Native/nonpending reports retain the established Windows contract.
+        if (!duplicateTransfer && !(firstUsageOriginal && !rollingOriginal) && delta != 0 && (!frame.ContainsKey("usageDeltaAnchorMs") || Number(frame["usageDeltaAnchorMs"]) == c.Anchor)) { if(c.Scalars["rollingLimit"]?.GetValueKind()!=JsonValueKind.True) CountBudgetSnooze(c,c.Usage,delta,now); c.Usage = Math.Max(0, c.Usage + delta); if(c.JoiningUsageBase.HasValue) c.JoiningUsageDelta+=delta; c.UsageSeeded = true; }
         else if (!duplicateTransfer && !c.UsageSeeded) c.Usage = Math.Max(c.Usage, Number(frame["usageMs"]));
         var rollingPolicy=new BlockGroup { ResetIntervalHours=Number(c.Scalars["resetIntervalHours"])>0 ? Number(c.Scalars["resetIntervalHours"]) : 24,ResetAtMidnight=c.Scalars["resetAtMidnight"]?.GetValueKind()==JsonValueKind.True };
         var rollingBefore=UsageBudget.UsedMs(UsageBudget.PruneBuckets(BucketValues(c.Buckets),rollingPolicy,now));
@@ -610,7 +637,7 @@ public sealed partial class ConnectionHub
         }
         if (!duplicateTransfer && frame["usageBucketsSeed"] is JsonObject seed)
         {
-            if(firstConfig && (c.JoiningSeedFloor<=0 || Number(frame["usageResetAtMs"])>=c.JoiningSeedFloor))
+            if((firstConfig || firstUsageOriginal) && (c.JoiningSeedFloor<=0 || Number(frame["usageResetAtMs"])>=c.JoiningSeedFloor))
             {
                 c.JoiningBucketBase ??= (JsonObject)c.Buckets.DeepClone();
                 foreach(var (k,v) in seed) { c.JoiningBucketBase[k]=Math.Max(Number(c.JoiningBucketBase[k]),Number(v)); c.Buckets[k]=Math.Max(0,Number(c.JoiningBucketBase[k])+Number(c.JoiningBucketDeltas[k])); }
@@ -624,9 +651,19 @@ public sealed partial class ConnectionHub
         if (Number(frame["snoozeTs"]) > c.SnoozeTimestamp) { CountSnooze(c, now, true); c.SnoozeTimestamp = Number(frame["snoozeTs"]); c.Snooze = frame["snooze"] is JsonObject snooze ? (JsonObject)snooze.DeepClone() : new(); }
         CountSnooze(c, now, false);
         if(transferKey!=null) c.UsageTransferReceipts[transferKey]=now;
+        if(firstUsageOriginal && !duplicateTransfer) admittedOriginalUsage=true;
+        if(admittedOriginalUsage) PendingOriginals(c).Remove(program);
         if(carriesConfig) c.Contributed.Add(program);
-        if(c.Members.Keys.All(c.Contributed.Contains)) ClearJoiningUsage(c);
+        if(c.Members.Keys.All(c.Contributed.Contains) && !RequiresOriginalBudgetUsage(c.Scalars)) PendingOriginals(c).Clear();
+        if(OriginalsReady(c)) ClearJoiningUsage(c);
         Persist();
+        if(admittedOriginalUsage && !_clusterStorageWritable && pendingBefore!=null)
+        {
+            _clusters[c.Id]=pendingBefore;
+            foreach(var peer in _peers.Values.Where(p=>p.Connected && p.Program==program)) _=SendAsync(peer,new(){["kind"]="group-sync-refused",["groupId"]=groupId,["reason"]="local-storage-unavailable"});
+            return;
+        }
+        foreach(var peer in _peers.Values.Where(p=>p.Connected && !p.SupportsOriginalUsage && UnsafeLegacyRollingJoin(c,p.Program)).ToArray()) RetireOriginalUsagePeer(peer);
     }
 
     private static double SnoozeChanged(JsonNode? snooze) => Number(snooze?["changedAtMs"])>0 ? Number(snooze?["changedAtMs"]) : Number(snooze?["startsAtMs"]);
@@ -740,8 +777,12 @@ public sealed partial class ConnectionHub
     }
     private static JsonNode RegistryPayload(JsonNode document)
     {
-        var payload=StorageSchema.Payload(document,"hub.clusters",2);
+        var payload=StorageSchema.Payload(document,"hub.clusters",3);
         if(payload is not JsonArray entries) throw new InvalidDataException("Invalid cluster registry.");
+        if(document is JsonObject envelope && Number(envelope["storageMetadata"]?["schemaVersion"])>=3 && entries.OfType<JsonObject>().Any(e=>e["OriginalUsagePending"] is not JsonArray)) throw new InvalidDataException("Missing pending original usage ledger");
+        foreach(var entry in entries.OfType<JsonObject>().Where(e=>e.ContainsKey("OriginalUsagePending")))
+            if(entry["OriginalUsagePending"] is not JsonArray pending || pending.Count>LocalHubAuthentication.BrowserPrograms.Count || pending.Any(p=>!LocalHubAuthentication.BrowserPrograms.Contains(Text(p))) || pending.Select(Text).Distinct(StringComparer.Ordinal).Count()!=pending.Count)
+                throw new InvalidDataException("Invalid bounded pending original usage ledger");
         foreach(var entry in entries.OfType<JsonObject>()) if(entry.ContainsKey("scopeOrigins")) {
             if(entry["scopeOrigins"] is not JsonObject origins || origins.Any(p=>!ValidScopeOrigin(p.Key,p.Value)))
                 throw new InvalidDataException("Invalid Website origin map; registry is preserved.");
@@ -886,10 +927,45 @@ public sealed partial class ConnectionHub
             var totals=root["groupSnoozeTotalsMs"] as JsonObject ?? new(); root["groupSnoozeTotalsMs"]=totals; totals[gid]=c.SnoozeTotal;
         }
     }
+    private static HashSet<string> PendingOriginals(Cluster c) => c.OriginalUsagePending ??= new();
+    private static bool RequiresOriginalBudgetUsage(JsonObject scalars) => Text(scalars["groupType"]) != "custom" && Text(scalars["mode"]) == "after-minutes";
+    private static bool OriginalsReady(Cluster c) => c.Members.Keys.All(c.Contributed.Contains) && (!RequiresOriginalBudgetUsage(c.Scalars) || PendingOriginals(c).Count==0);
+    private static bool UnsafeLegacyRollingJoin(Cluster c,string program) => PendingOriginals(c).Contains(program) && RequiresOriginalBudgetUsage(c.Scalars) && c.Scalars["rollingLimit"]?.GetValueKind()==JsonValueKind.True && c.Contributed.Contains(c.Initiator);
+    private static bool ValidOriginalTotal(JsonNode? node) => node?.GetValueKind()==JsonValueKind.Number && double.TryParse(node.ToJsonString(),System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out var n) && double.IsFinite(n) && n>=0;
+    private static bool ValidOriginalBuckets(JsonNode? node) => node is JsonObject buckets && buckets.All(b=>double.TryParse(b.Key,System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out var start) && double.IsFinite(start) && start>=0 && ValidOriginalTotal(b.Value));
+    private void RetireOriginalUsagePeer(Peer peer)
+    {
+        peer.Connected=false;peer.BrowserIdentity=null;peer.ClosingForWorker=true;
+        _=SendAsync(peer,new(){["kind"]="rejected",["reason"]="browser-upgrade-required"});
+        // Preserve the actionable rejection before retirement, in the same FIFO
+        // used for normal worker-authority retirement.
+        lock(peer.SendGate) peer.SendTail=peer.SendTail.ContinueWith(async _=>
+        {
+            try { if(peer.Socket.State==WebSocketState.Open) await peer.Socket.CloseOutputAsync(WebSocketCloseStatus.PolicyViolation,"browser-upgrade-required",CancellationToken.None); }
+            catch { }
+            finally { Remove(peer); }
+        },CancellationToken.None,TaskContinuationOptions.None,TaskScheduler.Default).Unwrap();
+    }
+    private JsonObject ProjectForPeer(JsonObject frame,Peer peer)
+    {
+        var projected=(JsonObject)frame.DeepClone();
+        void Project(JsonObject snapshot)
+        {
+            var c=_clusters.GetValueOrDefault(Text(snapshot["id"]));
+            if(c==null || peer.SupportsOriginalUsage || !PendingOriginals(c).Contains(peer.Program)) return;
+            // Old rolling adoption replaces buckets even when usage is omitted.
+            if(!c.Members.Keys.All(c.Contributed.Contains) || UnsafeLegacyRollingJoin(c,peer.Program)) {snapshot.Remove("shared");return;}
+            if(RequiresOriginalBudgetUsage(c.Scalars) && snapshot["shared"] is JsonObject shared)
+                foreach(var field in new[]{"usageMs","usageResetAtMs","usageBuckets"}) shared.Remove(field);
+        }
+        if(projected["clusters"] is JsonArray clusters) foreach(var snapshot in clusters.OfType<JsonObject>()) Project(snapshot);
+        if(projected["cluster"] is JsonObject cluster) Project(cluster);
+        return projected;
+    }
     private JsonObject Snapshot(Cluster c)
     {
         var peers = _peers.Values.Where(p => p.Connected).Select(p => p.Program).Append(LocalProgram).ToHashSet();
-        var snapshot = new JsonObject { ["id"] = c.Id, ["groupName"] = c.Name, ["allOnline"] = c.Members.Keys.All(peers.Contains), ["members"] = new JsonArray(c.Members.Select(m => (JsonNode)new JsonObject { ["program"] = m.Key, ["groupId"] = m.Value, ["groupName"] = c.Name, ["online"] = peers.Contains(m.Key), ["contributed"] = c.Contributed.Contains(m.Key) }).ToArray()), ["shared"] = new JsonObject { ["scalars"] = c.Scalars.DeepClone(), ["scopes"] = c.Scopes.DeepClone(), ["lock"] = c.Lock.DeepClone(), ["ts"] = c.Timestamp, ["usageMs"] = c.Usage, ["usageResetAtMs"] = c.Anchor, ["usageBuckets"] = c.Buckets.DeepClone(), ["snooze"] = c.Snooze.DeepClone(), ["snoozeTs"] = c.SnoozeTimestamp, ["snoozeTotalMs"] = c.SnoozeTotal } };
+        var snapshot = new JsonObject { ["id"] = c.Id, ["groupName"] = c.Name, ["allOnline"] = c.Members.Keys.All(peers.Contains), ["members"] = new JsonArray(c.Members.Select(m => (JsonNode)new JsonObject { ["program"] = m.Key, ["groupId"] = m.Value, ["groupName"] = c.Name, ["online"] = peers.Contains(m.Key), ["contributed"] = c.Contributed.Contains(m.Key) && (!RequiresOriginalBudgetUsage(c.Scalars) || !PendingOriginals(c).Contains(m.Key)) }).ToArray()), ["shared"] = new JsonObject { ["scalars"] = c.Scalars.DeepClone(), ["scopes"] = c.Scopes.DeepClone(), ["lock"] = c.Lock.DeepClone(), ["ts"] = c.Timestamp, ["usageMs"] = c.Usage, ["usageResetAtMs"] = c.Anchor, ["usageBuckets"] = c.Buckets.DeepClone(), ["snooze"] = c.Snooze.DeepClone(), ["snoozeTs"] = c.SnoozeTimestamp, ["snoozeTotalMs"] = c.SnoozeTotal } };
         // Joining participants must contribute their original owned lines before
         // anybody adopts the union; publishing Apps-only here erases Websites.
         if(!c.Members.Keys.All(c.Contributed.Contains)) ((JsonObject)snapshot["shared"]!).Remove("scopes");
@@ -922,7 +998,7 @@ public sealed partial class ConnectionHub
         if (!_clusterStorageWritable) return;
         try {
             if (File.Exists(Storage.ClustersPath)) RegistryPayload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!);
-            StorageSchema.AtomicWrite(Storage.ClustersPath, StorageSchema.Wrap(JsonSerializer.SerializeToNode(_clusters.Values)!, "hub.clusters",2).ToJsonString());
+            StorageSchema.AtomicWrite(Storage.ClustersPath, StorageSchema.Wrap(JsonSerializer.SerializeToNode(_clusters.Values)!, "hub.clusters",3).ToJsonString());
         } catch { _clusterStorageWritable = false; }
     }
     private void Restore()
@@ -932,7 +1008,9 @@ public sealed partial class ConnectionHub
             if (_clusters.Count > 0 || !File.Exists(Storage.ClustersPath)) return;
             try
             {
-                var rows = RegistryPayload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!).Deserialize<List<Cluster>>() ?? [];
+                var payload = RegistryPayload(JsonNode.Parse(File.ReadAllText(Storage.ClustersPath))!);
+                var rows = payload.Deserialize<List<Cluster>>() ?? [];
+                var historicalMissing=payload.AsArray().OfType<JsonObject>().Where(r=>!r.ContainsKey("OriginalUsagePending")).Select(r=>Text(r["Id"])).ToHashSet();
                 // A receipt must never acknowledge/discard an unsupported final
                 // namespace. Validate retained envelopes before installing any
                 // restored row; unknown bytes remain untouched and read-only.
@@ -946,8 +1024,10 @@ public sealed partial class ConnectionHub
                 {
                     if ((c.Members.Count < 2 && c.DetachedRuleTime.Count == 0) ||
                         !c.Members.All(m => m.Value.Length > 0 && LocalHubAuthentication.Programs.Contains(m.Key))) continue;
+                    if(historicalMissing.Contains(c.Id) || c.OriginalUsagePending==null) c.OriginalUsagePending=c.Members.Keys.Where(p=>LocalHubAuthentication.BrowserPrograms.Contains(p) && !c.Contributed.Contains(p)).ToHashSet();
+                    if(c.OriginalUsagePending.Count>LocalHubAuthentication.BrowserPrograms.Count || c.OriginalUsagePending.Any(p=>!LocalHubAuthentication.BrowserPrograms.Contains(p) || !c.Members.ContainsKey(p))) throw new InvalidDataException("Invalid pending original usage");
                     PruneOrigins(c);
-                    if (c.Members.Keys.All(c.Contributed.Contains)) ClearJoiningUsage(c);
+                    if (OriginalsReady(c)) ClearJoiningUsage(c);
                     else if (!c.JoiningUsageBase.HasValue) BeginJoiningUsage(c);
                     _clusters[c.Id] = c;
                 }

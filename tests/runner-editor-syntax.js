@@ -3,7 +3,7 @@ const fs=require("node:fs"),vm=require("node:vm"),path=require("node:path"),asse
 const shims=["../../macosBlocker/Sources/MacBlockerWebUI/WebAssets/chrome-shim.js","../src/WindowsBlocker/WebAssets/chrome-shim.js"];
 (async()=>{for(const file of shims){
  const messages=[],storage=new Map();
- const context={console,Promise,URL,Set,setTimeout,clearTimeout,navigator:{language:"en"},document:{baseURI:"https://appassets.windowsblocker/"},
+ const context={console,Promise,URL,Set,setTimeout,clearTimeout,navigator:{language:"en"},document:{baseURI:"https://appassets.windowsblocker/",getElementById:()=>null},
  localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,String(value))},
  __CB_DESKTOP_PROGRAM_ID:"windowsapp",__cbNativeStoreSeed:JSON.stringify({blockedGroups:[{id:"a"}],usageTimersMs:{a:10,b:20}})};
  context.window=context;
