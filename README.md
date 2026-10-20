@@ -19,7 +19,7 @@ The code is the product contract. The maintained in-app manual is [src/WindowsBl
 
 ## Build
 
-Generate shared assets from the sibling browser/Mac checkouts with `bash sync-webui.sh`, then use the checked-in solution and project on mini1’s Windows VM:
+Refresh canonical browser assets with `bash sync-webui.sh` (the default `--browser-only` mode), then use the checked-in solution and project on the authorized Windows test VM. This preserves Windows Activity, native shim, templates, guides, Classifier and platform wording. `--full` explicitly imports the broader Mac-derived assets and requires reviewing those platform changes:
 
 ```powershell
 dotnet build WindowsBlocker.sln

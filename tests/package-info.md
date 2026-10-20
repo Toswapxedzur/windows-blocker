@@ -44,3 +44,6 @@ and `classifier/Tests/WebUI/autosave.mjs`, with `UI_ASSET_ROOT` pointing at
 - `NativeContracts/ManagedRuleTimeContracts.cs`: event-save ordering and asynchronous hub membership checks; `--managed-time-only` starts no listener and uses disposable storage.
 
 - `runner-rule-time-policy.js`: actual policy-worker JavaScript routing and module/method whitelist tests in an isolated VM; native WebView2 acceptance remains separate.
+
+- `sync-webui-preservation.py` — default and explicit browser-only generation preserve Windows Activity/native templates/guides and platform messages while copying canonical browser resources.
+- `runner-native-popup-snooze.js` — the actual canonical popup snooze producer through the actual Windows shim; native keyed writes preserve concurrent other-group entries and never use the browser-only snooze IPC. Run both on the authorized Mini2 host.

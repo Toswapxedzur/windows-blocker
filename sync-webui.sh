@@ -1,16 +1,23 @@
 #!/usr/bin/env bash
-# Generate Windows' shared editor/scenes from their canonical browser/Mac sources.
+# Refresh canonical browser assets while preserving Windows-owned native assets.
+# --full explicitly imports the wider Mac templates and native resources.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 MAC="$ROOT/../macosBlocker"
 EXT="$ROOT/../customBlocker"
-python3 - "$ROOT" "$MAC" "$EXT" <<'PY'
+MODE="${1:---browser-only}"
+if [[ "$MODE" != "--browser-only" && "$MODE" != "--full" ]]; then
+  echo "Usage: bash sync-webui.sh [--browser-only|--full]" >&2
+  exit 2
+fi
+python3 - "$ROOT" "$MAC" "$EXT" "$MODE" <<'PY'
 import json
 import shutil
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
-root, mac, ext = map(Path, sys.argv[1:])
+root, mac, ext = map(Path, sys.argv[1:4])
+browser_only = sys.argv[4] == "--browser-only"
 dest = root / "src/WindowsBlocker/WebAssets"
 editor = mac / "Sources/MacBlockerWebUI/WebAssets"
 files = ["popup.js", "popup.css", "popup.html", "group-scopes.js", "parental-pin.js", "group-actions.js",
@@ -18,9 +25,29 @@ files = ["popup.js", "popup.css", "popup.html", "group-scopes.js", "parental-pin
          "rule-core.js", "vault-ui.css", "vault-ui.js", "vault-info.js", "vault-info.css", "chrome-shim.js",
          "scenes.js", "scenes.css", "activity.js", "activity.css", "activity-time-bins.js"]
 for name in files:
+    # Platform templates/native shims and Activity retain their Windows changes.
+    if browser_only and (name == "popup.html" or not (ext / name).is_file()):
+        continue
     # Browser assets stay canonical even if the Mac mirror has not been synced.
     source = ext / name if (ext / name).is_file() and name != "popup.html" else editor / name
     shutil.copy2(source, dest / name)
+if browser_only:
+    # Copy only the browser identity messages needed by the shared popup. Other
+    # Windows wording, including app protections, remains authoritative here.
+    identity_keys = ["link.browserUpgradeRequired", "link.browserIdentitySyncPending",
+                     "link.browserIdentityPendingEditsInvalid", "link.browserConnectRequired"]
+    for source in sorted((ext / "translation").glob("*.json")):
+        target = dest / "translation" / source.name
+        if not target.is_file():
+            continue
+        incoming = json.loads(source.read_text(encoding="utf-8"))
+        current = json.loads(target.read_text(encoding="utf-8"))
+        patch = {key: incoming[key] for key in identity_keys if key in incoming and current.get(key) != incoming[key]}
+        if patch:
+            current.update(patch)
+            target.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print("[sync-webui] refreshed canonical browser assets; preserved Windows platform resources")
+    sys.exit(0)
 for name in ["translation", "code-manual", "manual"]:
     target = dest / name
     if target.exists(): shutil.rmtree(target)
