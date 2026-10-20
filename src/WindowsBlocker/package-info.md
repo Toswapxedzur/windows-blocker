@@ -2,7 +2,7 @@
 
 - `App.xaml`, `MainWindow.*`: app and WebView2 editor shell.
 - `Core/`, `Enforcement/`, `Bridge/`, `Rules/`, `WebUI/`: native policy, enforcement, authenticated integration, custom-rule execution and shared-editor transport.
-- `WebAssets/`: generated browser/Mac editor, Classifier, Activity and locale assets; regenerate with root `sync-webui.sh`.
+- `WebAssets/`: shared editor and Windows platform resources; root `sync-webui.sh` refreshes browser assets while preserving native/Activity overrides (`--full` explicitly imports wider Mac resources).
 - `NativeControls.xaml`: shared owned-window controls; light connection settings and filled controls on translucent rule panels.
 - `NativePanelSelect.cs`, `NativePinField.cs`: bounded searchable option menus and drawn LTR PIN digits.
 - `PanelOverlayWindow.*`: work-area-bounded, virtualized custom-rule cards.
