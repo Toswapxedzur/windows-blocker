@@ -1,18 +1,18 @@
 # Windows Vault user manual
 
-Windows Vault has three pages: **Vault** blocks native apps, **Classifier** tags supported browser content, and **Activity** shows recorded use. The browser extension collects supported content and applies browser blocking. Install and connect it in the browser you use.
+Windows Vault has three pages: **Vault** blocks native apps, **Content tagging** tags supported browser content, and **Activity** shows recorded use. The browser extension collects supported content and applies browser blocking. Install and connect it in the browser you use.
 
 ## Quick start
 
 1. In **Vault**, add a blocking group and an Apps target, then select apps with the + picker.
 2. Choose the group's blocking behavior and enable it.
-3. In **Classifier**, create a group, choose its platforms, and add tags with descriptions.
-4. Choose a local model tier and download it if needed. Enable tagging in Classifier settings and resume the group.
+3. In **Content tagging**, create a group, choose its platforms, and add tags with descriptions.
+4. Open Settings → AI connections and choose ChatGPT subscription, OpenAI API, Gemini API or Grok API. Connect the account or enter its key and fetch its models, then select a connection/model in the group. Enable tagging and resume the group.
 5. Open supported content in the connected browser. Configure a tag filter in a browser blocking group if you want the tags to control blocking.
 
 ## Blocking groups
 
-A **blocking group** applies a blocking policy. A **Classifier group** assigns tags to content; it does not block anything by itself.
+A **blocking group** applies a blocking policy. A **Content tagging group** assigns tags to content; it does not block anything by itself.
 
 1. Add a blocking group and give it a name.
 2. Choose targets under **Applies to**.
@@ -57,48 +57,32 @@ Custom rules have their own [Code manual](../code-manual/en.md). It explains the
 
 ## Native apps
 
-Use an Apps target's + picker to select installed apps. **Block every app except these** turns the list into an allowlist. System apps, browsers, and Vault itself are excluded from native app blocking.
+Use an Apps target's + picker to select installed or currently running apps. Reopen the picker to refresh its list when you launch an app from another folder. **Block every app except these** turns the list into an allowlist. Windows Vault can block ordinary Apple apps and whole browsers; Windows Vault itself and any app sharing its bundle identifier remain protected.
 
 A blocked app is asked to quit. **Ask a blocked app to quit again every (minutes)** controls retries. Website redirects, page pauses, and feed hiding are enforced by the browser extension; they do not become native app actions.
 
-## Classifier
+## Content tagging
 
-A Classifier group tags content from its assigned platforms with its own tag tree and model settings. Each platform belongs to one group. Choose platforms when creating the group; they cannot be changed afterward. Blocking-group schedules and filters do not control tagging.
+A Content tagging group tags content from its assigned platforms with its own tag tree and model settings. Each platform belongs to one group. Choose platforms when creating the group; they cannot be changed afterward. Blocking-group schedules and filters do not control tagging.
 
-Enable tagging in Classifier settings. Use each group's **Pause tagging / Resume tagging** separately. Turning off a platform feed's recording in **Activity → Recording** also stops its tagging.
+Enable tagging in Settings. Use each group's **Pause tagging / Resume tagging** separately. Turning off a platform feed's recording in **Activity → Recording** also stops its tagging.
 
 ### Tags and model settings
 
 Create tags, describe their meanings, and set or remove their parents in the tag tree. Drag a tag to move its branch. Clear descriptions help the model distinguish similar tags. Each group's settings are independent.
 
-- **Speed ↔ Quality** selects a local model tier. Larger models use more memory; speed and results depend on the PC and workload. Downloads are shared across groups.
-- **Strict ↔ Broad** sets confidence requirements and default tag counts.
-- **Minimum tags / Maximum tags** in More replace those default counts. Strict ↔ Broad still controls confidence for additional tags. Leave either field empty to use its default.
-- **Tagging instructions** adds optional instructions for this group.
+- **Minimum confidence** sets the evidence grade needed for each predicted tag, from 1 to 5. New groups start at 4 (strong support). There is no target tag count; an item can receive no tags.
+- **Tagging instructions** records this group's tagging preferences.
 
-Routine Classifier edits save automatically. A selected tier must be downloaded before it can tag content. Groups using the same tier share a loaded model; up to two tiers remain loaded at once.
+Routine Content tagging edits save automatically. Each group uses one explicitly selected connection, model and reasoning effort.
 
-Correct a content item's tags in the browser extension. Click **+ tag**, search the Classifier's existing tags, and choose one to add it. Use a tag's remove control, or select it and press Delete once, to remove it. **Untagged** means tagging finished with no tags; **Tagging** means a result is pending. Corrections inform future tagging.
+### AI connections
 
-## Knowledge and web research
+Settings has four choices: **ChatGPT subscription**, **OpenAI API**, **Gemini API**, and **Grok API**. ChatGPT subscription uses Vault’s own sign-in and your eligible plan. API keys use the selected provider’s API billing and limits. Select the provider and enter its key directly below the shared dropdown. Key edits save automatically; clearing the field clears the key. Then choose **Fetch model list**, and select the model in your Content tagging or custom-rule group. Fetching models does not choose one for you.
 
-Knowledge stores short descriptions on this PC for the local tagging model. **Content sources** include creators, accounts, channels, and communities. Source descriptions accompany their content. **Known terms** apply when a term appears in a title.
+**Reasoning effort** controls how much the selected model thinks: Model default, Low, Medium or High where supported. New selections start at Medium; existing choices stay as saved. Higher effort can add time and token usage. Web search is always enabled for tagging; the model decides when it needs to search. Choose a model that supports search and structured tagging. Failed or unavailable requests keep valid cached results; new items remain unresolved until you choose **Retry cloud classification**. Vault does not switch providers automatically. Each connection has its own retry interval and attempt limit.
 
-Add a source or term and its description, or leave the description empty to request research when enabled. Creator suggestions help find a source the Classifier has collected. Lists with six or more entries have search directly above them: Terms and each platform’s Content sources have separate searches for name, identifier, or description. Editing a description affects future tagging; deleting source knowledge does not prevent later research from recreating it.
-
-### Configure a research provider
-
-1. Open **Classifier settings → API keys & providers**.
-2. Choose a provider type and **Add provider**. This creates a configuration; it does not issue an API key.
-3. Obtain credentials from that provider and enter them. For a compatible custom endpoint, also configure its endpoint and protocol fields.
-4. In **Web research**, choose a provider with built-in web search. Fetch its model list and select a research model. Use the model chooser's search to narrow the list; refresh it to fetch it again.
-5. Read the consent disclosure and enable consent. Choose **On**, **Off**, or **Follow Classifier settings** in each group.
-
-**Set up web research…** takes you to settings when configuration is missing. A group cannot bypass research consent. **Test connection** confirms the test request succeeded, not that every model supports research. A provider's test model is separate from the selected research model.
-
-Keys are stored in the app's support folder on this PC, with access restricted to the current Windows user. They authenticate requests to the configured provider; Vault does not upload them to its own server. Research sends sanitized public subjects to the selected provider, not private content bodies or summaries. Read the consent disclosure for the exact fields sent. Provider usage includes connection tests and model-list requests as well as research.
-
-Research status shows queued requests, retry cooldowns, failures, and the day's token usage. **Retry failed subjects now** retries eligible failures; it does not bypass the daily allowance or consent.
+Correct a content item's tags in the browser extension. Click **+ tag**, search the available tags, and choose one to add it. Use a tag's remove control, or select it and press Delete once, to remove it. **Untagged** means tagging finished with no tags; **Tagging** means a result is pending. Your correction remains authoritative for that item.
 
 ## Activity
 
@@ -108,22 +92,20 @@ Choose a date range. **Timeline** shows use at its time of day; **Totals** sums 
 
 ### Activity groups
 
-Create a group to show its selected apps and websites together in Usage. **Merge** uses one name and color for its members throughout Activity. An Activity group organizes recorded use; it is separate from a blocking group or Classifier group. Save the Activity group editor explicitly with **Save**.
+Create a group to show its selected apps and websites together in Usage. **Merge** uses one name and color for its members throughout Activity. An Activity group organizes recorded use; it is separate from a blocking group or Content tagging group. Save the Activity group editor explicitly with **Save**.
 
 ### Recording and retention
 
 In **Recording**, turn recording on or off for each category or individual source. **Keep** controls how long history is retained; **Forever** keeps it without an automatic expiry. Individual choices can follow the broader setting. Turning recording off stops new recording; deleting history removes recorded entries.
 
-Platform feeds collect content shown on supported platform pages, whether opened or not. A feed with **Tagging supported** can supply the Classifier while recording is on. Its retention controls collected content separately from app and website usage. A paused Classifier group does not itself turn off recording.
+Platform feeds collect content shown on supported platform pages, whether opened or not. A feed with **Tagging supported** can supply Content tagging while recording is on. Its retention controls collected content separately from app and website usage. A paused Content tagging group does not itself turn off recording.
 
-## Classifier settings
-
-**Tag-package updates** selects when verified tag-package updates take effect: **Automatic**, **Ask first**, or **Manual**. It is separate from downloading the local model chosen in a group. Model files download from Hugging Face when you choose **Download**; use the group's progress/status and **Cancel** controls during a download.
+## Settings
 
 Choose the interface language in Settings. Field explanations are available through the small Info buttons in the selected interface language.
 
 ## Saving and troubleshooting
 
-Routine Vault and Classifier edits save automatically. Activity group editing uses **Save**. Adding, deleting, downloading a model, testing a connection, and fetching a model list remain explicit actions.
+Routine Vault and Content tagging edits save automatically. Activity group editing uses **Save**. Adding, deleting, connection tests and model-list fetching remain explicit actions.
 
-If tags are missing, check the browser connection, global tagging switch, group pause state, platform recording, and model download. If research does not run, check consent, group choice, provider credentials, research model, and the research status. If a linked group cannot be edited, reconnect its programs or unfreeze it as indicated.
+If tags are missing, check the browser connection, global tagging switch, group pause state, platform recording, selected connection/model and its credentials. For failed AI requests, check the selected connection and model, credentials, provider usage limits, and the group Log. If a linked group cannot be edited, reconnect its programs or unfreeze it as indicated.

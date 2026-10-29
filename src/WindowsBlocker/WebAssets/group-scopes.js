@@ -727,6 +727,7 @@
           // strip the user's saved source code, abort reason, or update
           // timestamp. The defaults are deliberately empty / null so non-custom
           // groups stay shape-compatible with the previous serialised form.
+          ruleAI: normalizedGroupType === "custom" ? A.normalizeRuleAI(group?.ruleAI) : null,
           activeEventSource:
             typeof group?.activeEventSource === "string" ? group.activeEventSource : "",
           lastAbortReason:
@@ -748,10 +749,12 @@
           : mergeFlatIntoScopes(storedLines, normalized, input.entryID || normalizedGroupType);
         // A website list patched onto a platform group edits its Websites entry
         // (owner 2026-09-24): the flat `sites`/`allowlist` describe that entry.
-        if (!useStoredLines && platformKind(normalizedGroupType) !== "site" && normalizedGroupType !== "custom"
+        if (!useStoredLines && entryPlatform(input.entryID || normalizedGroupType) !== "site"
+            && platformKind(normalizedGroupType) !== "site" && normalizedGroupType !== "custom"
             && (Object.prototype.hasOwnProperty.call(input, "sites") || Object.prototype.hasOwnProperty.call(input, "allowlist"))
             && (normalized.sites.length || normalized.allowlist || storedLines.some(line => line.surface === "site"))) {
-          scopes = mergeFlatIntoScopes(scopes, normalized, "site");
+          const website = groupPlatforms({ scopes: storedLines }).find(key => entryPlatform(key) === "site") || "site";
+          scopes = mergeFlatIntoScopes(scopes, normalized, website);
         }
         return {
           ...withoutFlatScopeFields(normalized),
@@ -837,10 +840,25 @@
     // flat fields read as lines).
     const [current] = sanitizeGroups([stored]);
     if (hasFlatScopeFields(edit)) {
-      const candidates = groupPlatforms(current).filter(key => entryPlatform(key) === normalizeEntryKey(type));
+      const fields = FLAT_SCOPE_FIELDS.filter(field => Object.hasOwn(edit, field));
+      // A website-only tool patch targets Websites even when the group also
+      // contains a platform. Resolve the exact entry before flattening; the
+      // stored groupType is a view hint, not an entry identity.
+      const websiteFieldsOnly = fields.every(field => ["sites", "allowlist", "pageAction"].includes(field));
+      const websiteOnly = websiteFieldsOnly && (Object.hasOwn(edit, "sites") || Object.hasOwn(edit, "allowlist"));
+      const target = edit.entryID ? entryPlatform(edit.entryID) : websiteOnly && type !== "custom" ? "site" : normalizeEntryKey(type);
+      if (target !== normalizeEntryKey(type) && !(target === "site" && websiteFieldsOnly)) return { error: "invalid-entryID" };
+      const candidates = groupPlatforms(current).filter(key => entryPlatform(key) === target);
       if (!edit.entryID && candidates.length > 1) return { error: "ambiguous-entry: specify entryID or scopes" };
-      if (edit.entryID && (!candidates.includes(edit.entryID) || entryPlatform(edit.entryID) !== normalizeEntryKey(type))) {
+      if (edit.entryID && (!candidates.includes(edit.entryID) || normalizeEntryKey(edit.entryID) !== edit.entryID)) {
         return { error: "invalid-entryID" };
+      }
+      edit.entryID = edit.entryID || candidates[0] || target;
+      // Preserve combined platform + Websites patches, refusing to guess
+      // which independent Website entry the secondary flat fields describe.
+      if (target !== "site" && target !== "custom" && (Object.hasOwn(edit, "sites") || Object.hasOwn(edit, "allowlist"))) {
+        const websites = groupPlatforms(current).filter(key => entryPlatform(key) === "site");
+        if (websites.length > 1) return { error: "ambiguous-entry: specify entryID or scopes" };
       }
     }
     // Lines sent without the other program's keep those as stored.
@@ -874,10 +892,149 @@
     "name", "enabled", "mode", "allowedMinutes", "resetIntervalHours", "resetAtMidnight", "rollingLimit",
     "allowSnooze", "snoozeKind", "snoozeMinutes", "snoozeActivationDelayMinutes", "snoozeCooldownMinutes", "snoozeConfirmations",
     "activeDays", "timeWindowsText",
-    "fallbackUrl", "pauseSeconds"
+    "fallbackUrl", "pauseSeconds", "ruleAI"
   ]);
 
+  // Object property insertion order is not an edit. Array order remains meaningful.
+  function definitionJSON(value) {
+    return JSON.stringify(value, (_key, item) => item && typeof item === "object" && !Array.isArray(item)
+      ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
+  }
+  function changedFields(before, after, excluded = []) {
+    const set = {}, remove = [];
+    for (const key of new Set([...Object.keys(before || {}), ...Object.keys(after || {})])) {
+      if (excluded.includes(key) || definitionJSON(before?.[key]) === definitionJSON(after?.[key])) continue;
+      if (Object.hasOwn(after || {}, key)) set[key] = after[key]; else remove.push(key);
+    }
+    return { set, remove };
+  }
+  function applyChangedFields(current, patch) {
+    const next = { ...current, ...(patch?.set || {}) };
+    for (const key of patch?.remove || []) delete next[key];
+    return next;
+  }
+  // The browser editor sends intent relative to its last loaded copy, never a
+  // replacement of all groups or all Website entries. Independently arriving
+  // peer entries/fields survive an unrelated local edit.
+  function editorLineMap(lines) {
+    const groups = new Map();
+    for (const line of lines) {
+      // Hub unions renumber line.id per surface. Entry identity and shelf name
+      // survive that operation. Repeated identical identities are ambiguous:
+      // native union preserves the incoming list, which can be reordered.
+      const key = definitionJSON([lineEntryKey(line), line.surface, line.shelf ?? null]);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(line);
+    }
+    return groups;
+  }
+  function editorLinesKey(lines) {
+    return definitionJSON((lines || []).map(({ id: _id, ...line }) => line));
+  }
+  // Match the editor's existing lock interpretation for compatible stored
+  // groups, including omitted fields. Admission must use the same effective
+  // lock as the UI without rewriting other groups merely to fill defaults.
+  function editorEffectiveGroup(group) {
+    return group && typeof group === "object" ? { ...group, ...global.CBGroupActions.normalizeLock(group) } : group;
+  }
+  function editorChange(before, after, owner) {
+    if (!before) return { id: after.id, create: after };
+    const change = { id: before.id, lock: global.CBGroupActions.lockUnit(editorEffectiveGroup(before)) };
+    if (!after) return { ...change, delete: true };
+    change.fields = changedFields(before, after, ["id", "scopes"]);
+    const oldLines = (before.scopes || []).filter(line => lineOwner(line) === owner);
+    const newLines = (after.scopes || []).filter(line => lineOwner(line) === owner);
+    const old = editorLineMap(oldLines);
+    const next = editorLineMap(newLines);
+    change.lines = [];
+    for (const key of new Set([...old.keys(), ...next.keys()])) {
+      const oldLines = old.get(key) || [], nextLines = next.get(key) || [];
+      if (editorLinesKey(oldLines) === editorLinesKey(nextLines)) continue;
+      if (oldLines.length > 1 || nextLines.length > 1) throw new Error("ambiguous-scope-edit; refresh the entry");
+      change.lines.push(!nextLines.length ? { key, delete: true } : !oldLines.length
+        ? { key, create: nextLines[0] } : { key, fields: changedFields(oldLines[0], nextLines[0], ["id"]) });
+    }
+    return change;
+  }
+  function applyEditorChange(current, change, owner) {
+    let next = applyChangedFields(current, change.fields);
+    const lines = [...(current.scopes || [])];
+    const targets = editorLineMap(lines);
+    for (const edit of change.lines || []) {
+      const matches = targets.get(edit.key) || [];
+      if (matches.length > 1) throw new Error("ambiguous-scope-edit; refresh the entry");
+      const at = matches.length ? lines.indexOf(matches[0]) : -1;
+      if (at >= 0 && lineOwner(lines[at]) !== owner) throw new Error("scope-owner-mismatch");
+      if (edit.delete) { if (at >= 0) lines.splice(at, 1); continue; }
+      if (edit.create) {
+        if (lineOwner(edit.create) !== owner) throw new Error("scope-owner-mismatch");
+        if (at >= 0) throw new Error("scope-changed; retry edit");
+        lines.push(edit.create);
+      } else {
+        if (at < 0) throw new Error("scope-changed; retry edit");
+        const line = applyChangedFields(lines[at], edit.fields);
+        if (lineOwner(line) !== owner) throw new Error("scope-owner-mismatch");
+        lines[at] = line;
+      }
+    }
+    next.scopes = change.lines?.length ? renumberLines(lines) : lines;
+    return sanitizeGroups([next])[0];
+  }
+
+  // Pure admission for both the worker and native editors. The backend supplies
+  // ownership/read-only context from its fresh authoritative transaction; those
+  // permissions are never taken from the editor request. Refusals leave the
+  // caller's group list intact, including earlier changes in the same request.
+  function applyEditorRequest(currentGroups, input, owner, context = {}) {
+    if (owner !== "browser" && owner !== "desktop") throw new Error("invalid-editor-owner");
+    const A = global.CBGroupActions;
+    const nowMs = context.nowMs ?? Date.now();
+    const readOnly = new Set(context.readOnlyGroupIds || []);
+    let groups = Array.isArray(currentGroups) ? currentGroups.slice() : [];
+    if (input.intent === "delete-all") {
+      if ((input.changes || []).some(change => !change.delete)) throw new Error("invalid-delete-all");
+      const plan = A.deleteAllPlan(groups.map(editorEffectiveGroup), nowMs);
+      if (plan.error || !plan.pinHashes.every(hash => (input.coveredPinHashes || []).includes(hash))) throw new Error("group-delete-gates-changed");
+    }
+    for (const change of input.changes || []) {
+      const index = groups.findIndex(group => group?.id === change.id);
+      const current = editorEffectiveGroup(groups[index]);
+      if (change.create) {
+        if (current) throw new Error("group-changed; retry edit");
+        const created = sanitizeGroups([change.create])[0];
+        if (!created || created.id !== change.id || (created.scopes || []).some(line => lineOwner(line) !== owner)) throw new Error("invalid-group-create");
+        groups.push(created); continue;
+      }
+      if (!current) { if (change.delete) continue; throw new Error("group-not-found"); }
+      if (readOnly.has(current.id)) throw new Error("desktop-unavailable");
+      if (definitionJSON(A.lockUnit(current)) !== definitionJSON(change.lock)) throw new Error("group-lock-changed; retry edit");
+      if (input.intent === "lock-fields") {
+        if (change.delete || change.lines?.length || [...Object.keys(change.fields?.set || {}), ...(change.fields?.remove || [])].some(key => !A.LOCK_FIELDS.includes(key))) throw new Error("invalid-lock-edit");
+        const candidate = applyEditorChange(current, change, owner);
+        if (A.isLocked(current)) {
+          if (!A.isLocked(candidate)) {
+            if (A.unlockPlan(current, nowMs).error) throw new Error("group-unlock-wait");
+          } else if (candidate.lockedAtMs !== current.lockedAtMs || Number(candidate.lockWaitHours) < Number(current.lockWaitHours) || (A.hasPin(current) && !A.hasPin(candidate))) throw new Error("lock-not-stricter");
+        }
+        groups[index] = candidate;
+      } else {
+        if (A.isLocked(current) && input.intent !== "delete-all") throw new Error("group-locked");
+        if (change.delete) groups.splice(index, 1);
+        else groups[index] = applyEditorChange(current, change, owner);
+      }
+    }
+    if (Array.isArray(input.order)) {
+      const moved = groups.find(group => group.id === input.movedId);
+      if (!moved || readOnly.has(moved.id) || A.isLocked(editorEffectiveGroup(moved))) throw new Error("group-not-editable");
+      const order = new Map(input.order.map((id, index) => [id, index]));
+      groups = groups.map((group, index) => ({ group, rank: order.has(group.id) ? order.get(group.id) : input.order.length + index }))
+        .sort((a, b) => a.rank - b.rank).map(item => item.group);
+    }
+    return { groups };
+  }
+
   const api = Object.freeze({
+    definitionJSON, editorEffectiveGroup, editorChange, applyEditorChange, applyEditorRequest,
     SCOPE_SURFACES, SCOPE_ACTIONS, FLAT_SCOPE_FIELDS, SYNC_SCALAR_FIELDS,
     scopeLegalActions, hasFlatScopeFields, hasScopeLines, withoutFlatScopeFields,
     scopeLinesFromFlat, flatFromScopes, mergeFlatIntoScopes, sanitizeScopeLines, deriveGroupType, platformKind,

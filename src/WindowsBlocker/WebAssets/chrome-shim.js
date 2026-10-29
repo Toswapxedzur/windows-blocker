@@ -21,6 +21,15 @@
  * before the editor reads storage.
  */
 (function () {
+  // Reconcile the retired scene-only language once. The app choice wins when
+  // both exist; names, rules and Classifier data are never rewritten.
+  try {
+    const oldLanguage = localStorage.getItem("vaultClassifier.language");
+    if (!localStorage.getItem("custom-blocker-language") && /^(en|ar|bn|de|es|fr|hi|id|it|ja|ko|nl|pa|pl|pt|ru|th|tr|vi|zh)$/.test(oldLanguage || "")) {
+      localStorage.setItem("custom-blocker-language", oldLanguage);
+    }
+    localStorage.removeItem("vaultClassifier.language");
+  } catch (_) {}
   window.__CB_DESKTOP_PROGRAM_ID = window.__CB_DESKTOP_PROGRAM_ID || "macapp";
   if (window.chrome && window.chrome.__cbShim) {
     return;
@@ -154,6 +163,13 @@
         if (typeof window.__cbOnAppInventory === "function") {
           try { window.__cbOnAppInventory(); } catch (_) {}
         }
+        // The picker may already be open when a newly running app arrives.
+        // Keep its current search and refresh the visible results in place.
+        var picker = document.getElementById("appPickerModal");
+        var search = document.getElementById("appPickerSearch");
+        if (picker && !picker.classList.contains("hidden") && search) {
+          search.dispatchEvent(new Event("input", { bubbles: true }));
+        }
       }
     } catch (_) {}
   };
@@ -184,7 +200,7 @@
     } catch (_) {}
   };
 
-  // Only v.log output, keyed by immutable group ID. Config snapshots must
+  // Rule output and explicit errors, keyed by immutable group ID. Config snapshots must
   // never overwrite this independent log store. The retired mixed buffer is ignored.
   var RULE_LOG_KEY = "__cb_rule_logs_by_group__";
   var ruleLogs = Object.create(null);
@@ -195,7 +211,7 @@
     Object.keys(savedLogs || {}).forEach(function (groupId) {
       if (!Array.isArray(savedLogs[groupId])) return;
       ruleLogs[groupId] = savedLogs[groupId].filter(function (entry) {
-        return entry && entry.source === "v.log" && entry.groupId === groupId;
+        return entry && (entry.source === "v.log" || entry.source === "page-error") && entry.groupId === groupId;
       }).slice(-200);
     });
   } catch (_) {}
@@ -212,12 +228,12 @@
   }
 
   function nativeLogToFeedEntry(e) {
-    if (!e || e.source !== "v.log" || typeof e.groupId !== "string" || !e.groupId) return null;
+    if (!e || (e.source !== "v.log" && e.source !== "page-error") || typeof e.groupId !== "string" || !e.groupId) return null;
     var ts = e.timestamp ? new Date(e.timestamp).getTime() : Date.now();
     if (!Number.isFinite(ts)) ts = Date.now();
     return {
       id: "native-" + logFeedSession + "-" + (++logFeedCounter),
-      ts: ts, source: "v.log", level: "log", groupId: e.groupId,
+      ts: ts, source: e.source, level: e.source === "page-error" || e.level === "error" ? "error" : "log", groupId: e.groupId,
       eventType: e.eventType || "", message: e.message || ""
     };
   }
@@ -339,11 +355,21 @@
   // A request Mac Vault answers through window.__cbNativeReply(id, reply).
   var nativeReplies = {};
   var nativeReplySeq = 0;
+  // A late reply from a replaced document must not resolve its fresh r1.
+  // This is request correlation, not an authentication credential.
+  var nativeReplyDocument;
+  try {
+    var random = new Uint32Array(4);
+    window.crypto.getRandomValues(random);
+    nativeReplyDocument = Array.from(random, function (value) { return value.toString(16); }).join("-");
+  } catch (_) {
+    nativeReplyDocument = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+  }
   function nativeRequest(kind, message, fallback) {
     var bridge = nativeBridge();
     if (!bridge) return Promise.resolve(fallback);
     return new Promise(function (resolve) {
-      var id = "r" + (++nativeReplySeq);
+      var id = nativeReplyDocument + "-r" + (++nativeReplySeq);
       nativeReplies[id] = resolve;
       setTimeout(function () {
         if (nativeReplies[id]) { delete nativeReplies[id]; resolve(fallback); }
@@ -361,6 +387,13 @@
     if (resolve) { delete nativeReplies[id]; resolve(reply); }
   };
 
+  // cbasset Blob downloads are cancelled by WebKit; save the selected log natively.
+  if (window.__CB_DESKTOP_PROGRAM_ID === "macapp") {
+    window.__cbSaveRuleLog = function (filename, text) {
+      return nativeRequest("save-rule-log", { filename: filename, text: text }, { ok: false, error: "Log download unavailable." });
+    };
+  }
+
   function bridgeOrResolve(kind, message, fallback) {
     var bridge = nativeBridge();
     if (bridge) {
@@ -374,6 +407,15 @@
   function handleSendMessage(message) {
     var type = message && message.type;
     switch (type) {
+      case "editor-definition-edit":
+        return nativeRequest("editor-definition-edit", message, { ok: false, error: "native-editor-response-unavailable" }).then(function (reply) {
+          if (!reply || reply.ok !== true) return reply || { ok: false, error: "native-editor-response-unavailable" };
+          if (!Array.isArray(reply.groups)) return { ok: false, error: "invalid-editor-response" };
+          // The native backend has durably committed these authoritative groups.
+          // Reconcile only this key, without publishing another full snapshot.
+          window.__cbApplyNativeStore(Object.assign({}, store, { blockedGroups: reply.groups }));
+          return reply;
+        });
       case "get-log-feed":
         pruneRuleLogs();
         return Promise.resolve({ ok: true, entries: (ruleLogs[message.groupId] || []).slice() });
@@ -386,6 +428,8 @@
         return nativeRequest("run-custom-group", message, { ok: false, error: "rules-not-running" });
       case "fire-snooze-press":
         return bridgeOrResolve("fire-snooze-press", message, { ok: true });
+      case "rule-ai-models":
+        return nativeRequest("rule-ai-models", message, {ok:false,models:[],error:"ai-unavailable"});
       case "vault-classifier-tag-names":
         return nativeRequest("vault-classifier-tag-names", message, { ok: false, names: [] });
       case "reset-group-runtime":
@@ -411,7 +455,7 @@
       }
     },
     getManifest: function () {
-      return window.__CB_DESKTOP_MANIFEST || { version: "1.2.0", name: "macosBlocker" };
+      return window.__CB_DESKTOP_MANIFEST || { version: "2.2.8", name: "Mac Vault" };
     },
     sendMessage: function (message, callback) {
       var result = handleSendMessage(message);
@@ -491,21 +535,43 @@
   window.chrome.permissions = permissions;
   window.chrome.i18n = i18n;
 
-  // Pull the installed-application inventory (served dynamically by the native
-  // scheme handler). It can be multi-megabyte with icons, so we fetch it rather
-  // than have it injected. Resolves relative to the current page origin.
-  try {
-    if (typeof fetch === "function") {
-      fetch("app-inventory.json", { cache: "no-store" })
-        .then(function (response) {
-          return response && response.ok ? response.json() : null;
-        })
-        .then(function (list) {
-          if (Array.isArray(list) && typeof window.__cbApplyAppInventory === "function") {
-            window.__cbApplyAppInventory(list);
-          }
-        })
-        .catch(function () {});
+  // The native inventory includes running apps outside Applications. Fetch it
+  // on load, each picker opening, and on return to an open picker so a newly
+  // launched app appears without reloading the editor. Only the newest request
+  // may replace the list; icon payloads can be large and finish out of order.
+  var appInventoryRequest = 0;
+  function refreshAppInventory() {
+    if (typeof fetch !== "function") return;
+    var request = ++appInventoryRequest;
+    fetch("app-inventory.json", { cache: "no-store" })
+      .then(function (response) { return response && response.ok ? response.json() : null; })
+      .then(function (list) {
+        if (request === appInventoryRequest && Array.isArray(list)) {
+          window.__cbApplyAppInventory(list);
+        }
+      })
+      .catch(function () {});
+  }
+  function watchAppPicker() {
+    var picker = document.getElementById("appPickerModal");
+    if (!picker || typeof MutationObserver !== "function") return;
+    var refreshIfOpen = function () {
+      if (!picker.classList.contains("hidden")) refreshAppInventory();
+    };
+    // NSWorkspace launch/quit notifications call this only while the picker is
+    // visible, so a background-launched app can appear without reopening it.
+    window.__cbRefreshAppInventory = refreshIfOpen;
+    new MutationObserver(refreshIfOpen).observe(picker, {
+      attributes: true, attributeFilter: ["class"]
+    });
+    window.addEventListener("focus", refreshIfOpen);
+  }
+  if (typeof document !== "undefined") {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", watchAppPicker, { once: true });
+    } else {
+      watchAppPicker();
     }
-  } catch (_) {}
+  }
+  refreshAppInventory();
 })();

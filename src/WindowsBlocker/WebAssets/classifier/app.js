@@ -9,36 +9,27 @@
   const navigationWidthStorageKey = "vaultClassifier.navigationPanelWidth";
   const navigationWidthRange = { minimum: 236, maximum: 460, fallback: 300 };
   const strings = window.VaultClassifierStrings || {};
-  const languageChoices = [
-    ["en", "language.name.en"],
-    ["ar", "language.name.ar"],
-    ["bn", "language.name.bn"],
-    ["de", "language.name.de"],
-    ["es", "language.name.es"],
-    ["fr", "language.name.fr"],
-    ["hi", "language.name.hi"],
-    ["id", "language.name.id"],
-    ["it", "language.name.it"],
-    ["ja", "language.name.ja"],
-    ["ko", "language.name.ko"],
-    ["nl", "language.name.nl"],
-    ["pa", "language.name.pa"],
-    ["pl", "language.name.pl"],
-    ["pt", "language.name.pt"],
-    ["ru", "language.name.ru"],
-    ["th", "language.name.th"],
-    ["tr", "language.name.tr"],
-    ["vi", "language.name.vi"],
-    ["zh", "language.name.zh"],
-  ];
+  const settingsScope = window.VaultSettings.scope;
+  const settingsRoot = window.VaultSettings.root;
+  const taggingScope = window.VaultSettings.taggingScope || settingsScope;
+  const taggingRoot = window.VaultSettings.taggingRoot || settingsRoot;
+  const uiScopes = [...new Set([scope, settingsScope, taggingScope])];
+  const uiRoots = [...new Set([root, settingsRoot, taggingRoot])];
+  const uiQuery = selector => uiRoots.map(node => node.querySelector(selector)).find(Boolean) || null;
+  const uiQueryAll = selector => uiRoots.flatMap(node => [...node.querySelectorAll(selector)]);
+  const activeControl = () => uiScopes.map(node => node.activeElement).find(Boolean) || null;
+  function listen(type, listener, options) { for (const node of uiScopes) node.addEventListener(type, listener, options); }
+  const captureSearch = () => uiScopes.map(node => [node, window.VaultUI.captureSearch(node)]);
+  function restoreSearch(saved) { for (const [node, focus] of saved) window.VaultUI.restoreSearch(node, focus); }
   let state = null;
   let renderedPresentationRevision = 0;
   let activeTagPanel = null;
-  // Advanced local-model settings disclosure. Toggled without a re-render so
-  // the CSS grid transition can play; re-renders rebuild from this flag.
-  // Per-type local-model request overrides have their own disclosure state;
-  // they must not expand/collapse the app-wide engine settings modal.
-  // Per-type research defaults have a separate disclosure for the same reason.
+  let connectionTab = "chatGPT";
+  const KEY_CONNECTIONS = ["openAI", "gemini", "xAI"];
+  function selectedTaggingModel(type) {
+    if (type.classificationProvider === "apiKey") return type.apiKey?.model ? `api:${type.apiKey.profileID}:${type.apiKey.model}` : "";
+    return type.chatGPT?.model ? `${type.chatGPT?.accountID === state.assets?.chatGPT?.accountID ? "chatgpt" : "unavailable"}:${type.chatGPT.model}` : "";
+  }
   let tagDrag = null;
   let suppressTagClick = false;
   let connectionSource = null;
@@ -51,40 +42,30 @@
   const treeViewportPositions = new Map();
   const editorViewportPositions = new Map();
   const liveEdits = new Map();
-  const knowledgeRows = new Map();
+
   let replacingControls = false;
   let composingEdit = false;
   // Non-null while the "create a group" dialog is open: { platformIDs, name? }.
   // A group can only be created through this dialog.
   let pendingCreateType = null;
   let utilityPanel = null;
-  let researchSetupRequested = false;
-  let researchSetupFocusPending = false;
-  let dictionarySetupFocusPending = false;
-  let researchModelQuery = "";
-  let researchModelQueryProvider = null;
+
   let releaseDialogFocus = null;
   let dialogFocusKind = null;
-  // "More" / "Options" expands the user opened: the page re-renders on every update.
-  const openExpands = new Set();
   // Which classifier type is open in the left-panel list (client-only UI state).
   let selectedTypeID = null;
   // Set to the pre-create set of type ids when "New type" is clicked, so the
   // next snapshot can open the freshly created type.
   let pendingSelectNewType = null;
-  let selectedLanguage = "en";
+  let selectedLanguage = document.documentElement.lang || "en";
   let languageMessages = {};
   let languageRevision = 0;
   let navigationPanelWidth = navigationWidthRange.fallback;
   let navigationResize = null;
-  const workspaceNames = new Set(["browserBridge", "knowledge"]);
+  const workspaceNames = new Set(["browserBridge"]);
   let lastRenderedMarkup = null;
   const listViewportPositions = new Map();
 
-  try {
-    const storedLanguage = window.localStorage.getItem("vaultClassifier.language");
-    if (languageChoices.some(([identifier]) => identifier === storedLanguage)) selectedLanguage = storedLanguage;
-  } catch (_) {}
   try {
     const storedWidth = Number(window.localStorage.getItem(navigationWidthStorageKey));
     if (Number.isFinite(storedWidth)) {
@@ -96,7 +77,7 @@
 
   function applyNavigationPanelWidth() {
     root.style.setProperty("--navigation-panel-width", `${navigationPanelWidth}px`);
-    root.querySelector("[data-navigation-resizer]")?.setAttribute("aria-valuenow", String(navigationPanelWidth));
+    uiQuery("[data-navigation-resizer]")?.setAttribute("aria-valuenow", String(navigationPanelWidth));
   }
 
   const esc = (value) => String(value ?? "")
@@ -149,7 +130,7 @@
 
   async function loadSelectedLanguage() {
     const revision = ++languageRevision;
-    const language = selectedLanguage;
+    const language = selectedLanguage = document.documentElement.lang || "en";
     let messages = {};
     try {
       if (window.VaultLoadMessages) messages = await window.VaultLoadMessages(language);
@@ -160,10 +141,9 @@
     } catch (_) {}
     if (revision !== languageRevision) return;
     languageMessages = messages;
-    root.lang = language;
-    root.dir = language === "ar" ? "rtl" : "ltr";
+    for (const node of uiRoots) { node.lang = language; node.dir = language === "ar" ? "rtl" : "ltr"; }
     render();
-    window.VaultInfo.refresh(scope);
+    for (const node of uiScopes) window.VaultInfo.refresh(node);
   }
 
   window.VaultClassifierTranslate = (key, values = {}) => {
@@ -190,7 +170,7 @@
   }
 
   function collect(formID) {
-    const form = root.querySelector(`[data-form-id="${formID}"]`);
+    const form = uiQuery(`[data-form-id="${formID}"]`);
     const values = {};
     if (!form) return values;
     form.querySelectorAll("[data-field]").forEach((control) => {
@@ -231,16 +211,17 @@
     const form = control.closest("[data-autosave-action]");
     if (!form) return false;
     // A setup choice is navigation, never a group mutation (including input/blur).
-    if (control.matches("[data-group-research-choice]") && control.value === "on" && !researchAvailability().ready) {
-      const draft = liveEdits.get(liveEditKey(form));
-      const type = (state.assets?.classifierTypes || []).find((item) => item.id === form.dataset.typeId);
-      control.value = draft?.values.researchMode ?? (type?.researchEnabled === true ? "on" : type?.researchEnabled === false ? "off" : "inherit");
-      openResearchSetup();
-      return true;
-    }
+
     const key = liveEditKey(form);
     const previous = liveEdits.get(key);
     window.clearTimeout(previous?.timer);
+    if (form.dataset.autosaveAction === "saveClassificationProvider" && control.dataset.field === "providerModel") {
+      const effort = form.querySelector('[data-field="reasoningEffort"]');
+      const options = reasoningChoices(control.value);
+      const previousEffort = effort.value;
+      effort.innerHTML = options.map(([value,label]) => `<option value="${esc(value)}">${esc(label)}</option>`).join("");
+      effort.value = options.some(([value]) => value === previousEffort) ? previousEffort : (options.some(([value]) => value === "medium") ? "medium" : "default");
+    }
     const values = collect(form.dataset.formId);
     if (form.dataset.autosaveAction === "configureClassifierType") {
       Object.keys(values).forEach((field) => { if (field !== "name") delete values[field]; });
@@ -252,7 +233,7 @@
     }
     const edit = { key, formID: form.dataset.formId, action: form.dataset.autosaveAction,
       values, identity: {} };
-    for (const [attribute, field] of [["typeId", "typeID"], ["providerId", "profileID"],
+    for (const [attribute, field] of [["typeId", "typeID"], ["providerId", "profileID"], ["connectionType", "type"],
       ["treeId", "treeID"], ["nodeId", "nodeID"], ["id", "id"]]) {
       if (form.dataset[attribute]) edit.identity[field] = form.dataset[attribute];
     }
@@ -266,29 +247,29 @@
     const assets = state?.assets || {};
     const type = (assets.classifierTypes || []).find((item) => item.id === edit.identity.typeID);
     switch (edit.action) {
-      case "saveDictionarySettings": return { creatorMode: state.settings?.dictionaries?.creatorMode || "cache", creatorCacheSize: String(state.settings?.dictionaries?.creatorCacheSize || 10000), contributionEnabled: state.settings?.dictionaries?.contributionEnabled !== false, choiceMade: true };
+
       case "configureClassifierType": return type && { name: type.name };
-      case "saveClassifierTypeLocalModel": return type && {
-        speedQuality: type.localModel?.speedQuality || "balanced",
-        strictness: String(type.localModel?.strictness ?? 3),
-        houseRules: type.localModel?.houseRules || "",
-        minimumTagsOverride: type.localModel?.minimumTagsOverride == null ? "" : String(type.localModel.minimumTagsOverride),
-        maximumTagsOverride: type.localModel?.maximumTagsOverride == null ? "" : String(type.localModel.maximumTagsOverride),
+      case "saveClassifierTypeTagging": return type && {
+        minimumConfidence: String(type.tagging?.minimumConfidence ?? 4),
+        houseRules: type.tagging?.houseRules || "",
       };
-      case "saveClassifierTypeResearch": return type && {
-        researchMode: type.researchEnabled === true ? "on" : type.researchEnabled === false ? "off" : "inherit",
-      };
-      case "saveResearchSettings": return { ...state.settings?.research,
-        llmProviderProfileID: state.settings?.research?.llmProviderProfileID || "",
-        llmModelIdentifier: state.settings?.research?.llmModelIdentifier || "" };
-      case "savePackageSettings": return state.settings;
+      case "saveClassificationProvider": return type && { providerModel: selectedTaggingModel(type), reasoningEffort: (type.classificationProvider === "apiKey" ? type.apiKey : type.chatGPT)?.reasoningEffort || "medium" };
+      case "saveChatGPTUsageLimit": return { dailyRequestLimit: state.assets?.chatGPT?.dailyRequestLimit == null ? "" : String(state.assets.chatGPT.dailyRequestLimit) };
+      case "saveChatGPTRetryPolicy": return { retryIntervalSeconds: String(state.assets?.chatGPT?.retryIntervalSeconds ?? 60), retryMaximumAttempts: String(state.assets?.chatGPT?.retryMaximumAttempts ?? 3) };
+
       case "saveClassificationSettings": return state.settings;
       case "saveBackup": return state.backup;
-      case "editKnowledgeEntry": if (assets.knowledge?.paged) return knowledgeRows.get(edit.identity.id) || {};
-        return [...(assets.knowledge?.creators || []),
-        ...(assets.knowledge?.terms || [])].find((item) => item.id === edit.identity.id);
+
       case "updateTag": return (assets.trees || []).find((tree) => tree.id === edit.identity.treeID)
         ?.nodes.find((node) => node.id === edit.identity.nodeID);
+      case "saveTaggingConnection": {
+        const profiles = (assets.providerProfiles || []).filter(item => item.type === edit.identity.type);
+        return profiles.length <= 1 ? { credential: profiles[0]?.credential || "" } : null;
+      }
+      case "saveTaggingRetryPolicy": {
+        const profiles = (assets.providerProfiles || []).filter(item => item.type === edit.identity.type);
+        return profiles.length <= 1 ? { retryIntervalSeconds: String(profiles[0]?.retryIntervalSeconds ?? 60), retryMaximumAttempts: String(profiles[0]?.retryMaximumAttempts ?? 3) } : null;
+      }
       case "updateProviderConnection": {
         const profile = (assets.providerProfiles || []).find((item) => item.id === edit.identity.profileID);
         if (!profile) return null;
@@ -313,35 +294,10 @@
     return Object.entries(edit.values).every(([field, value]) => normalized(field, value) === normalized(field, saved[field]));
   }
 
-  function validateTagBounds(form, values = collect(form.dataset.formId)) {
-    const minimumField = form.querySelector('[data-field="minimumTagsOverride"]');
-    const maximumField = form.querySelector('[data-field="maximumTagsOverride"]');
-    if (!minimumField || !maximumField) return true;
-    minimumField.setCustomValidity(""); maximumField.setCustomValidity("");
-    const strictness = Number(values.strictness || 3);
-    const defaultMinimum = strictness === 5 ? 1 : 0, defaultMaximum = strictness === 1 ? 1 : 3;
-    minimumField.placeholder = String(defaultMinimum); maximumField.placeholder = String(defaultMaximum);
-    const defaultsNote = form.querySelector('[data-tag-bounds-defaults]');
-    if (defaultsNote) defaultsNote.textContent = t("bridge.tagBounds.copy", { minimum: defaultMinimum, maximum: defaultMaximum });
-    const minimum = values.minimumTagsOverride === "" ? (strictness === 5 ? 1 : 0) : Number(values.minimumTagsOverride);
-    const maximum = values.maximumTagsOverride === "" ? (strictness === 1 ? 1 : 3) : Number(values.maximumTagsOverride);
-    const valid = minimumField.checkValidity() && maximumField.checkValidity()
-      && Number.isInteger(minimum) && Number.isInteger(maximum) && minimum <= maximum;
-    const error = form.querySelector('[data-tag-bounds-error]');
-    if (error) error.hidden = valid;
-    minimumField.setAttribute("aria-invalid", String(!valid));
-    maximumField.setAttribute("aria-invalid", String(!valid));
-    return valid;
-  }
-
   function flushLiveEdit(edit) {
     window.clearTimeout(edit.timer);
     edit.timer = null;
     if (edit.sent || composingEdit) return;
-    if (edit.action === "saveClassifierTypeLocalModel") {
-      const form = root.querySelector(`[data-form-id="${CSS.escape(edit.formID)}"]`);
-      if (form && !validateTagBounds(form, edit.values)) return;
-    }
     const saved = savedLiveEdit(edit);
     if (!saved || liveEditMatches(edit, saved)) { liveEdits.delete(edit.key); return; }
     edit.sent = true;
@@ -357,7 +313,7 @@
   function reconcileLiveEdits() {
     liveEdits.forEach((edit, key) => {
       const saved = savedLiveEdit(edit);
-      if (edit.action === "editKnowledgeEntry" && state.assets?.knowledge?.paged) return;
+
       if (!saved || (edit.sent && !state.issue && liveEditMatches(edit, saved))) {
         window.clearTimeout(edit.timer);
         liveEdits.delete(key);
@@ -366,7 +322,7 @@
   }
 
   function captureLiveEditFocus() {
-    const control = scope.activeElement;
+    const control = activeControl();
     const form = control?.closest?.("[data-autosave-action]");
     return form && control.matches("[data-field]") ? { key: liveEditKey(form),
       field: control.dataset.field, value: control.value, start: control.selectionStart,
@@ -374,7 +330,7 @@
   }
 
   function restoreLiveEdits(focused) {
-    root.querySelectorAll("[data-autosave-action]").forEach((form) => {
+    uiQueryAll("[data-autosave-action]").forEach((form) => {
       const key = liveEditKey(form), edit = liveEdits.get(key);
       form.querySelectorAll("[data-field]").forEach((control) => {
         if (control.closest("[data-autosave-action]") !== form) return;
@@ -390,20 +346,19 @@
         control.focus({ preventScroll: true });
         if (focused.start != null) control.setSelectionRange(focused.start, focused.end, focused.direction);
       });
-      if (form.dataset.autosaveAction === "saveClassifierTypeLocalModel") validateTagBounds(form);
     });
   }
 
-  scope.addEventListener("focusout", (event) => {
+  listen("focusout", (event) => {
     if (!replacingControls && !composingEdit) queueLiveEdit(event.target, true);
   });
-  scope.addEventListener("compositionstart", (event) => {
+  listen("compositionstart", (event) => {
     if (event.target.closest?.("[data-autosave-action]")) {
       flushLiveEdits();
       composingEdit = true;
     }
   });
-  scope.addEventListener("compositionend", (event) => {
+  listen("compositionend", (event) => {
     composingEdit = false;
     queueLiveEdit(event.target);
     if (event.target.matches("[data-model-search]")) render();
@@ -412,15 +367,16 @@
 
   // English field explanations are explicit; translations remain a release-time batch.
   const fieldInfo = Object.freeze({
-    "bridge.typeName": "The name shown for this Classifier group.",
-    "createType.nameLabel": "The name of the new Classifier group.",
-    "createType.platformLabel": "Choose the platforms this group will classify. A platform can belong to only one Classifier group.",
-    "bridge.applicablePlatform": "The platforms assigned when this Classifier group was created. Platform assignments are fixed for that group.",
-    "bridge.researchMode": "Allow research for this group, turn it off, or follow the app-wide switch. Research also requires global consent and a configured provider.",
+
+    "bridge.typeName": "The name shown for this content tagging group.",
+    "createType.nameLabel": "The name of the new content tagging group.",
+    "createType.platformLabel": "Choose the platforms this group will classify. A platform can belong to only one content tagging group.",
+    "bridge.applicablePlatform": "The platforms assigned when this content tagging group was created. Platform assignments are fixed for that group.",
+
     "llm.providerType": "Choose the provider’s API type before adding its configuration. Adding a provider does not create an API key.",
     "llm.apiKeyOrToken": "Paste the credential issued by this provider. Vault uses it to authenticate requests to that provider.",
     "llm.apiEndpoint": "The provider’s API base address. Leave blank to use its default endpoint.",
-    "llm.testModel": "The model identifier used by Test connection. This does not select the model used for web research.",
+    "llm.testModel": "The model identifier used by Test connection. Each group selects its tagging model.",
     "llm.protocol.accountID": "The account identifier required by this provider’s API.",
     "llm.protocol.apiVersion": "The API version sent to this provider. Use a version supported by its endpoint.",
     "llm.protocol.clientID": "The application or client identifier issued for this provider’s API.",
@@ -430,28 +386,26 @@
     "llm.protocol.userAgent": "The client identification sent with this provider’s API requests.",
     "llm.protocol.searchEngineID": "The search engine identifier required by this saved provider configuration.",
     "llm.protocol.protocolFamily": "The API format this endpoint accepts. Choose the format supported by the provider.",
-    "research.model": "The model used for web research. Fetch the selected provider’s model list, then choose a model.",
-    "research.modelSearch": "Find a model by its identifier in the fetched list.",
-    "classification.enabled": "Allow the Classifier to tag content. Individual Classifier groups can still be paused.",
-    "research.consent": "Allow web research to send public source identifiers and requested terms to the selected provider. Turning this off disables research.",
+
+    "classification.enabled": "Allow content tagging. Individual content tagging groups can still be paused.",
+    "tagging.minimumConfidence": "Apply a predicted tag only when its evidence grade reaches this level, including the first tag. One item may receive any number of supported tags, including none.",
+
     "backup.auto": "Create a local backup after configuration changes, using the configured backup folder.",
-    "knowledge.platform": "The platform that owns this content source. This determines how its name or link is interpreted.",
-    "knowledge.description": "Describe what this term or content source means so the Classifier can use that knowledge. Saved descriptions are editable.",
-    "knowledge.search": "Find saved knowledge by name, identifier, or description.",
-    "language.label": "Choose the app’s interface language. Stored groups, tags, and knowledge remain unchanged.",
+
     "tree.nodeName": "The name of this tag in the taxonomy and on tagged content.",
-    "tree.tagName": "The name of the tag to add to this Classifier group’s taxonomy."
+    "tree.tagName": "The name of the tag to add to this content tagging group’s taxonomy."
   });
   function infoAttrs(labelKey, hintKey = "") {
-    const text = languageMessages["classifierInfo." + labelKey] || fieldInfo[labelKey] || (hintKey ? t(hintKey) : "");
+    let text = languageMessages["classifierInfo." + labelKey] || fieldInfo[labelKey] || (hintKey ? t(hintKey) : "");
+    if (labelKey === "llm.apiKeyOrToken") text += ` ${t("connections.apiBilling")} ${t("llm.localOnlyDisclosure")}`;
     if (!text) return "";
     const target = labelKey === "bridge.typeName" ? ".classifier-name-row .field"
-      : labelKey === "llm.providerType" ? ".provider-create .field" : "";
+      : "";
     return `data-info-label="${esc(t(labelKey))}" data-info-key="${esc(labelKey)}" data-info-copy="${esc(text)}"${target ? ` data-info-target="${target}"` : ""}`;
   }
 
   function field(labelKey, hintKey, key, value, type = "text", extra = "") {
-    return `<label class="field"><span class="field-label" ${infoAttrs(labelKey, hintKey)}>${tx(labelKey)}${hintKey ? `<span class="field-hint" data-info> · ${tx(hintKey)}</span>` : ""}</span><input type="${type}" data-field="${esc(key)}" value="${type === "password" ? "" : esc(value)}" ${extra}></label>`;
+    return `<label class="field"><span class="field-label" ${infoAttrs(labelKey, hintKey)}>${tx(labelKey)}${hintKey ? `<span class="field-hint" data-info> · ${tx(hintKey)}</span>` : ""}</span><input type="${type}" data-field="${esc(key)}" value="${type === "password" && key !== "credential" ? "" : esc(value)}" ${extra}></label>`;
   }
 
   function textareaField(labelKey, hintKey, key, value, extra = "") {
@@ -464,7 +418,7 @@
 
   let deferredChoices = new Map();
   function mountChoices() {
-    root.querySelectorAll("[data-choice-key]").forEach(select => { const choice = deferredChoices.get(select.dataset.choiceKey); if (choice) window.VaultUI.setSelectOptions(select, choice.options, choice.value); });
+    uiQueryAll("[data-choice-key]").forEach(select => { const choice = deferredChoices.get(select.dataset.choiceKey); if (choice) window.VaultUI.setSelectOptions(select, choice.options, choice.value); });
   }
   function valueSelectField(labelKey, hintKey, key, value, options, extra = "") {
     let choiceKey = "", visible = options;
@@ -475,10 +429,6 @@
   function multiValueSelectField(labelKey, hintKey, key, values, options, extra = "") {
     const selectedValues = new Set(values || []);
     return `<label class="field"><span class="field-label" ${infoAttrs(labelKey, hintKey)}>${tx(labelKey)}${hintKey ? `<span class="field-hint" data-info> · ${tx(hintKey)}</span>` : ""}</span><select class="select-control multi-select-control" data-field="${esc(key)}" multiple ${extra}>${options.map(([id, label]) => `<option value="${esc(id)}"${selectedValues.has(id) ? " selected" : ""}>${esc(label)}</option>`).join("")}</select></label>`;
-  }
-
-  function groupedValueSelectField(labelKey, hintKey, key, value, groups, extra = "") {
-    return `<label class="field"><span class="field-label" ${infoAttrs(labelKey, hintKey)}>${tx(labelKey)}${hintKey ? `<span class="field-hint" data-info> · ${tx(hintKey)}</span>` : ""}</span><select class="select-control" data-field="${esc(key)}" ${extra}><option value=""${selected(value, "")}>${tx("llm.chooseProviderType")}</option>${groups.map(([groupKey, options]) => `<optgroup label="${tx(groupKey)}">${options.map(([id, label]) => `<option value="${esc(id)}"${selected(value, id)}>${esc(label)}</option>`).join("")}</optgroup>`).join("")}</select></label>`;
   }
 
   function toggle(labelKey, key, value, extra = "") {
@@ -498,36 +448,6 @@
 
   // Research lane status: live queue counters + the durable cooldown picture,
   // plus the user's escape hatch when a provider was down ("retry now").
-  function researchStatusBlock(status) {
-    if (!status || typeof status !== "object") return "";
-    const lines = [tx("research.status.queue", {
-      pending: status.pending ?? 0,
-      inCooldown: status.inCooldown ?? 0,
-      transient: status.transientInCooldown ?? 0,
-      succeeded: status.succeeded ?? 0,
-      failed: status.failed ?? 0,
-      retries: status.retries ?? 0,
-      skippedBudget: status.skippedBudget ?? 0
-    })];
-    if (status.inFlight) lines.push(tx("research.status.inFlight", { subject: status.inFlight }));
-    const failure = status.lastFailure;
-    if (failure && typeof failure === "object") {
-      const kindKey = `research.failure.${failure.kind || "unknown"}`;
-      const kind = tx(kindKey) === kindKey ? tx("research.failure.unknown") : tx(kindKey);
-      const retryIn = Number(failure.retryInSeconds) || 0;
-      lines.push(tx(retryIn > 0 ? "research.status.lastFailure" : "research.status.lastFailure.due", {
-        kind,
-        subject: failure.subject || "",
-        ago: formatDuration(failure.agoSeconds),
-        count: failure.failureCount ?? 1,
-        retry: formatDuration(retryIn)
-      }));
-    } else {
-      lines.push(tx("research.status.noFailures"));
-    }
-    const canRetry = (status.retryable ?? 0) > 0 || (status.inCooldown ?? 0) > 0;
-    return `<div class="research-status notice navy" data-research-status><strong>${tx("research.status.heading")}</strong>${lines.map((line) => `<p class="small-copy">${esc(line)}</p>`).join("")}<div class="action-row"><button class="secondary" data-action="retryFailedResearch" data-hint="${esc(tx("research.status.retryNowHint"))}"${canRetry ? "" : " disabled"}>${tx("research.status.retryNow")}</button></div></div>`;
-  }
 
   function statusPill(title, tone = "navy") {
     return `<span class="status-pill ${esc(tone)}">${esc(title)}</span>`;
@@ -537,174 +457,12 @@
     return `<div class="workspace-head"><div><h2>${tx(titleKey)}</h2><p class="section-copy" data-info>${tx(copyKey)}</p></div>${statusPill(badge, tone)}</div>`;
   }
 
-
-  function languageSelection() {
-    return `<label class="header-language" ${infoAttrs("language.label")}><span class="visually-hidden">${tx("language.label")}</span><select class="select-control" data-language-selection aria-label="${tx("language.label")}">${languageChoices.map(([identifier, nameKey]) => `<option value="${esc(identifier)}"${selected(selectedLanguage, identifier)}>${tx(nameKey)}</option>`).join("")}</select></label>`;
-  }
-
-  // The two dials of the local model (2026-09-23): Speed ↔ Quality picks a
-  // model tier, Strict ↔ Broad picks a tag-count position. Everything else
-  // is a constant on the Swift side.
-  const SPEED_TIERS = ["fast", "balanced", "best"];
-  const STRICTNESS_POSITIONS = [1, 2, 3, 4, 5];
-
-  function tierEntry(llm, tier) {
-    return (llm?.modelLibrary || []).find((entry) => entry.tier === tier) || null;
-  }
-
-  // One card per tier, carrying that tier's download state and controls.
-  function speedQualityCards(llm, selectedTier, groupID) {
-    const systemRAMGB = Number(llm.systemRAMGB) || 0;
-    return `<div class="dial-card-grid" role="radiogroup" aria-label="${esc(t("localModel.speedQuality"))}">${SPEED_TIERS.map((tier) => {
-      const entry = tierEntry(llm, tier);
-      const active = tier === selectedTier;
-      const stateKind = entry?.state?.kind || "available";
-      const fraction = Math.min(1, Math.max(0, Number(entry?.state?.fraction) || 0));
-      let controls = entry ? `<button type="button" class="primary" data-action="downloadModel" data-id="${esc(entry.id)}">${tx("modelLibrary.download")}</button>` : "";
-      if (entry && stateKind === "downloading") {
-        controls = `<div class="model-download-state"><span class="model-download-label">${tx("modelLibrary.downloading", { progress: percent(fraction) })}</span><div class="model-download-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(fraction * 100)}"><span style="width:${Math.round(fraction * 100)}%"></span></div></div><button type="button" class="secondary" data-action="cancelModelDownload" data-id="${esc(entry.id)}">${tx("modelLibrary.cancel")}</button>`;
-      } else if (entry && stateKind === "downloaded") {
-        controls = `${statusPill(t("modelLibrary.downloaded"), "cyan")}<button type="button" class="danger" data-action="deleteModelFile" data-file-name="${esc(entry.ggufFileName)}">${deleteLabel(`model:${entry.ggufFileName}`, tx("modelLibrary.delete"))}</button>`;
-      }
-      const meta = entry ? `<span class="dial-card-meta">${tx("localModel.tier.model", { model: entry.displayName, size: modelSizeGB(entry.downloadSizeBytes), ram: entry.minimumRAMGB })}</span>` : "";
-      const ramShort = entry && systemRAMGB && Number(entry.minimumRAMGB) > systemRAMGB
-        ? `<span class="dial-card-warning">${tx("localModel.tier.ramShort", { ram: entry.minimumRAMGB })}</span>` : "";
-      const badge = entry?.recommended ? `<span class="dial-card-badge">${tx("localModel.tier.recommended")}</span>` : "";
-      return `<label class="dial-card${active ? " active" : ""}"><input type="radio" name="speedQuality-${esc(groupID)}" data-field="speedQuality" value="${tier}"${active ? " checked" : ""}><span class="dial-card-head"><span class="dial-card-name">${tx(`localModel.tier.${tier}.name`)}</span>${badge}</span><span class="dial-card-desc" data-info>${tx(`localModel.tier.${tier}.desc`)}</span>${meta}${ramShort}<span class="dial-card-controls">${controls}</span></label>`;
-    }).join("")}</div>`;
-  }
-
-  // Five positions from Strictest to Broadest, each with what it does.
-  function strictnessOptions(selected, groupID) {
-    return `<div class="strictness-options" role="radiogroup" aria-label="${esc(t("localModel.strictness"))}">${STRICTNESS_POSITIONS.map((position) => {
-      const active = Number(selected) === position;
-      return `<label class="strictness-option${active ? " active" : ""}"><input type="radio" name="strictness-${esc(groupID)}" data-field="strictness" value="${position}"${active ? " checked" : ""}><span class="strictness-option-name">${position} · ${tx(`localModel.strictness.${position}.name`)}</span><span class="strictness-option-desc" data-info>${tx(`localModel.strictness.${position}.desc`)}</span></label>`;
-    }).join("")}</div>`;
-  }
+  const CONFIDENCE_CHOICES = [1, 2, 3, 4, 5].map(level => [String(level), `tagging.confidence.${level}`]);
 
   // Read only acknowledged native state: a draft key/model is not ready yet.
-  function researchAvailability() {
-    const research = state.settings?.research || {};
-    const profile = (state.assets?.providerProfiles || []).find((item) => item.id === research.llmProviderProfileID);
-    const protocol = state.assets?.providerProtocols?.[profile?.type] || {};
-    const providerReady = protocol.supportsGenerateText === true && protocol.supportsNativeWebSearch === true;
-    const keyReady = providerReady && (!protocol.credentialRequired || Boolean(profile?.credential?.trim()));
-    const modelReady = Boolean(research.llmModelIdentifier?.trim());
-    const configured = providerReady && keyReady && modelReady;
-    return { profile, providerReady, keyReady, modelReady, configured, ready: configured && research.enabled === true,
-      actionKey: !configured ? "research.setup" : research.enabled ? "research.configure" : "research.enable" };
-  }
-
-  function openResearchSetup() {
-    utilityPanel = "settings";
-    dictionarySetupFocusPending = false;
-    researchSetupRequested = true;
-    researchSetupFocusPending = true;
-    render();
-    window.requestAnimationFrame(placeResearchSetup);
-  }
-
-  function openDictionarySetup() {
-    utilityPanel = "settings";
-    researchSetupRequested = false;
-    researchSetupFocusPending = false;
-    dictionarySetupFocusPending = true;
-    render();
-    window.requestAnimationFrame(placeDictionarySetup);
-  }
-
-  function placeDictionarySetup() {
-    if (!dictionarySetupFocusPending || utilityPanel !== "settings") return;
-    const target = root.querySelector(".utility-dictionary-section h3");
-    if (!target) return;
-    dictionarySetupFocusPending = false;
-    target.tabIndex = -1;
-    target.focus({ preventScroll: true });
-    target.scrollIntoView({ block: "center" });
-  }
-
-  function placeResearchSetup() {
-    if (!researchSetupRequested || utilityPanel !== "settings") return;
-    const availability = researchAvailability();
-    const missing = [];
-    if (!availability.providerReady) {
-      missing.push(root.querySelector((state.assets?.providerProfiles || []).some((profile) => {
-        const protocol = state.assets?.providerProtocols?.[profile.type];
-        return protocol?.supportsGenerateText && protocol?.supportsNativeWebSearch;
-      }) ? '[data-form-id="utility-research-form"] [data-field="llmProviderProfileID"]' : '[data-form-id="new-provider-profile-form"] [data-field="type"]'));
-    } else if (!availability.keyReady) {
-      missing.push(root.querySelector(`[data-form-id="${CSS.escape(`provider-profile-${availability.profile.id}`)}"] [data-field="credential"]`));
-    }
-    if (!availability.modelReady) missing.push(root.querySelector("[data-model-selector], [data-model-fetch]"));
-    if (availability.configured && !availability.ready) missing.push(root.querySelector('[data-form-id="utility-research-form"] [data-field="enabled"]'));
-    root.querySelectorAll(".research-setup-needed").forEach((field) => field.classList.remove("research-setup-needed"));
-    missing.filter(Boolean).forEach((control) => control.closest(".field, label")?.classList.add("research-setup-needed"));
-    if (!researchSetupFocusPending) return;
-    researchSetupFocusPending = false;
-    const target = missing.find(Boolean) || root.querySelector(".utility-research-section h3");
-    if (target) {
-      if (target.tagName === "H3") target.tabIndex = -1;
-      const focusTarget = target.matches("select") ? target.nextElementSibling?.querySelector(".vui-select-button") || target : target;
-      focusTarget.focus({ preventScroll: true });
-      focusTarget.scrollIntoView({ block: "center" });
-    }
-  }
-
-  function currentResearchValues() {
-    const draft = [...liveEdits.values()].find((edit) => edit.formID === "utility-research-form");
-    return { ...state.settings?.research, ...draft?.values };
-  }
-
-  function researchModelPicker() {
-    const research = currentResearchValues();
-    const providerID = research.llmProviderProfileID || "";
-    const profile = (state.assets?.providerProfiles || []).find((item) => item.id === providerID);
-    const protocol = state.assets?.providerProtocols?.[profile?.type] || {};
-    const canFetch = protocol.supportsGenerateText && protocol.supportsNativeWebSearch
-      && (!protocol.credentialRequired || Boolean(profile?.credential?.trim()));
-    const catalogs = state.assets?.providerModelCatalogs || {};
-    const fetched = Boolean(profile && Object.hasOwn(catalogs, providerID));
-    const models = fetched ? catalogs[providerID] : [];
-    const loading = (state.assets?.loadingProviderModelProfileIDs || []).includes(providerID);
-    const error = state.assets?.providerModelCatalogErrors?.[providerID];
-    const current = research.llmModelIdentifier || "";
-    if (researchModelQueryProvider !== providerID) {
-      researchModelQueryProvider = providerID;
-      researchModelQuery = "";
-    }
-    const expandKey = `research-model:${providerID}`;
-    const unavailable = fetched && current && !models.includes(current);
-    const choices = models.map((model) => `<button type="button" class="vui-menu-item research-model-option${model === current ? " is-selected" : ""}" data-model-pick="${esc(model)}" aria-pressed="${model === current}">${esc(model)}</button>`).join("");
-    const picker = fetched ? `<details class="research-model-picker" data-expand="${esc(expandKey)}"${openExpands.has(expandKey) ? " open" : ""}><summary class="vui-select-button" tabindex="0" data-model-selector aria-label="${tx("research.model")}: ${current ? esc(current) : tx("research.chooseModel")}"><span class="vui-select-label">${current ? esc(current) : tx("research.chooseModel")}</span></summary><div class="research-model-menu vui-menu"><div class="vui-info-field" ${infoAttrs("research.modelSearch")}><input type="search" data-model-search value="${esc(researchModelQuery)}" aria-label="${tx("research.modelSearch")}" placeholder="${tx("research.modelSearch")}" autocomplete="off" spellcheck="false"></div><div class="research-model-list vui-list-box" data-list-key="${esc(expandKey)}" tabindex="0" aria-label="${tx("research.model")}">${choices}</div><p class="small-copy" data-model-no-matches hidden>${tx("research.noMatchingModels")}</p>${models.length ? "" : `<p class="small-copy">${tx("research.noModels")}</p>`}</div></details>` : current ? `<p class="small-copy">${tx("research.savedModel", { model: current })}</p>` : "";
-    return `<div class="field research-model-field"><span class="field-label" ${infoAttrs("research.model")}>${tx("research.model")}</span><input type="hidden" data-field="llmModelIdentifier" value="${esc(current)}">${picker}${unavailable ? `<p class="small-copy research-model-unavailable">${tx("research.modelUnavailable")}</p>` : ""}<div class="action-row"><button type="button" class="secondary" data-action="probeProviderModelCatalog" data-profile-id="${esc(providerID)}" data-model-fetch${disabled(!canFetch || loading)}>${tx(loading ? "research.fetchingModels" : error ? "research.retryModels" : fetched ? "research.refreshModels" : "research.fetchModels")}</button></div>${!canFetch ? `<p class="small-copy">${tx(profile ? "research.modelKeyRequired" : "research.modelProviderRequired")}</p>` : ""}${loading ? `<p class="small-copy" role="status">${tx("research.fetchingModels")}</p>` : ""}${error ? `<div role="alert">${notice(error, "red")}</div>` : ""}</div>`;
-  }
-
-  function filterResearchModels() {
-    const query = researchModelQuery.trim().toLowerCase();
-    const options = [...root.querySelectorAll("[data-model-pick]")];
-    options.forEach((option) => { option.hidden = !option.dataset.modelPick.toLowerCase().includes(query); });
-    const noMatches = root.querySelector("[data-model-no-matches]");
-    if (noMatches) noMatches.hidden = !options.length || options.some((option) => !option.hidden);
-    placeResearchModelMenu();
-  }
-
-  function closeResearchModelMenu(restoreFocus = false) {
-    const picker = root.querySelector(".research-model-picker[open]");
-    if (!picker) return false;
-    window.VaultUI.hideMenuLayer(picker.querySelector(".research-model-menu"));
-    picker.open = false;
-    openExpands.delete(picker.dataset.expand);
-    if (restoreFocus) picker.querySelector("summary")?.focus({ preventScroll: true });
-    return true;
-  }
 
   // Keep the menu inside the Settings dialog for its focus trap, but out of
   // layout flow. It uses the same white floating card as the shared selects.
-  function placeResearchModelMenu() {
-    const picker = root.querySelector(".research-model-picker[open]");
-    if (!picker) return;
-    placeClassifierMenu(picker.querySelector("summary"), picker.querySelector(".research-model-menu"));
-  }
 
   function placeClassifierMenu(anchor, menu) {
     window.VaultUI.showMenuLayer(menu);
@@ -723,45 +481,57 @@
     menu.style.visibility = "visible";
   }
 
-  document.addEventListener("pointerdown", (event) => {
-    const picker = root.querySelector(".research-model-picker[open]");
-    if (picker && !event.composedPath().includes(picker)) closeResearchModelMenu();
-    const suggestions = root.querySelector("[data-knowledge-suggestions]");
-    const creator = root.querySelector("[data-knowledge-creator]");
-    if (suggestions && !event.composedPath().includes(suggestions) && !event.composedPath().includes(creator)) closeKnowledgeSuggestions();
-  }, true);
-  scope.addEventListener("scroll", (event) => {
-    if (!event.target.closest?.(".research-model-menu")) placeResearchModelMenu();
-    placeKnowledgeSuggestions();
-  }, true);
-  window.addEventListener("resize", () => { placeResearchModelMenu(); placeKnowledgeSuggestions(); });
+  document.addEventListener("scroll", () => {   }, true);
+  window.addEventListener("resize", () => {   });
 
-  function utilityPanelContent() {
-    if (!utilityPanel) return "";
-    let content = "";
-    if (utilityPanel === "settings") {
-      const settings = state.settings;
-      const research = settings.research || {};
-      const assets = state.assets || {};
-      const profiles = assets.providerProfiles || [];
-      const protocols = assets.providerProtocols || {};
-      const generationProfiles = profiles.filter((profile) => protocols[profile.type]?.supportsGenerateText === true);
-      const isGroundingCapable = (profile) => protocols[profile.type]?.supportsGenerateText === true && protocols[profile.type]?.supportsNativeWebSearch === true;
-      // Research is provider-grounding only, so only grounding-capable providers are offered.
-      const llmProviderOptions = [["", tx("research.chooseProvider")]].concat(generationProfiles.filter(isGroundingCapable).map((profile) => [profile.id, profile.name]));
-      const classificationSection = `<section class="utility-settings-section" data-form-id="classification-settings-form" data-autosave-action="saveClassificationSettings"><h3 class="utility-settings-section-title">${tx("classification.title")}</h3><div class="utility-toggles">${toggle("classification.enabled", "classificationEnabled", settings.classificationEnabled !== false)}</div><p class="section-copy" data-info>${tx("classification.copy")}</p></section>`;
-      const researchSection = `<section class="utility-settings-section utility-research-section" data-form-id="utility-research-form" data-autosave-action="saveResearchSettings"><h3 class="utility-settings-section-title">${tx("research.title")} ${statusPill(tx(research.enabled ? "research.status.on" : "research.status.off"), research.enabled ? "cyan" : "muted")}</h3><p class="section-copy" data-info>${tx("research.copy")}</p><div class="notice navy research-data-flow" data-info>${tx("research.disclosure")}</div><div class="utility-toggles">${
-        toggle("research.consent", "enabled", research.enabled === true)
-      }</div><div class="utility-settings-fields">${
-        valueSelectField("research.llmProvider", "research.llmProviderHint", "llmProviderProfileID", research.llmProviderProfileID || "", llmProviderOptions)
-      }${
-        researchModelPicker()
-      }</div><p class="small-copy" data-info="research.constantsNote" data-info-target=".utility-research-section h3">${tx("research.constantsNote")}</p><p class="small-copy">${tx("research.usageToday", { used: research.tokensUsedToday ?? 0, limit: research.dailyTokenLimit ?? 10000 })}</p>${researchStatusBlock(research.status)}</section>`;
-      const packageSection = `<section class="utility-settings-section utility-resource-section" data-form-id="utility-package-form" data-autosave-action="savePackageSettings"><h3 class="utility-settings-section-title">${tx("settings.packageUpdates")}</h3><div class="utility-settings-fields">${selectField("settings.packageUpdates", "settings.packageUpdatesCopy", "packageUpdateMode", settings.packageUpdateMode, [["automatic", "enum.update.automatic"], ["downloadThenAsk", "enum.update.downloadThenAsk"], ["manual", "enum.update.manual"]])}</div></section>`;
-      content = `<section class="utility-panel utility-settings-modal"><div class="utility-panel-head"><div><h2>${tx("utility.settings.title")}</h2><p class="section-copy" data-info>${tx("utility.settings.copy")}</p></div><button class="secondary utility-close" data-action="closeUtilityPanel">${tx("utility.close")}</button></div><div class="utility-settings-body">${notice(state.issue, "red")}${classificationSection}${apiKeySettings()}${researchSection}${dictionaryControls()}${packageSection}<section class="utility-settings-section"><h3 class="utility-settings-section-title">${tx("language.label")}</h3>${languageSelection()}</section></div></section>`;
+  function chatGPTAccountSection() {
+    const account = state.assets?.chatGPT || {};
+    const busy = account.signingIn === true;
+    return `<section class="utility-settings-section" data-chatgpt-account><p class="small-copy">${account.connected ? esc(account.email || t("cloud.connected")) : tx("cloud.disconnected")}</p><p class="small-copy" data-info>${tx("cloud.disclosure")}</p><div class="action-row">${busy ? `<span role="status">${tx("cloud.signingIn")}</span><button type="button" class="secondary" data-action="cancelChatGPTSignIn">${tx("cloud.cancel")}</button>` : `<button type="button" class="secondary" data-action="connectChatGPT">${tx("cloud.connect")}</button>`}${account.connected ? `<button type="button" class="secondary" data-action="refreshChatGPTModels">${tx("cloud.refreshModels")}</button><button type="button" class="secondary" data-action="disconnectChatGPT">${tx("cloud.disconnect")}</button>` : ""}</div>${account.connected && !account.planUsageEnabled ? `<p role="alert">${tx("cloud.planRequired")}</p>` : ""}${notice(account.issue, "red")}<div data-form-id="chatgpt-limit-form" data-autosave-action="saveChatGPTUsageLimit">${field("cloud.dailyLimit", "cloud.dailyLimitHint", "dailyRequestLimit", account.dailyRequestLimit ?? "", "number", 'min="1" max="100000" step="1"')}</div><div class="tagging-retry-fields" data-form-id="chatgpt-retry-form" data-autosave-action="saveChatGPTRetryPolicy">${field("connections.retryInterval", "", "retryIntervalSeconds", account.retryIntervalSeconds ?? 60, "number", 'min="1" max="3600" step="1"')}${field("connections.retryAttempts", "", "retryMaximumAttempts", account.retryMaximumAttempts ?? 3, "number", 'min="1" max="10" step="1"')}</div><p class="small-copy" data-info>${tx("connections.retryHint")}</p><p class="small-copy">${tx("cloud.requestsToday", {count: account.requestsToday || 0})}</p>${account.connected ? `<button type="button" class="${account.needsRetry ? "primary" : "secondary"}" data-action="openChatGPTUsage">${tx("cloud.manageUsage")}</button>` : ""}${account.needsRetry || account.failedItems ? `<button type="button" class="secondary" data-action="retryChatGPTClassifications">${tx("cloud.retry")}</button>` : ""}</section>`;
+  }
+
+  function reasoningChoices(model) {
+    const levels = state.assets?.classificationModelCapabilities?.[model]?.reasoningEfforts || ["default", "low", "medium", "high"];
+    return levels.map(value => [value, t(`cloud.reasoning.${value}`)]);
+  }
+  function cloudProviderSection(type) {
+    const account = state.assets?.chatGPT || {};
+    const selected = selectedTaggingModel(type);
+    const choices = [["", t("cloud.chooseModel")]];
+    if (account.planUsageEnabled) (account.models || []).forEach(model => {
+      if (state.assets?.classificationModelCapabilities?.[`chatgpt:${model.id}`]?.searchCompatible !== false) choices.push([`chatgpt:${model.id}`, `${t("connections.subscription")} · ${model.name}`]);
+    });
+    for (const profile of state.assets?.providerProfiles || []) {
+      if (!KEY_CONNECTIONS.includes(profile.type) || !profile.hasCredential) continue;
+      for (const model of state.assets?.providerModelCatalogs?.[profile.id] || []) {
+        const id = model.id || model.identifier || model;
+        if (state.assets?.classificationModelCapabilities?.[`api:${profile.id}:${id}`]?.searchCompatible !== false) choices.push([`api:${profile.id}:${id}`, `${profile.name} · ${id}`]);
+      }
     }
-    if (!content) return "";
-    return `<div class="utility-popover-layer" role="presentation"><button class="utility-popover-dismiss" data-action="closeUtilityPanel" aria-label="${tx("utility.close")}"></button><div class="utility-popover" data-list-key="settings" role="dialog" aria-modal="true" aria-label="${esc(tx("utility.settings.title"))}">${content}</div></div>`;
+    const configuration = type.classificationProvider === "apiKey" ? type.apiKey : type.chatGPT;
+    if (!choices.some(([value]) => value === selected)) choices.push([selected, `${configuration?.model || ""} · ${t("cloud.unavailable")}`]);
+    const configured = Boolean(configuration?.model);
+    const effort = configuration?.reasoningEffort || "medium";
+    const efforts = reasoningChoices(selected);
+    if (!efforts.some(([value]) => value === effort)) efforts.push([effort, `${t(`cloud.reasoning.${effort}`)} · ${t("cloud.unavailable")}`]);
+    const retry = account.needsRetry || account.failedItems || state.assets?.apiKeyClassification?.failedProfileIDs?.length;
+    return `<section class="section-card classifier-type-section classifier-ai-section" data-form-id="cloud-provider-${esc(type.id)}" data-autosave-action="saveClassificationProvider" data-type-id="${esc(type.id)}">${valueSelectField("cloud.provider", "", "providerModel", selected, choices)}${valueSelectField("cloud.reasoning", "cloud.reasoningHint", "reasoningEffort", effort, efforts)}<div class="action-row"><button type="button" class="secondary" data-action="openConnections">${tx("connections.manage")}</button>${retry ? `<button type="button" class="secondary" data-action="retryChatGPTClassifications">${tx("cloud.retry")}</button>` : ""}</div>${configured ? `<p class="small-copy">${tx(type.classificationProvider === "apiKey" ? "connections.apiBilling" : "cloud.usingPlan")}</p><p class="small-copy" data-search-always>${tx("cloud.searchAlways")}</p>` : ""}</section>`;
+  }
+
+  function connectionsSection() {
+    const options = [["chatGPT","connections.subscription"],["openAI","connections.openAI"],["gemini","connections.gemini"],["xAI","connections.grok"]];
+    return `<div data-tagging-connections>${selectField("connections.title", "", "connectionType", connectionTab, options)}${connectionTab === "chatGPT" ? chatGPTAccountSection() : apiKeySettings(connectionTab)}</div>`;
+  }
+
+  function nativeTaggingContent() {
+    if (utilityPanel !== "settings" || !state) return "";
+    const settings = state.settings;
+    return `<section class="utility-settings-section" data-form-id="classification-settings-form" data-autosave-action="saveClassificationSettings"><h3 class="utility-settings-section-title">${tx("classification.title")}</h3><div class="utility-toggles">${toggle("classification.enabled", "classificationEnabled", settings.classificationEnabled !== false)}</div><p class="section-copy" data-info>${tx("classification.copy")}</p></section>`;
+  }
+
+  function nativeConnectionsContent() {
+    if (utilityPanel !== "settings" || !state) return "";
+    return `${notice(state.issue, "red")}${connectionsSection()}`;
   }
 
   function navButton(workspace, symbol, titleKey, metaKey) {
@@ -796,14 +566,14 @@
       <div class="sidebar-group-title">${tx("navigation.classifierTypes")}</div>
       <div class="classifier-type-nav vui-list-box" data-classifier-type-nav data-list-key="types" tabindex="0" aria-label="${tx("navigation.classifierTypes")}">${typeRows}</div>
       <button class="sidebar-add" type="button" data-action="newType"><span aria-hidden="true">＋</span> ${tx("navigation.newType")}</button>
-      ${navButton("knowledge", "✦", "navigation.knowledge", "navigation.knowledgeMeta")}`;
+      `;
   }
 
   function shell(content) {
     return `<div class="popup">
       <header class="vui-topbar">
-        <nav class="vui-tabs" aria-label="${sx("activity.scene", "Scene")}"><button type="button" class="vui-tab" data-scene="vault">${sx("scene.vault", "Vault")}</button><button type="button" class="vui-tab is-active" data-scene="classifier">${sx("scene.classifier", "Classifier")}</button><button type="button" class="vui-tab" data-scene="activity">${sx("scene.activity", "Activity")}</button></nav>
-        <div class="vui-topbar-links"><button type="button" class="secondary" data-action="openManual">${sx("manual.title", "User manual")}</button><span class="settings-popover-anchor"><button type="button" class="secondary" data-action="openUtilityPanel" data-utility-panel="settings" aria-haspopup="dialog" aria-expanded="${utilityPanel ? "true" : "false"}">${tx("utility.settings.button")}</button>${utilityPanelContent()}</span></div>
+        <nav class="vui-tabs" aria-label="${sx("activity.scene", "Scene")}"><button type="button" class="vui-tab" data-scene="vault">${sx("scene.vault", "Vault")}</button><button type="button" class="vui-tab is-active" data-scene="classifier">${sx("scene.classifier", "Content tagging")}</button><button type="button" class="vui-tab" data-scene="activity">${sx("scene.activity", "Activity")}</button></nav>
+        <div class="vui-topbar-links"><button type="button" class="secondary" data-action="openManual">${sx("manual.title", "User manual")}</button><span class="settings-popover-anchor"><button type="button" class="secondary" data-action="openUtilityPanel" data-utility-panel="settings" aria-haspopup="dialog" aria-expanded="${utilityPanel ? "true" : "false"}">${tx("utility.settings.button")}</button></span></div>
       </header>
       <div class="layout">
         <aside class="navigation-panel" aria-label="${tx("navigation.aria")}">
@@ -819,32 +589,32 @@
   function initialShell() {
     // Native state arrives asynchronously. Keep navigation available from the
     // first paint rather than replacing the whole scene with a loading screen.
-    return `<div class="popup"><header class="vui-topbar"><nav class="vui-tabs" aria-label="${sx("activity.scene", "Scene")}"><button type="button" class="vui-tab" data-scene="vault">${sx("scene.vault", "Vault")}</button><button type="button" class="vui-tab is-active" data-scene="classifier">${sx("scene.classifier", "Classifier")}</button><button type="button" class="vui-tab" data-scene="activity">${sx("scene.activity", "Activity")}</button></nav></header><div class="layout" aria-busy="true"></div></div>`;
+    return `<div class="popup"><header class="vui-topbar"><nav class="vui-tabs" aria-label="${sx("activity.scene", "Scene")}"><button type="button" class="vui-tab" data-scene="vault">${sx("scene.vault", "Vault")}</button><button type="button" class="vui-tab is-active" data-scene="classifier">${sx("scene.classifier", "Content tagging")}</button><button type="button" class="vui-tab" data-scene="activity">${sx("scene.activity", "Activity")}</button></nav></header><div class="layout" aria-busy="true"></div></div>`;
   }
 
   function syncDialogFocus(previousControl) {
-    const kind = pendingCreateType ? "create" : utilityPanel;
+    const kind = state?.assets?.chatGPT?.needsWelcome ? "welcome" : pendingCreateType ? "create" : null;
     releaseDialogFocus?.(false);
     releaseDialogFocus = null;
     if (!kind) {
-      if (dialogFocusKind) root.querySelector(dialogFocusKind === "create"
+      if (dialogFocusKind) uiQuery(dialogFocusKind === "create"
         ? '[data-action="newType"]' : '[data-action="openUtilityPanel"]')?.focus({ preventScroll: true });
       dialogFocusKind = null;
       return;
     }
     dialogFocusKind = kind;
-    const card = root.querySelector(kind === "create" ? "[data-create-type-dialog]" : '.utility-popover[role="dialog"]');
+    const card = uiQuery(kind === "welcome" ? "[data-chatgpt-welcome]" : kind === "create" ? "[data-create-type-dialog]" : '.utility-popover[role="dialog"]');
     if (!card) return;
-    const active = scope.activeElement;
+    const active = activeControl();
     const initial = card.contains(active) ? active : previousControl
       ? Array.from(card.querySelectorAll("button, input, select, textarea")).find((control) =>
         control.dataset.action === previousControl.action && control.dataset.field === previousControl.field
         && control.hasAttribute("data-create-type-name") === previousControl.createName
         && (!previousControl.platform || control.value === previousControl.platform)) : null;
     releaseDialogFocus = window.VaultUI.focusDialog(card, {
-      initialFocus: initial || card.querySelector(kind === "create" ? "[data-create-type-name]" : '[data-action="closeUtilityPanel"]'),
-      returnFocus: () => root.querySelector(kind === "create" ? '[data-action="newType"]' : '[data-action="openUtilityPanel"]'),
-      onEscape: dismissClassifierDialog
+      initialFocus: initial || card.querySelector(kind === "welcome" ? '[data-action="acknowledgeChatGPTPlan"]' : kind === "create" ? "[data-create-type-name]" : '[data-action="closeUtilityPanel"]'),
+      returnFocus: () => uiQuery(kind === "create" ? '[data-action="newType"]' : '[data-action="openUtilityPanel"]'),
+      onEscape: kind === "welcome" ? () => send("acknowledgeChatGPTPlan") : dismissClassifierDialog
     });
     if (previousControl?.start != null && initial?.setSelectionRange) {
       initial.setSelectionRange(previousControl.start, previousControl.end);
@@ -866,12 +636,13 @@
   }
 
   // A classifier type's own tag tree (the tree belongs to its type: made and
-  // deleted with it). The canvas is as tall as its tags (at most 520 px) and
+  // deleted with it). The empty canvas stays compact; a populated canvas is
+  // as tall as its tags (at most 520 px) and
   // shows no scroll bars (owner 2026-09-30): drag empty space or use the
   // trackpad to pan a tree wider than the panel.
   const graphModels = new Map();
   function mountLargeGraphs() {
-    for (const map of root.querySelectorAll("[data-tree-map]")) {
+    for (const map of uiQueryAll("[data-tree-map]")) {
       const model = graphModels.get(map.dataset.treeId);
       if (!model || model.nodes.length <= 200) continue;
       window.VaultUI.bindFind(map, { items: model.nodes, id: node => node.id,
@@ -907,7 +678,7 @@
         if (point.x + 126 >= left && point.x <= right && point.y + 22 >= top && point.y <= bottom) visible.add(node.id);
       }
     }
-    const active = scope.activeElement?.closest?.(".tree-map-node");
+    const active = activeControl()?.closest?.(".tree-map-node");
     if (active?.dataset.treeId === map.dataset.treeId) visible.add(active.dataset.nodeId);
     const existing = new Map([...layer.children].map(row => [row.dataset.nodeId, row]));
     for (const [id, row] of existing) if (!visible.has(id)) row.remove();
@@ -917,7 +688,7 @@
       if (!row || row.__graphMarkup !== markup) {
         const template = document.createElement("template"); template.innerHTML = markup;
         const next = template.content.firstElementChild; next.__graphMarkup = markup;
-        const focused = row === scope.activeElement;
+        const focused = row === activeControl();
         if (row) row.replaceWith(next); else layer.append(next);
         row = next; if (focused) row.focus({ preventScroll: true });
       }
@@ -940,7 +711,7 @@
       }]));
       const panelState = activeTagPanel?.treeID === tree.id ? activeTagPanel : null;
       const contentWidth = [...positions.values()].reduce((max, position) => Math.max(max, position.x + 126), 0) + 28;
-      const contentHeight = Math.max(240, [...positions.values()].reduce((max, position) => Math.max(max, position.y + 22), 0) + 28,
+      const contentHeight = Math.max(nodes.length ? 240 : 144, [...positions.values()].reduce((max, position) => Math.max(max, position.y + 22), 0) + 28,
         panelState ? 380 : 0);  // room for the popover, placed in view below
       const selectedNodeID = selectedTagNode?.treeID === tree.id ? selectedTagNode.nodeID : "";
       const popoverNode = panelState?.nodeID ? nodeByID.get(panelState.nodeID) : null;
@@ -952,7 +723,7 @@
           isEdit ? "tree.nodeName" : "tree.tagName",
           "",
           "name",
-          isEdit ? popoverNode.name : "",
+          isEdit ? popoverNode.name : panelState.draft?.name || "",
           "text",
           isEdit ? `data-live-tag-name data-tree-id="${esc(tree.id)}" data-node-id="${esc(nodeID)}"` : ""
         );
@@ -960,14 +731,14 @@
           "tree.tagDescription",
           "tree.tagDescriptionCopy",
           "description",
-          isEdit ? popoverNode.description || "" : "",
+          isEdit ? popoverNode.description || "" : panelState.draft?.description || "",
           "maxlength=\"1024\""
         );
         const actions = isEdit
           ? `<button class="secondary" data-action="beginConnection" data-tree-id="${esc(tree.id)}" data-node-id="${esc(nodeID)}">${tx("tree.connection")}</button><button class="secondary" data-action="disconnectTag" data-tree-id="${esc(tree.id)}" data-node-id="${esc(nodeID)}"${disabled(!popoverNode.parentID)}>${tx("tree.disconnection")}</button><button class="danger" data-action="deleteTag" data-tree-id="${esc(tree.id)}" data-node-id="${esc(nodeID)}">${deleteLabel(`tag:${nodeID}`, tx("tree.deleteNode"))}</button>`
           : `<button class="primary" data-action="addTag" data-form="tag-popover-form" data-tree-id="${esc(tree.id)}">${tx("tree.createNode")}</button>`;
         // Placed beside its anchor, inside the visible part (placeTreePopovers).
-        return `<section class="tree-popover" data-anchor-x="${panelState.x}" data-anchor-y="${panelState.y}" data-anchor-w="${panelState.w || 0}" data-tree-popover data-form-id="tag-popover-form"${isEdit ? ` data-autosave-action="updateTag" data-tree-id="${esc(tree.id)}" data-node-id="${esc(nodeID)}"` : ""}><div class="tree-popover-head"><span class="eyebrow">${tx(isEdit ? "tree.editNode" : "tree.createNode")}</span><button class="tree-popover-close" data-action="cancelTagPanel" data-hint="${tx("tree.cancel")}" aria-label="${tx("tree.cancel")}">×</button></div><div class="tree-form">${nameField}${descriptionField}<div class="action-row">${actions}</div></div></section>`;
+        return `<section class="tree-popover" data-anchor-x="${panelState.x}" data-anchor-y="${panelState.y}" data-anchor-w="${panelState.w || 0}" data-tree-popover data-form-id="tag-popover-form" data-tree-id="${esc(tree.id)}"${isEdit ? ` data-autosave-action="updateTag" data-node-id="${esc(nodeID)}"` : ""}><div class="tree-popover-head"><span class="eyebrow">${tx(isEdit ? "tree.editNode" : "tree.createNode")}</span><button class="tree-popover-close" data-action="cancelTagPanel" data-hint="${tx("tree.cancel")}" aria-label="${tx("tree.cancel")}">×</button></div><div class="tree-form">${nameField}${descriptionField}<div class="action-row">${actions}</div></div></section>`;
       })() : "";
       const nodeMarkup = node => {
         const position = positions.get(node.id);
@@ -1005,7 +776,7 @@
   // part of the canvas has no room on the right, and moved up so all of it
   // shows.
   function placeTreePopovers() {
-    root.querySelectorAll("[data-tree-map]").forEach((map) => {
+    uiQueryAll("[data-tree-map]").forEach((map) => {
       const popover = map.querySelector("[data-tree-popover]");
       if (!popover) return;
       const x = Number(popover.dataset.anchorX) || 0;
@@ -1023,135 +794,32 @@
     });
   }
 
-  function providerTypeLabelKey(type) {
-    const keys = {
-      openAI: "llm.provider.openAI",
-      openAICompatible: "llm.provider.openAICompatible",
-      deepSeek: "llm.provider.deepSeek",
-      gemini: "llm.provider.gemini",
-      anthropic: "llm.provider.anthropic",
-      mistral: "llm.provider.mistral",
-      cohere: "llm.provider.cohere",
-      groq: "llm.provider.groq",
-      openRouter: "llm.provider.openRouter",
-      ollama: "llm.provider.ollama",
-      youtubeData: "llm.provider.youtubeData",
-      twitch: "llm.provider.twitch",
-      reddit: "llm.provider.reddit",
-      xPlatform: "llm.provider.xPlatform",
-      instagramGraph: "llm.provider.instagramGraph",
-      facebookGraph: "llm.provider.facebookGraph",
-      serper: "llm.provider.serper",
-      youSearch: "llm.provider.youSearch",
-      custom: "llm.provider.custom",
-    };
-    return keys[type] || "llm.provider.openAICompatible";
-  }
-
-  function protocolFieldLabelKey(fieldName) {
-    const keys = {
-      accountID: "llm.protocol.accountID",
-      apiVersion: "llm.protocol.apiVersion",
-      clientID: "llm.protocol.clientID",
-      location: "llm.protocol.location",
-      projectID: "llm.protocol.projectID",
-      region: "llm.protocol.region",
-      userAgent: "llm.protocol.userAgent",
-      searchEngineID: "llm.protocol.searchEngineID",
-      protocolFamily: "llm.protocol.protocolFamily",
-    };
-    return keys[fieldName] || "llm.protocol.protocolFamily";
-  }
-
-  const listRequests = new Map();
-  let listRequestNumber = 0;
-  function queryKnowledge(kind, platformID, request) {
-    const requestID = "knowledge-" + (++listRequestNumber);
-    return new Promise(resolve => {
-      const timer = setTimeout(() => { listRequests.delete(requestID); resolve(null); }, 15000);
-      listRequests.set(requestID, packet => { clearTimeout(timer); resolve(packet); });
-      const drafts = Object.fromEntries([...liveEdits.values()].filter(edit => edit.action === "editKnowledgeEntry").slice(-256).map(edit => [edit.identity.id, edit.values.meaning]));
-      send("knowledgePage", { ...request, query: String(request.query || "").slice(0, 200), requestID, kind, platformID, drafts });
-    });
-  }
   let pendingLists = [];
   function listPlaceholder(key, items, render, text, pageSize = 12) {
-    const nativeKnowledge = key.startsWith("knowledge:") && state.assets?.knowledge?.paged;
-    const parts = key.split(":");
-    pendingLists.push({ key, items, render, text, pageSize,
-      ...(nativeKnowledge ? { total: state.assets.knowledge.counts?.[parts.slice(1).join(":")] || 0,
-        queryPage: request => queryKnowledge(parts[1], parts[2] || "", request) } : {}) });
+    pendingLists.push({ key, items, render, text, pageSize });
     return "";
   }
   function mountLists() {
     for (const options of pendingLists) {
-      const list = [...root.querySelectorAll("[data-vui-search]")].find(list => list.dataset.vuiSearch === options.key);
+      const list = [...uiQueryAll("[data-vui-search]")].find(list => list.dataset.vuiSearch === options.key);
       if (!list) continue;
       let focused = null;
       window.VaultUI.renderList(list, { ...options, scope, beforePaint() { focused = captureLiveEditFocus(); }, afterPaint() {
         restoreLiveEdits(focused);
-        root.querySelectorAll(".knowledge-card").forEach(updateKnowledgeSearchText);
         window.VaultUI.enhance(list);
       } });
     }
   }
 
-  function apiKeySettings() {
-    const profiles = state.assets.providerProfiles || [];
-    const requestRecords = state.assets.providerRequestRecords || [];
-    const protocols = state.assets.providerProtocols || {};
-    const recordsByProfile = new Map();
-    for (const record of requestRecords) {
-      let records = recordsByProfile.get(record.profileID);
-      if (!records) { records = []; recordsByProfile.set(record.profileID, records); }
-      records.push(record);
-    }
-    const profileTypeGroups = [
-      ["llm.providerGroup.models", ["openAI", "deepSeek", "gemini", "anthropic", "mistral", "cohere", "groq", "openRouter", "ollama"].map((type) => [type, t(providerTypeLabelKey(type))])],
-      ["llm.providerGroup.platform", ["youtubeData", "twitch", "reddit", "xPlatform", "instagramGraph", "facebookGraph"].map((type) => [type, t(providerTypeLabelKey(type))])],
-      ["llm.providerGroup.custom", ["openAICompatible", "custom"].map((type) => [type, t(providerTypeLabelKey(type))])],
-    ];
-    const panel = (profile) => {
-      const formID = `provider-profile-${profile.id}`;
-      const protocol = protocols[profile.type] || {};
-      const supportsLLM = Boolean(protocol.supportsLLMConfiguration);
-      const supportsPlatformData = Boolean(protocol.supportsPlatformData);
-      // Serper / You.com fed the removed raw-search mode: kept readable, never testable or used.
-      const retiredSearchProvider = Boolean(protocol.retiredSearchProvider);
-      const profileRecords = (recordsByProfile.get(profile.id) || []);
-      const summary = state.assets.providerRequestSummaries?.[profile.id];
-      const latestResponseDiagnostic = summary ? (summary.responseShape ? { responseShape: summary.responseShape } : null) : profileRecords
-        .filter((record) => typeof record.responseShape === "string" && record.responseShape.length > 0)
-        .sort((left, right) => Number(right.createdAtMilliseconds) - Number(left.createdAtMilliseconds))[0];
-      const tokenTotal = summary ? summary.tokenTotal : profileRecords.reduce(
-        (total, record) => total + (Number(record.tokenCount) || 0),
-        0
-      );
-      const credentialField = protocol.credentialRequired ? field("llm.apiKeyOrToken", "", "credential", profile.credential || "", "text", "data-provider-connection autocapitalize=\"off\" spellcheck=\"false\"") : "";
-      const endpointField = protocol.allowsEndpointOverride ? field("llm.apiEndpoint", "", "customEndpoint", profile.customEndpoint || "", "text", "data-provider-connection") : "";
-      const testModelField = supportsLLM && (protocol.allowsEndpointOverride || !profile.defaultModelIdentifier)
-        ? field("llm.testModel", "", "testModelIdentifier", profile.testModelIdentifier || "", "text", `data-provider-connection placeholder=\"${esc(profile.defaultModelIdentifier || "model-name")}\"`)
-        : "";
-      const protocolFields = (protocol.configurationRequirements || []).map((requirement) => field(
-        protocolFieldLabelKey(requirement.field),
-        "",
-        `protocol.${requirement.field}`,
-        profile.protocolConfiguration?.[requirement.field] ?? requirement.defaultValue ?? "",
-        "text",
-        "data-provider-connection"
-      )).join("");
-      const connectionFields = [credentialField, endpointField, testModelField, protocolFields].filter(Boolean).join("");
-      const testAvailable = (supportsLLM || supportsPlatformData) && !retiredSearchProvider;
-      const testButton = testAvailable ? `<button class="gold-action" data-action="testProviderProfile" data-form="${esc(formID)}" data-profile-id="${esc(profile.id)}"${disabled(profile.testing)}>${tx(profile.testing ? "llm.testing" : "llm.test")}</button>` : "";
-      const usage = supportsPlatformData || retiredSearchProvider
-        ? `<p class="provider-token-usage"><span>${tx("llm.apiCalls")}</span><strong>${summary ? summary.calls : profileRecords.filter((record) => ["readPublicContent", "searchWeb", "search-creator-web"].includes(record.operation) && Number.isInteger(record.statusCode)).length}</strong></p>`
-        : `<p class="provider-token-usage"><span>${tx("llm.tokenUsage")}</span><strong>${tx("llm.tokenTotal", { total: tokenTotal })}</strong></p>`;
-      const responseDiagnostic = latestResponseDiagnostic
-        ? `<p class="provider-response-shape"><span>${tx("llm.responseShape")}</span><strong>${esc(latestResponseDiagnostic.responseShape)}</strong></p>`
-        : "";
-      return `<section class="provider-panel" data-vui-search-text="${esc(profile.name + " " + t(providerTypeLabelKey(profile.type)))}" data-provider-panel data-provider-id="${esc(profile.id)}" data-form-id="${esc(formID)}" data-autosave-action="updateProviderConnection"><div class="provider-panel-head"><h3>${esc(profile.name)}</h3><div class="provider-panel-actions">${testButton}<button class="danger" data-action="confirmDeleteProviderProfile" data-profile-id="${esc(profile.id)}">${deleteLabel(`provider:${profile.id}`, tx("llm.deleteProfile"))}</button></div></div>${retiredSearchProvider ? `<div class="notice navy">${tx("llm.retiredSearchProvider")}</div>` : ""}<div class="provider-panel-body">${connectionFields ? `<div class="provider-connection-fields">${connectionFields}</div>` : ""}</div><footer class="provider-request-summary">${usage}${responseDiagnostic}</footer>${profile.testSucceeded ? notice(t("llm.testSucceeded"), "green") : ""}</section>`;
-    };
-    return `<section class="utility-settings-section utility-api-keys"><h3 class="utility-settings-section-title">${tx("navigation.apiKeys")}</h3><p class="section-copy" data-info>${tx("llm.copy")}</p><div class="notice navy provider-local-only" data-info>${tx("llm.localOnlyDisclosure")}</div><section class="provider-create" data-form-id="new-provider-profile-form">${groupedValueSelectField("llm.providerType", "", "type", "", profileTypeGroups)}<button class="gold-action" data-action="createProviderProfile" data-form="new-provider-profile-form">${tx("llm.createKey")}</button><span class="small-copy" data-info="llm.createCopy">${tx("llm.createCopy")}</span></section><div class="provider-panels vui-list-box" data-vui-search="classifier-providers" data-vui-search-label="Search provider profiles" data-vui-search-items=".provider-panel" data-list-key="providers" tabindex="0" aria-label="${tx("llm.keyLibrary")}">${profiles.length ? listPlaceholder("classifier-providers", profiles, panel, profile => profile.name + " " + t(providerTypeLabelKey(profile.type))) : `<div class="empty">${tx("llm.empty")}</div>`}</div></section>`;
+  function apiKeySettings(connectionType) {
+    const profiles = (state.assets.providerProfiles || []).filter(profile => profile.type === connectionType);
+    const profile = profiles.length === 1 ? profiles[0] : null;
+    const conflict = profiles.length > 1;
+    const id = profile?.id || "";
+    const error = conflict ? t("connections.duplicateKeys") : state.assets.providerModelCatalogErrors?.[id];
+    const loading = (state.assets.loadingProviderModelProfileIDs || []).includes(id);
+    const count = (state.assets.providerModelCatalogs?.[id] || []).length;
+    return `<section class="tagging-key-fields" data-tagging-key-fields><div data-form-id="tagging-key-${esc(connectionType)}" data-autosave-action="saveTaggingConnection" data-connection-type="${esc(connectionType)}">${field("llm.apiKeyOrToken", "", "credential", profile?.credential || "", "password", `autocapitalize="off" spellcheck="false"${disabled(conflict)}`)}</div><div class="tagging-retry-fields" data-form-id="tagging-retry-${esc(connectionType)}" data-autosave-action="saveTaggingRetryPolicy" data-connection-type="${esc(connectionType)}">${field("connections.retryInterval", "", "retryIntervalSeconds", profile?.retryIntervalSeconds ?? 60, "number", `min="1" max="3600" step="1"${disabled(conflict)}`)}${field("connections.retryAttempts", "", "retryMaximumAttempts", profile?.retryMaximumAttempts ?? 3, "number", `min="1" max="10" step="1"${disabled(conflict)}`)}</div><p class="small-copy" data-info>${tx("connections.retryHint")}</p><div class="action-row"><button type="button" class="secondary" data-action="probeProviderModelCatalog" data-profile-id="${esc(id)}"${disabled(!profile?.hasCredential || loading || conflict)}>${tx(loading ? "research.fetchingModels" : error ? "research.retryModels" : count ? "research.refreshModels" : "research.fetchModels")}</button>${count ? `<span class="small-copy">${tx("connections.modelCount", {count})}</span>` : ""}</div>${notice(error,"red")}</section>`;
   }
 
   // The classifiable platforms as a checklist (owner 2026-09-30: a type may take
@@ -1195,35 +863,19 @@
         if (binding && !binding.collectionEnabled) notes.push(`${platform.name}: ${t("bridge.recordingOff")}`);
         return notes;
       });
-      const localModel = classifierType.localModel || { speedQuality: "balanced", strictness: 3, houseRules: "" };
-      const localModelFormID = `classifier-local-model-form-${classifierType.id}`;
-      const library = state.settings?.localModels || {};
-      const selectedEntry = tierEntry(library, localModel.speedQuality);
-      const modelReady = selectedEntry?.state?.kind === "downloaded";
-      const engineStatus = modelReady ? (selectedEntry.engineStatus || "downloaded") : "no-model";
-      const engineTone = { loaded: "cyan", downloaded: "cyan", loading: "navy", failed: "red", "no-model": "pink" }[engineStatus] || "navy";
-      const engineLabel = engineStatus === "downloaded" ? "modelLibrary.downloaded" : `localModel.status.${engineStatus}`;
-      const defaultMinimum = localModel.strictness === 5 ? 1 : 0;
-      const defaultMaximum = localModel.strictness === 1 ? 1 : 3;
-      const boundsSummary = localModel.minimumTagsOverride != null || localModel.maximumTagsOverride != null
-        ? t("bridge.tagBounds.custom", { minimum: localModel.minimumTagsOverride ?? defaultMinimum, maximum: localModel.maximumTagsOverride ?? defaultMaximum })
-        : t("bridge.tagBounds.default");
-      const expandKey = `type-more:${classifierType.id}`;
-      const localModelSection = `<section class="classifier-type-section classifier-local-model" data-local-model-section><div class="section-header"><div><h3>${tx("bridge.localModel")} ${statusPill(tx(engineLabel), engineTone)}</h3><p class="section-copy" data-info>${tx("bridge.localModelCopy")}</p></div></div><div class="field wide"><span class="field-label">${tx("localModel.speedQuality")}<span class="field-hint" data-info> · ${tx("localModel.speedQualityHint")}</span></span>${speedQualityCards(library, localModel.speedQuality, classifierType.id)}<p class="model-library-source-note" data-info>${tx("localModel.tier.sourceNote")}</p></div><div class="field wide"><span class="field-label">${tx("localModel.strictness")}<span class="field-hint" data-info> · ${tx("localModel.strictnessHint")}</span></span>${strictnessOptions(localModel.strictness, classifierType.id)}${localModel.minimumTagsOverride != null || localModel.maximumTagsOverride != null ? `<p class="small-copy" data-info="bridge.tagBounds.precedence">${tx("bridge.tagBounds.precedence")}</p>` : ""}</div><p class="small-copy resident-model-note" data-info data-info-target="[data-local-model-section] h3">${tx("bridge.localModelResidentNote")}</p>${textareaField("bridge.localModelHouseRules", "bridge.localModelHouseRulesCopy", "houseRules", localModel.houseRules, 'rows="4" maxlength="4000"')}</section>`;
-      const tagBoundsSection = `<details class="vui-expand classifier-group-more" data-expand="${esc(expandKey)}"${openExpands.has(expandKey) ? " open" : ""}><summary><span>${tx("navigation.more")}</span><span class="small-copy classifier-override-summary">${esc(boundsSummary)}</span></summary><section class="classifier-type-section"><p class="section-copy" data-info data-tag-bounds-defaults>${tx("bridge.tagBounds.copy", { minimum: defaultMinimum, maximum: defaultMaximum })}</p><div class="utility-settings-fields">${field("bridge.tagBounds.minimum", "bridge.tagBounds.minimumHint", "minimumTagsOverride", localModel.minimumTagsOverride ?? "", "number", `min="0" max="3" step="1" placeholder="${defaultMinimum}"`)}${field("bridge.tagBounds.maximum", "bridge.tagBounds.maximumHint", "maximumTagsOverride", localModel.maximumTagsOverride ?? "", "number", `min="1" max="3" step="1" placeholder="${defaultMaximum}"`)}</div><p class="notice red" data-tag-bounds-error role="status" hidden>${tx("bridge.tagBounds.error")}</p></section></details>`;
-      const researchFormID = `classifier-research-form-${classifierType.id}`;
-      const researchMode = classifierType.researchEnabled === true ? "on" : classifierType.researchEnabled === false ? "off" : "inherit";
-      const researchOverrideSection = `<section class="classifier-type-section classifier-research-overrides"><div class="section-header"><div><h3>${tx("bridge.researchOverrides")}</h3><p class="section-copy" data-info>${tx("bridge.researchOverridesCopy")}</p></div></div><div data-form-id="${esc(researchFormID)}" data-autosave-action="saveClassifierTypeResearch" data-type-id="${esc(classifierType.id)}"><div class="utility-settings-fields">${valueSelectField("bridge.researchMode", "", "researchMode", researchMode, [["inherit", t("bridge.researchMode.inherit")], ["on", t(researchAvailability().ready ? "bridge.researchMode.on" : researchAvailability().actionKey)], ["off", t("bridge.researchMode.off")]], "data-group-research-choice")}${researchMode === "on" && !researchAvailability().ready ? `<button class="secondary" data-action="openResearchSetup">${tx(researchAvailability().actionKey)}</button>` : ""}</div><p class="small-copy research-master-note" data-info>${tx("bridge.researchMasterGate")}</p></div></section>`;
+      const tagging = classifierType.tagging || { minimumConfidence: 4, houseRules: "" };
+      const taggingFormID = `classifier-tagging-form-${classifierType.id}`;
+      const taggingSection = `<section class="section-card gold classifier-type-section classifier-tagging" data-tagging-section><div class="section-header"><div><h3>${tx("cloud.tagging")}</h3></div></div>${selectField("tagging.minimumConfidence", "tagging.minimumConfidenceHint", "minimumConfidence", String(tagging.minimumConfidence), CONFIDENCE_CHOICES)}${textareaField("bridge.localModelHouseRules", "bridge.localModelHouseRulesCopy", "houseRules", tagging.houseRules, 'rows="4" maxlength="4000"')}</section>`;
+
       return `<section class="classifier-type-panel" data-form-id="${esc(formID)}" data-type-id="${esc(classifierType.id)}" data-autosave-action="configureClassifierType">
-        <div class="classifier-name-row">${field("bridge.typeName", "", "name", classifierType.name, "text", 'maxlength="128"')}</div>
-        <section class="classifier-type-section classifier-applicable-platform-section"><span class="field-label" ${infoAttrs("bridge.applicablePlatform")}>${tx("bridge.applicablePlatform")}</span>${platformChoices(chosen, classifierType.id)}<p class="small-copy" data-info="bridge.platformsFixed">${tx("bridge.platformsFixed")}</p>${platformNotes.map((note) => `<p class="small-copy">${esc(note)}</p>`).join("")}</section>
-        <div class="action-row classifier-tagging-control"><button type="button" class="secondary" data-action="setClassifierTypePaused" data-type-id="${esc(classifierType.id)}" data-paused="${classifierType.isPaused !== true}">${tx(classifierType.isPaused === true ? "classification.resume" : "classification.pause")}</button>${statusPill(tx(classifierType.isPaused === true ? "classification.paused" : state.settings?.classificationEnabled === false ? "classification.disabled" : "classification.active"), classifierType.isPaused === true || state.settings?.classificationEnabled === false ? "muted" : "cyan")}</div>
-        <p class="small-copy" data-info="bridge.autoSave">${tx("bridge.autoSave")}</p>
-        <div data-form-id="${esc(localModelFormID)}" data-autosave-action="saveClassifierTypeLocalModel" data-type-id="${esc(classifierType.id)}">
-          ${localModelSection}
-          ${tagBoundsSection}
+        <div class="classifier-group-header"><div class="classifier-name-row">${field("bridge.typeName", "", "name", classifierType.name, "text", 'maxlength="128"')}</div>
+          <div class="action-row classifier-tagging-control"><button type="button" class="secondary" data-action="setClassifierTypePaused" data-type-id="${esc(classifierType.id)}" data-paused="${classifierType.isPaused !== true}">${tx(classifierType.isPaused === true ? "classification.resume" : "classification.pause")}</button>${statusPill(tx(classifierType.isPaused === true ? "classification.paused" : state.settings?.classificationEnabled === false ? "classification.disabled" : "classification.active"), classifierType.isPaused === true || state.settings?.classificationEnabled === false ? "muted" : "cyan")}</div></div>
+        <section class="section-card cyan classifier-type-section classifier-applicable-platform-section"><span class="field-label" ${infoAttrs("bridge.applicablePlatform")}>${tx("bridge.applicablePlatform")}</span>${platformChoices(chosen, classifierType.id)}<p class="small-copy" data-info="bridge.platformsFixed">${tx("bridge.platformsFixed")}</p>${platformNotes.map((note) => `<p class="small-copy">${esc(note)}</p>`).join("")}</section>
+        ${cloudProviderSection(classifierType)}
+        <div class="classifier-tagging-form" data-form-id="${esc(taggingFormID)}" data-autosave-action="saveClassifierTypeTagging" data-type-id="${esc(classifierType.id)}">
+          ${taggingSection}
         </div>
-        ${researchOverrideSection}
+
         <div class="action-row classifier-type-delete"><button class="danger" data-action="confirmDeleteClassifierType" data-type-id="${esc(classifierType.id)}">${deleteLabel(`type:${classifierType.id}`, tx("bridge.deleteType"))}</button></div>
       </section>`;
     };
@@ -1233,12 +885,11 @@
     const selectedType = selectedTypeID ? classifierTypes.find((type) => type.id === selectedTypeID) : null;
     if (selectedType) {
       // The type (its name is the editable title) and its tag tree, in one scroll.
-      const section = (labelKey, inner) => `<section class="type-section"><h3 class="type-section-title">${tx(labelKey)}</h3>${inner}</section>`;
       return `<div class="workspace classifier-type-workspace">
         <div class="type-detail-body">
           ${notice(state.issue, "red")}
-          <section class="type-section">${typeForm(selectedType)}</section>
-          ${section("bridge.tabTree", tagTreeWorkspace(selectedType.treeID))}
+          ${typeForm(selectedType)}
+          <section class="section-card pink classifier-tree-section"><h3 class="classifier-tree-title">${tx("bridge.tabTree")}</h3>${tagTreeWorkspace(selectedType.treeID)}</section>
         </div></div>`;
     }
     // Nothing selected: '+ New type' creates directly and the sidebar lists the
@@ -1250,171 +901,19 @@
   // Knowledge (owner 2026-09-30): terms are shared by every platform; known
   // creators are listed per platform, each with its name and picture. What
   // you write is marked "By you", lookups "Looked up". No source links.
-  const KNOWLEDGE_PLATFORMS = [["youtube", "YouTube"], ["bilibili", "Bilibili"], ["reddit", "Reddit"], ["twitter", "X"]];
-  let knowledgeAddPlatform = "youtube";
-  let knowledgeCreatorDraft = "";
-  let personalDictionaryImportDraft = "";
-  let knowledgeSuggestionsOpen = false;
 
-  function dictionaryControls() {
-    const d = state.settings?.dictionaries || {};
-    const packs = d.packs || [];
-    const pack = (kind, label) => {
-      const row = packs.find(item => item.kind === kind) || {};
-      return `<div class="dictionary-pack"><div><strong>${label}</strong><p class="small-copy">${tx("dictionary.entries", { count: row.entryCount || 0, version: row.installedVersion || t("dictionary.notDownloaded"), update: row.updateAvailable ? t("dictionary.updateAvailable") : "" })}</p></div><button class="secondary" data-action="downloadDictionary" data-kind="${kind}" ${d.busy ? "disabled" : ""}>${tx(kind === "creator" && d.creatorMode !== "full" ? "dictionary.updateCache" : "dictionary.download")}</button></div>`;
-    };
-    return `<section class="utility-settings-section utility-dictionary-section dictionary-controls"><div class="section-header"><div><h3 class="utility-settings-section-title">${tx("dictionary.title")}</h3><p class="section-copy">${tx("dictionary.priority")}</p></div><button class="secondary" data-action="checkDictionaryUpdates" ${d.busy ? "disabled" : ""}>${tx(d.busy ? "dictionary.working" : "dictionary.checkUpdates")}</button></div>
-      ${pack("term", tx("dictionary.terms"))}${pack("creator", tx("dictionary.creators"))}
-      <div data-form-id="dictionary-settings" data-autosave-action="saveDictionarySettings" class="form-stack">
-        <label class="field"><span class="field-label">${tx("dictionary.creatorMode")}</span><select data-field="creatorMode"><option value="cache" ${selected(d.creatorMode || "cache", "cache")}>${tx("dictionary.cacheMode")}</option><option value="full" ${selected(d.creatorMode, "full")}>${tx("dictionary.fullMode")}</option></select></label>
-        <label class="field"><span class="field-label">${tx("dictionary.cacheMaximum")}</span><input type="number" data-field="creatorCacheSize" min="1" max="100000" step="1" value="${d.creatorCacheSize || 10000}" ${d.creatorMode === "full" ? "readonly" : ""}></label>
-        <label class="field wide dictionary-contribution"><span class="toggle-row"><input type="checkbox" data-field="contributionEnabled" ${d.contributionEnabled !== false ? "checked" : ""}> ${tx("dictionary.helpImprove")}</span><span class="small-copy">${tx("dictionary.sharingExplanation")}</span></label>
-        <input type="checkbox" data-field="choiceMade" checked hidden>
-      </div>
-      <p class="small-copy">${tx("dictionary.cacheSummary", { count: d.cachedCreators || 0, guidance: d.creatorMode === "full" && !d.fullCreatorReady ? t("dictionary.fullDownloadRequired") : "" })}</p>
-      ${notice(d.notice, "navy")}
-      <details class="dictionary-personal" data-expand="dictionary-personal"${openExpands.has("dictionary-personal") ? " open" : ""}><summary>${tx("dictionary.importExport")}</summary><div data-form-id="dictionary-import" class="form-stack"><label class="field wide"><span class="field-label">${tx("dictionary.personalJSON")}</span><textarea data-field="json" data-personal-import rows="5" maxlength="8388608" placeholder='{"schemaVersion":1,"entries":[{"kind":"term","subject":"Example","meaning":"Description"}]}'>${esc(personalDictionaryImportDraft)}</textarea></label><label class="field">${tx("dictionary.openJSON")}<input type="file" accept=".json,application/json" data-personal-file></label><div class="action-row"><button class="secondary" data-action="importPersonalDictionary" data-form="dictionary-import">${tx("dictionary.import")}</button><button class="secondary" data-action="exportPersonalDictionary">${tx("dictionary.export")}</button></div></div>${d.personalJSON ? `<textarea class="dictionary-export" data-personal-export readonly rows="6" aria-label="${tx("dictionary.exported")}">${esc(d.personalJSON)}</textarea><button class="secondary" data-action="copyPersonalDictionary">${tx("dictionary.copy")}</button>` : ""}</details></section>`;
-  }
-  scope.addEventListener("change", async event => {
-    if (!event.target.matches("[data-personal-file]")) return;
-    const file = event.target.files?.[0];
-    if (!file || file.size > 8 * 1024 * 1024) return;
-    personalDictionaryImportDraft = await file.text();
-    const input = root.querySelector("[data-personal-import]");
-    if (input) input.value = personalDictionaryImportDraft;
-  });
-  scope.addEventListener("input", event => {
-    if (event.target.matches("[data-personal-import]")) personalDictionaryImportDraft = event.target.value;
-  });
-  function dictionaryOnboarding() {
-    const d = state.settings?.dictionaries;
-    if (!d || d.contributionChoiceMade || d.nativePrompt) return "";
-    return `<div class="utility-popover-layer" role="presentation"><div class="deletion-dialog" role="dialog" aria-modal="true" aria-label="${tx("dictionary.contributionTitle")}"><h3>${tx("dictionary.helpImprove")}</h3><p>${tx("dictionary.webContributionBody")}</p><label><input type="checkbox" data-contribution-first checked> ${tx("dictionary.share")}</label><p class="small-copy">${tx("dictionary.retention")}</p><div class="action-row"><button class="primary" data-action="saveDictionaryFirstChoice">${tx("dictionary.saveChoice")}</button><button class="secondary" data-action="declineDictionaryContribution">${tx("dictionary.decline")}</button></div></div></div>`;
-  }
-
-  function dictionaryConnection() {
-    const d = state.settings?.dictionaries || {};
-    const packs = d.packs || [];
-    const term = packs.find(item => item.kind === "term") || {};
-    const creator = packs.find(item => item.kind === "creator") || {};
-    const version = pack => pack.installedVersion || t("dictionary.notDownloaded");
-    const creatorSummary = d.creatorMode === "full"
-      ? t("dictionary.fullSummary", {count: creator.entryCount || 0})
-      : t("dictionary.lookupSummary", {count: d.cachedCreators || 0});
-    const updating = packs.some(pack => pack.updateAvailable);
-    const creatorReady = creator.installedVersion && (d.creatorMode !== "full" || d.fullCreatorReady);
-    const complete = term.installedVersion && creatorReady;
-    const status = t(d.busy ? "dictionary.working" : updating ? "dictionary.updateStatus" : complete ? "dictionary.installed" : "dictionary.notDownloaded");
-    return `<section class="knowledge-dictionary-connection"><div><h3>${tx("dictionary.connectionTitle")}</h3><p class="small-copy">${tx("dictionary.termSummary", {count: term.entryCount || 0, version: version(term)})}</p><p class="small-copy">${tx("dictionary.creatorSummary", {summary: creatorSummary, version: creatorReady ? version(creator) : t("dictionary.notDownloaded")})}</p>${statusPill(esc(status), d.busy || updating || !complete ? "gold" : "cyan")}</div><button class="secondary" data-action="openDictionarySetup">${tx("dictionary.configure")}</button></section>`;
-  }
-
-  function knowledgeWorkspace() {
-    const availability = researchAvailability();
-    const research = state.settings?.research || {};
-    const connection = `<section class="knowledge-research-connection"><div><h3>${tx("knowledge.lookupProvider")}</h3><p class="small-copy">${availability.profile ? esc(availability.profile.name) : tx("research.noProvider")}${research.llmModelIdentifier ? ` · ${esc(research.llmModelIdentifier)}` : ""}</p>${statusPill(tx(availability.ready ? "research.status.on" : availability.configured ? "research.status.off" : "research.status.setup"), availability.ready ? "cyan" : "gold")}</div><button class="secondary" data-action="openResearchSetup">${tx(availability.actionKey)}</button></section>`;
-    const knowledge = state.assets?.knowledge || { creators: [], terms: [] };
-    const creators = knowledge.creators || [];
-    const terms = knowledge.terms || [];
-
-    const origin = (entry) => statusPill(tx(entry.writtenByUser ? "knowledge.byYou" : "knowledge.lookedUp"), entry.writtenByUser ? "gold" : "cyan");
-    const entryCard = (entry, kind) => {
-      const formID = `knowledge-edit-${entry.id}`;
-      const name = kind === "creator" ? (entry.name || entry.subject) : entry.subject;
-      const face = kind === "creator"
-        ? (entry.icon ? `<img class="knowledge-face" src="${esc(entry.icon)}" alt="" aria-hidden="true" loading="lazy">` : `<span class="knowledge-face knowledge-face-empty" aria-hidden="true">${esc((name || "?").trim().charAt(0).toUpperCase())}</span>`)
-        : "";
-      const idLine = kind === "creator" ? `<span class="knowledge-id" dir="auto">${esc(entry.subject)}</span>` : "";
-      const searchName = `${name} ${entry.subject}`;
-      const search = `${searchName} ${entry.meaning || ""}`;
-      return `<article class="knowledge-card" data-form-id="${esc(formID)}" data-knowledge-search-name="${esc(searchName)}" data-vui-search-text="${esc(search)}" data-autosave-action="editKnowledgeEntry" data-id="${esc(entry.id)}"><div class="knowledge-card-head">${face}<span class="knowledge-name"><span class="knowledge-subject" dir="auto">${esc(name)}</span>${idLine}</span>${origin(entry)}</div><label class="field wide"><span class="field-label" ${infoAttrs("knowledge.description")}>${tx("knowledge.description")}</span><textarea data-field="meaning" rows="3" maxlength="2000">${esc(entry.meaning || "")}</textarea></label><div class="action-row"><button class="danger" data-action="deleteKnowledgeEntry" data-id="${esc(entry.id)}">${deleteLabel(`knowledge:${entry.id}`, tx("knowledge.delete"))}</button></div></article>`;
-    };
-
-    const group = (title, hint, items, kind, platformID = "") => {
-      const key = `knowledge:${kind}${platformID ? `:${platformID}` : ""}`;
-      const total = knowledge.paged ? (knowledge.counts?.[`${kind}${platformID ? ":" + platformID : ""}`] || 0) : items.length;
-      return `<section class="knowledge-group" data-knowledge-group><div class="section-header"><div><h3>${esc(title)} <span class="knowledge-count" data-knowledge-count>${total}</span></h3>${hint ? `<p class="section-copy" data-info>${esc(hint)}</p>` : ""}</div></div>${total ? `<div class="knowledge-list vui-list-box" data-list-key="${key}" data-vui-search="${key}" data-vui-search-items=".knowledge-card" data-vui-search-label="${tx("knowledge.search")} · ${esc(title)}" data-vui-search-copy="${esc(fieldInfo["knowledge.search"])}" tabindex="0" aria-label="${esc(title)}">${listPlaceholder(key, items, entry => entryCard(entry, kind), entry => `${entry.name || ""} ${entry.subject} ${[...liveEdits.values()].find(edit => edit.action === "editKnowledgeEntry" && edit.identity.id === entry.id)?.values?.meaning || entry.meaning || ""}`)}</div>` : `<div class="empty">${tx("knowledge.empty")}</div>`}</section>`;
-    };
-
-    // Terms are only ever added here, by the user: name the term, and either
-    // write what it means or leave that blank to have it looked up.
-    const addTerm = `<section class="knowledge-group" data-form-id="knowledge-add-term"><div class="section-header"><div><h3>${tx("knowledge.addTerm")}</h3><p class="section-copy" data-info>${tx("knowledge.addTermHint")}</p></div></div><div class="form-stack">${field("knowledge.termSubject", "knowledge.termSubjectHint", "subject", "", "text", 'maxlength="120"')}<label class="field wide"><span class="field-label" ${infoAttrs("knowledge.description")}>${tx("knowledge.description")}</span><textarea data-field="meaning" rows="2" maxlength="2000" placeholder="${tx("knowledge.termMeaningPlaceholder")}"></textarea></label><div class="action-row"><button class="primary" data-action="addKnowledgeTerm" data-form="knowledge-add-term">${tx("knowledge.addTermButton")}</button></div></div></section>`;
-
-    // A creator: pick the platform, then a link, @handle, r/name or the name of
-    // one already seen (suggested as you type).
-    const addCreator = `<section class="knowledge-group" data-form-id="knowledge-add-creator"><div class="section-header"><div><h3>${tx("knowledge.addCreator")}</h3><p class="section-copy" data-info>${tx("knowledge.addCreatorHint")}</p></div></div><div class="form-stack">${valueSelectField("knowledge.platform", "", "platformID", knowledgeAddPlatform, KNOWLEDGE_PLATFORMS, "data-knowledge-platform")}<label class="field"><span class="field-label">${tx("knowledge.creator")}<span class="field-hint" data-info> · ${tx("knowledge.creatorHint")}</span></span><input type="text" data-field="creator" data-knowledge-creator value="${esc(knowledgeCreatorDraft)}" maxlength="512" autocomplete="off" spellcheck="false"></label><div class="knowledge-suggestions vui-menu" data-knowledge-suggestions></div><label class="field wide"><span class="field-label" ${infoAttrs("knowledge.description")}>${tx("knowledge.description")}</span><textarea data-field="meaning" rows="2" maxlength="2000" placeholder="${tx("knowledge.creatorMeaningPlaceholder")}"></textarea></label><div class="action-row"><button class="primary" data-action="addKnowledgeCreator" data-form="knowledge-add-creator">${tx("knowledge.addCreatorButton")}</button></div></div></section>`;
-
-    const creatorGroups = KNOWLEDGE_PLATFORMS.map(([platformID, label]) =>
-      group(t("knowledge.creatorsOn", { platform: label }), "", creators.filter((entry) => entry.platformID === platformID), "creator", platformID)).join("");
-
-    return `<div class="workspace knowledge-workspace">${header("knowledge.title", "knowledge.copy", tx("knowledge.badge"), "gold")}<div class="notice navy" data-info="knowledge.disclosure">${tx("knowledge.disclosure")}</div>${dictionaryConnection()}${connection}${notice(state.notices?.knowledge, "navy")}${notice(state.issue, "red")}${addTerm}${addCreator}${group(t("knowledge.terms"), t("knowledge.termsHint"), terms, "term")}<p class="small-copy" data-info="knowledge.creatorsHint">${tx("knowledge.creatorsHint")}</p>${creatorGroups}</div>`;
-  }
 
   // Each platform and Terms share the standard per-list search. Keep names,
   // identifiers and the currently edited description searchable without a render.
-  function updateKnowledgeSearchText(card) {
-    card.dataset.vuiSearchText = `${card.dataset.knowledgeSearchName} ${card.querySelector('[data-field="meaning"]').value}`;
-  }
-
-  scope.addEventListener("vui-search-filtered", (event) => {
-    if (!event.target.matches(".knowledge-list")) return;
-    const count = event.target.closest("[data-knowledge-group]").querySelector("[data-knowledge-count]");
-    const { query, shown, total } = event.detail;
-    count.textContent = query ? `${shown} / ${total}` : String(total);
-  }, true);
 
   // "Add a creator" suggestions: creators already collected on the chosen
   // platform whose name contains what is typed.
-  let suggestionRevision = 0;
-  async function showKnowledgeSuggestions(input) {
-    const box = root.querySelector("[data-knowledge-suggestions]");
-    if (!box) return;
-    const revision = ++suggestionRevision;
-    const query = input.value.trim().toLowerCase();
-    knowledgeCreatorDraft = input.value;
-    const known = (state.assets?.knowledge?.knownCreators || []).filter((creator) => creator.platformID === knowledgeAddPlatform);
-    const rank = (name) => (name.startsWith(query) ? 0 : name.split(/\s+/).some((word) => word.startsWith(query)) ? 1 : 2);
-    let matches = query.length < 2 ? [] : known
-      .filter((creator) => creator.name.toLowerCase().includes(query))
-      .sort((a, b) => rank(a.name.toLowerCase()) - rank(b.name.toLowerCase()))
-      .slice(0, 6);
-    if (state.assets?.knowledge?.paged && query.length >= 2) {
-      const result = await queryKnowledge("suggestion", knowledgeAddPlatform, { query, offset: 0, limit: 6 });
-      if (revision !== suggestionRevision || !box.isConnected) return;
-      matches = result?.items || [];
-    }
-    box.innerHTML = matches.map((creator) => `<button type="button" class="vui-menu-item knowledge-suggestion" data-knowledge-pick="${esc(creator.name)}"><span dir="auto">${esc(creator.name)}</span><span class="knowledge-id">${esc(creator.id)}</span></button>`).join("");
-    knowledgeSuggestionsOpen = matches.length > 0;
-    if (!knowledgeSuggestionsOpen) window.VaultUI.hideMenuLayer(box);
-    if (knowledgeSuggestionsOpen) { window.VaultUI.close(); placeKnowledgeSuggestions(); }
-  }
-
-  function closeKnowledgeSuggestions(restoreFocus = false) {
-    suggestionRevision++;
-    const box = root.querySelector("[data-knowledge-suggestions]");
-    if (restoreFocus) root.querySelector("[data-knowledge-creator]")?.focus({ preventScroll: true });
-    if (box) { window.VaultUI.hideMenuLayer(box); box.replaceChildren(); }
-    knowledgeSuggestionsOpen = false;
-  }
-
-  function placeKnowledgeSuggestions() {
-    const box = root.querySelector("[data-knowledge-suggestions]");
-    const input = root.querySelector("[data-knowledge-creator]");
-    if (box?.children.length && input) placeClassifierMenu(input, box);
-  }
-
-  scope.addEventListener("focusin", (event) => {
-    if (event.target.matches?.("[data-knowledge-creator]") && !replacingControls) showKnowledgeSuggestions(event.target);
-  });
-  scope.addEventListener("focusout", () => window.requestAnimationFrame(() => {
-    if (knowledgeSuggestionsOpen && !scope.activeElement?.matches?.("[data-knowledge-creator], [data-knowledge-pick]")) closeKnowledgeSuggestions();
-  }));
 
   const DELETE_KEYS = {
     confirmDeleteProviderProfile: (data) => `provider:${data.profileId}`,
-    deleteModelFile: (data) => `model:${data.fileName}`,
     deleteTag: (data) => `tag:${data.nodeId}`,
     confirmDeleteClassifierType: (data) => `type:${data.typeId}`,
-    deleteKnowledgeEntry: (data) => `knowledge:${data.id}`
+
   };
 
   function deleteLabel(key, label) {
@@ -1437,13 +936,13 @@
   function workspace() {
     switch (state.workspace) {
       case "browserBridge": return browserBridgeWorkspace();
-      case "knowledge": return knowledgeWorkspace();
+
       default: return browserBridgeWorkspace();
     }
   }
 
   function drawTreeConnections() {
-    root.querySelectorAll("[data-tree-map]").forEach((map) => {
+    uiQueryAll("[data-tree-map]").forEach((map) => {
       const content = map.querySelector(".tree-map-content");
       const links = map.querySelector(".tree-links");
       if (!content || !links) return;
@@ -1489,7 +988,7 @@
   }
 
   function updateRenderedTagName(treeID, nodeID, name) {
-    root.querySelectorAll(".tree-map-node").forEach((node) => {
+    uiQueryAll(".tree-map-node").forEach((node) => {
       if (node.dataset.treeId === treeID && node.dataset.nodeId === nodeID) {
         node.querySelector("strong").textContent = name;
       }
@@ -1497,7 +996,7 @@
   }
 
   function openTagEditor(treeID, nodeID) {
-    const node = [...root.querySelectorAll(".tree-map-node")].find((candidate) => candidate.dataset.treeId === treeID && candidate.dataset.nodeId === nodeID);
+    const node = [...uiQueryAll(".tree-map-node")].find((candidate) => candidate.dataset.treeId === treeID && candidate.dataset.nodeId === nodeID);
     if (!node) return;
     selectedTagNode = { treeID, nodeID };
     const nodeX = Number(node.dataset.positionX) || 0;
@@ -1506,40 +1005,22 @@
     render();
   }
 
-  scope.addEventListener("input", (event) => {
+  listen("input", (event) => {
     if (!event.isComposing) queueLiveEdit(event.target);
-    const knowledgeCard = event.target.closest(".knowledge-card");
-    if (knowledgeCard && event.target.matches('[data-field="meaning"]')) {
-      updateKnowledgeSearchText(knowledgeCard);
-      window.VaultUI.refreshList(knowledgeCard.parentElement);
-      return;
-    }
-    const creatorInput = event.target.closest("input[data-knowledge-creator]");
-    if (creatorInput) {
-      showKnowledgeSuggestions(creatorInput);
-      return;
-    }
-    const modelSearch = event.target.closest("input[data-model-search]");
-    if (modelSearch) {
-      researchModelQuery = modelSearch.value;
-      filterResearchModels();
-      return;
-    }
     const input = event.target.closest("input[data-live-tag-name]");
     if (!input) return;
     const { treeId: treeID, nodeId: nodeID } = input.dataset;
-    if (!treeID || !nodeID) return;
-    updateRenderedTagName(treeID, nodeID, input.value);
+    if (treeID && nodeID) updateRenderedTagName(treeID, nodeID, input.value);
   });
 
   function rememberTreeViewportPositions() {
-    root.querySelectorAll("[data-tree-map]").forEach((map) => {
+    uiQueryAll("[data-tree-map]").forEach((map) => {
       treeViewportPositions.set(map.dataset.treeId, { x: map.scrollLeft, y: map.scrollTop });
     });
   }
 
   function restoreTreeViewportPositions() {
-    root.querySelectorAll("[data-tree-map]").forEach((map) => {
+    uiQueryAll("[data-tree-map]").forEach((map) => {
       const position = treeViewportPositions.get(map.dataset.treeId);
       if (!position) return;
       map.scrollLeft = position.x;
@@ -1548,14 +1029,14 @@
   }
 
   function rememberEditorViewportPosition() {
-    const editor = root.querySelector("[data-editor-panel]");
+    const editor = uiQuery("[data-editor-panel]");
     const workspace = editor?.dataset.workspace;
     if (!editor || !workspace) return;
     editorViewportPositions.set(workspace, { x: editor.scrollLeft, y: editor.scrollTop });
   }
 
   function restoreEditorViewportPosition() {
-    const editor = root.querySelector("[data-editor-panel]");
+    const editor = uiQuery("[data-editor-panel]");
     const workspace = editor?.dataset.workspace;
     const position = workspace ? editorViewportPositions.get(workspace) : null;
     if (!editor || !position) return;
@@ -1564,12 +1045,16 @@
   }
 
   // Create-a-group dialog: platform and name. The new group follows the global
-  // dials, house rules and research switch until given its own.
+  // dials and house rules until given its own.
   function createTypeModal() {
     if (!pendingCreateType) return "";
     return `<div class="utility-popover-layer" role="presentation"><button class="utility-popover-dismiss" data-action="cancelCreateType" aria-label="${tx("common.cancel")}"></button><div class="deletion-dialog create-type-dialog" role="dialog" aria-modal="true" aria-label="${tx("createType.title")}" data-create-type-dialog><h3>${tx("createType.title")}</h3><p class="section-copy" data-info>${tx("createType.copy")}</p><div class="field"><span class="field-label" ${infoAttrs("createType.platformLabel")}>${tx("createType.platformLabel")}</span>${platformChoices(pendingCreateType.platformIDs || [], null)}${pendingCreateType.issue ? notice(t("createType.platformRequired"), "red") : ""}</div><label class="field"><span class="field-label" ${infoAttrs("createType.nameLabel")}>${tx("createType.nameLabel")}</span><input type="text" data-create-type-name autocomplete="off" spellcheck="false" value="${esc(pendingCreateType.name != null ? pendingCreateType.name : t("createType.defaultName"))}"></label><div class="action-row"><button class="secondary" data-action="cancelCreateType">${tx("common.cancel")}</button><button class="primary" data-action="confirmCreateType">${tx("createType.create")}</button></div></div></div>`;
   }
 
+  function chatGPTWelcome() {
+    if (!state?.assets?.chatGPT?.needsWelcome) return "";
+    return `<div class="utility-popover-layer" role="presentation"><div class="deletion-dialog" role="dialog" aria-modal="true" aria-label="${tx("cloud.welcomeTitle")}" data-chatgpt-welcome><h3>${tx("cloud.welcomeTitle")}</h3><p>${tx("cloud.welcomeCopy")}</p><div class="action-row"><button type="button" class="primary" data-action="acknowledgeChatGPTPlan">${tx("cloud.gotIt")}</button></div></div></div>`;
+  }
 
   function render() {
     if (!state) {
@@ -1578,26 +1063,43 @@
       return;
     }
     if (composingEdit) return;
+    if (state?.assets?.chatGPT?.needsWelcome && window.VaultSettings?.isOpen()) { window.VaultSettings.close(); return; }
+    // A new tag is an explicit action, so its fields are not autosave edits.
+    // Keep that pending draft when downloads or other snapshots redraw the UI.
+    const tagForm = uiQuery("[data-tree-popover]");
+    if (activeTagPanel?.kind === "create" && tagForm?.dataset.treeId === activeTagPanel.treeID) {
+      activeTagPanel.draft = collect("tag-popover-form");
+    }
     pendingLists = []; deferredChoices = new Map();
-    const markup = shell(workspace()) + createTypeModal() + dictionaryOnboarding();
+    const markup = shell(workspace()) + createTypeModal() + chatGPTWelcome();
+    const settingsMarkup = nativeConnectionsContent();
+    const taggingMarkup = nativeTaggingContent();
     // Nothing changed on the page: keep the DOM (and its scroll) as it is.
-    if (markup === lastRenderedMarkup && root.firstChild) { const searchFocus = window.VaultUI.captureSearch(scope); mountChoices(); mountLists(); mountLargeGraphs(); window.VaultUI.restoreSearch(scope, searchFocus); return; }
-    renderFull(markup);
+    if (markup === lastRenderedMarkup && settingsMarkup === settingsRoot.__markup && taggingMarkup === taggingRoot.__markup && root.firstChild) {
+      const searchFocus = captureSearch(), focused = captureLiveEditFocus();
+      replacingControls = true;
+      mountChoices(); mountLists(); mountLargeGraphs();
+      restoreLiveEdits(focused);
+      replacingControls = false;
+      restoreSearch(searchFocus);
+      return;
+    }
+    renderFull(markup, settingsMarkup, taggingMarkup);
   }
 
-  function renderFull(markup) {
+  function renderFull(markup, settingsMarkup, taggingMarkup) {
     rememberTreeViewportPositions();
     rememberEditorViewportPosition();
-    root.querySelectorAll("[data-list-key]").forEach((list) => {
+    uiQueryAll("[data-list-key]").forEach((list) => {
       listViewportPositions.set(list.dataset.listKey, { x: list.scrollLeft, y: list.scrollTop });
     });
-    const listSearchFocus = window.VaultUI.captureSearch(scope);
+    const listSearchFocus = captureSearch();
     const focused = captureLiveEditFocus();
-    const creatorInput = scope.activeElement?.matches("[data-knowledge-creator]") ? scope.activeElement : null;
-    const creatorSelection = creatorInput ? { start: creatorInput.selectionStart, end: creatorInput.selectionEnd } : null;
-    const modelSearch = scope.activeElement?.matches("[data-model-search]") ? scope.activeElement : null;
-    const searchSelection = modelSearch ? { start: modelSearch.selectionStart, end: modelSearch.selectionEnd } : null;
-    const active = scope.activeElement;
+
+    const active = activeControl();
+    const pendingTagFocus = activeTagPanel?.kind === "create" && active?.closest?.("[data-tree-popover]") && active.matches("[data-field]")
+      ? { field: active.dataset.field, start: active.selectionStart, end: active.selectionEnd, direction: active.selectionDirection } : null;
+    const toolbarAction = active?.closest?.('.vui-topbar-links') ? active.dataset.action : null;
     const dialogControl = active?.closest?.('[role="dialog"]') ? {
       action: active.dataset.action, field: active.dataset.field,
       createName: active.hasAttribute("data-create-type-name"),
@@ -1606,74 +1108,51 @@
     } : null;
     replacingControls = true;
     root.innerHTML = markup;
+    settingsRoot.innerHTML = settingsMarkup;
+    settingsRoot.__markup = settingsMarkup;
+    taggingRoot.innerHTML = taggingMarkup;
+    taggingRoot.__markup = taggingMarkup;
     mountChoices(); mountLists();
     restoreLiveEdits(focused);
+    if (pendingTagFocus) {
+      const control = uiQuery(`[data-tree-popover] [data-field="${CSS.escape(pendingTagFocus.field)}"]`);
+      control?.focus({ preventScroll: true });
+      if (control && pendingTagFocus.start != null) control.setSelectionRange(pendingTagFocus.start, pendingTagFocus.end, pendingTagFocus.direction);
+    }
     replacingControls = false;
     lastRenderedMarkup = markup;
     bindTreeMapWheel();
     mountLargeGraphs();
-    root.querySelectorAll(".knowledge-card").forEach(updateKnowledgeSearchText);
-    if (knowledgeSuggestionsOpen) {
-      const creator = root.querySelector("[data-knowledge-creator]");
-      if (creator) showKnowledgeSuggestions(creator);
-    }
-    if (creatorSelection) {
-      const creator = root.querySelector("[data-knowledge-creator]");
-      creator?.focus({ preventScroll: true });
-      creator?.setSelectionRange(creatorSelection.start, creatorSelection.end);
-    }
-    filterResearchModels();
-    if (searchSelection) {
-      const search = root.querySelector("[data-model-search]");
-      if (search) { search.focus({ preventScroll: true }); search.setSelectionRange(searchSelection.start, searchSelection.end); }
-    }
+
     syncDialogFocus(dialogControl);
-    window.VaultUI.restoreSearch(scope, listSearchFocus);
+    if (toolbarAction) uiQuery(`.vui-topbar-links [data-action="${toolbarAction}"]`)?.focus({ preventScroll: true });
+    restoreSearch(listSearchFocus);
     window.requestAnimationFrame(() => {
       applyNavigationPanelWidth();
       restoreEditorViewportPosition();
       restoreTreeViewportPositions();
-      root.querySelectorAll("[data-list-key]").forEach((list) => {
+      uiQueryAll("[data-list-key]").forEach((list) => {
         const position = listViewportPositions.get(list.dataset.listKey);
         if (position) { list.scrollLeft = position.x; list.scrollTop = position.y; }
       });
-      for (const map of root.querySelectorAll("[data-tree-map]")) if ((graphModels.get(map.dataset.treeId)?.nodes.length || 0) > 200) paintLargeGraph(map);
+      for (const map of uiQueryAll("[data-tree-map]")) if ((graphModels.get(map.dataset.treeId)?.nodes.length || 0) > 200) paintLargeGraph(map);
       drawTreeConnections();
       placeTreePopovers();
-      placeResearchSetup();
-      placeDictionarySetup();
-      placeResearchModelMenu();
-      placeKnowledgeSuggestions();
+
     });
   }
 
   // Attach the non-passive tree-map wheel handler only to the tree canvases in
   // the freshly rendered DOM, leaving every other scroll container passive.
   function bindTreeMapWheel() {
-    root.querySelectorAll("[data-tree-map]").forEach((map) => {
+    uiQueryAll("[data-tree-map]").forEach((map) => {
       map.addEventListener("wheel", handleTreeMapWheel, { passive: false });
     });
   }
 
-  scope.addEventListener("click", (event) => {
+  listen("click", (event) => {
     const button = event.target.closest("button[data-action]");
-    const modelPick = event.target.closest("button[data-model-pick]");
-    if (modelPick) {
-      closeResearchModelMenu();
-      const modelValue = root.querySelector('[data-form-id="utility-research-form"] [data-field="llmModelIdentifier"]');
-      if (modelValue) { modelValue.value = modelPick.dataset.modelPick; queueLiveEdit(modelValue, true); }
-      render();
-      window.requestAnimationFrame(() => root.querySelector("[data-model-selector]")?.focus({ preventScroll: true }));
-      return;
-    }
-    const pick = event.target.closest("button[data-knowledge-pick]");
-    if (pick) {
-      const creatorInput = root.querySelector("input[data-knowledge-creator]");
-      knowledgeCreatorDraft = pick.dataset.knowledgePick;
-      if (creatorInput) creatorInput.value = knowledgeCreatorDraft;
-      closeKnowledgeSuggestions(true);
-      return;
-    }
+
     if (!button) {
       const map = event.target.closest("[data-tree-map]");
       if (map && !event.target.closest(".tree-map-node, [data-tree-popover]")) {
@@ -1688,23 +1167,24 @@
     if (button.disabled) return;
     flushLiveEdits();
     const action = button.dataset.action;
-    if (action === "saveDictionaryFirstChoice" || action === "declineDictionaryContribution") {
-      send("completeDictionaryOnboarding", { enabled: action === "saveDictionaryFirstChoice" && root.querySelector("[data-contribution-first]")?.checked === true });
-      return;
-    }
-    if (action === "copyPersonalDictionary") {
-      const text = root.querySelector("[data-personal-export]");
-      text?.focus(); text?.select(); document.execCommand("copy"); return;
-    }
+
     if (DELETE_KEYS[action] && !confirmDelete(DELETE_KEYS[action](button.dataset))) return;
     if (action === "setClassifierTypePaused") {
       send(action, { typeID: button.dataset.typeId, paused: button.dataset.paused === "true" });
       return;
     }
+    if (action === "openConnections") {
+      connectionTab = "chatGPT";
+      if (selectedTypeID) {
+        const type = (state.assets?.classifierTypes || []).find(item => item.id === selectedTypeID);
+        if (type?.classificationProvider === "apiKey") connectionTab = (state.assets.providerProfiles || []).find(profile=>profile.id===type.apiKey?.profileID)?.type || "openAI";
+      }
+      utilityPanel = "settings"; window.VaultSettings.open(); render(); return;
+    }
     if (action === "workspace") {
       const nextWorkspace = button.dataset.workspace;
       if (!state || !workspaceNames.has(nextWorkspace) || state.workspace === nextWorkspace) return;
-      closeKnowledgeSuggestions();
+
       state.workspace = nextWorkspace;
       render();
       send("workspace", { workspace: nextWorkspace });
@@ -1736,9 +1216,9 @@
     }
     if (action === "confirmCreateType") {
       if (!pendingCreateType) return;
-      const nameInput = root.querySelector("[data-create-type-name]");
+      const nameInput = uiQuery("[data-create-type-name]");
       const name = ((nameInput?.value) || t("createType.defaultName")).trim() || t("createType.defaultName");
-      const platformIDs = checkedPlatforms(root.querySelector("[data-create-type-dialog]"));
+      const platformIDs = checkedPlatforms(uiQuery("[data-create-type-dialog]"));
       if (!platformIDs.length) {
         pendingCreateType.name = name;
         pendingCreateType.issue = true;
@@ -1777,24 +1257,16 @@
       return;
     }
 
-    if (action === "openDictionarySetup") { openDictionarySetup(); return; }
-    if (action === "openResearchSetup") { openResearchSetup(); return; }
-    if (action === "openManual") { window.VaultManual?.open("user", "Classifier"); return; }
+    if (action === "openManual") { window.VaultManual?.open("user", "Content tagging"); return; }
     if (action === "openUtilityPanel") {
-      closeKnowledgeSuggestions();
-      researchSetupRequested = false;
-      researchSetupFocusPending = false;
-      dictionarySetupFocusPending = false;
-      const nextPanel = data.utilityPanel === "settings" ? "settings" : null;
-      utilityPanel = utilityPanel === nextPanel ? null : nextPanel;
-      render();
+
+      window.VaultSettings.open();
       return;
     }
     if (action === "closeUtilityPanel") {
+      window.VaultSettings.close();
       utilityPanel = null;
-      researchSetupRequested = false;
-      researchSetupFocusPending = false;
-      dictionarySetupFocusPending = false;
+
       render();
       return;
     }
@@ -1811,7 +1283,7 @@
         send("connectTag", { treeID: source.treeID, nodeID: source.nodeID, parentID: button.dataset.nodeId });
         return;
       }
-      flushTagNameInput(root.querySelector("[data-tree-popover] input[data-live-tag-name]"));
+      flushTagNameInput(uiQuery("[data-tree-popover] input[data-live-tag-name]"));
       openTagEditor(button.dataset.treeId, button.dataset.nodeId);
       return;
     }
@@ -1860,94 +1332,45 @@
       send(action, data);
       return;
     }
-    if (action === "addKnowledgeCreator") {
-      knowledgeCreatorDraft = "";
-      closeKnowledgeSuggestions();
-    }
+
     send(action, data);
   });
 
   function dismissClassifierDialog() {
-    if (closeResearchModelMenu(true)) return;
+
     pendingCreateType = null;
     utilityPanel = null;
-    researchSetupRequested = false;
-    researchSetupFocusPending = false;
-    dictionarySetupFocusPending = false;
+
     render();
   }
 
-  scope.addEventListener("keydown", (event) => {
-    const menu = event.target.closest?.(".research-model-menu, [data-knowledge-suggestions]")
-      || (event.target.matches?.("[data-knowledge-creator]") ? root.querySelector("[data-knowledge-suggestions]") : null);
-    if (menu && ["ArrowDown", "ArrowUp"].includes(event.key) && !event.isComposing) {
-      const options = [...menu.querySelectorAll("[data-model-pick], [data-knowledge-pick]")].filter((option) => !option.hidden);
-      if (options.length) {
-        const index = options.indexOf(scope.activeElement);
-        const next = index < 0 ? (event.key === "ArrowDown" ? 0 : options.length - 1)
-          : (index + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length;
-        event.preventDefault();
-        options[next].focus({ preventScroll: true });
-        options[next].scrollIntoView({ block: "nearest" });
-      }
-      return;
-    }
-    if (event.key === "Escape" && knowledgeSuggestionsOpen) {
-      event.preventDefault();
-      closeKnowledgeSuggestions(true);
-      return;
-    }
-    if (event.key !== "Escape" || (!utilityPanel && !pendingCreateType)) return;
+  listen("keydown", (event) => {
+
+    if (event.key !== "Escape" || !pendingCreateType) return;
     event.preventDefault();
     dismissClassifierDialog();
   });
 
-  scope.addEventListener("toggle", (event) => {
-    if (!event.target.isConnected) return;
-    const key = event.target.matches?.("details[data-expand]") ? event.target.dataset.expand : null;
-    if (key) event.target.open ? openExpands.add(key) : openExpands.delete(key);
-    if (event.target.matches?.(".research-model-picker") && !event.target.open) window.VaultUI.hideMenuLayer(event.target.querySelector(".research-model-menu"));
-    if (event.target.matches?.(".research-model-picker") && event.target.open) {
-      window.VaultUI.close();
-      placeResearchModelMenu();
-      // A snapshot restores the current focus; only a newly opened menu
-      // moves focus from its selector into search.
-      if (scope.activeElement === event.target.querySelector("summary")) {
-        event.target.querySelector("[data-model-search]")?.focus({ preventScroll: true });
-      }
-    }
-  }, true);
-
-  scope.addEventListener("change", (event) => {
-    if (event.target.matches('[data-form-id="utility-research-form"] [data-field="llmProviderProfileID"]')) {
-      queueLiveEdit(event.target, true);
+  listen("change", (event) => {
+    if (event.target.matches('[data-field="connectionType"]')) {
+      const next = event.target.value;
+      if (!["chatGPT", ...KEY_CONNECTIONS].includes(next)) return;
+      flushLiveEdits();
+      connectionTab = next;
       render();
+      uiQuery('[data-field="connectionType"] + .vui-select .vui-select-button')?.focus({ preventScroll: true });
       return;
     }
+
     if (queueLiveEdit(event.target, true)) return;
-    const knowledgePlatform = event.target.closest("[data-knowledge-platform]");
-    if (knowledgePlatform) {
-      knowledgeAddPlatform = knowledgePlatform.value;
-      const creatorInput = root.querySelector("input[data-knowledge-creator]");
-      if (creatorInput) showKnowledgeSuggestions(creatorInput);
-      return;
-    }
-    const languageControl = event.target.closest("[data-language-selection]");
-    if (languageControl) {
-      if (!languageChoices.some(([identifier]) => identifier === languageControl.value)) return;
-      selectedLanguage = languageControl.value;
-      root.lang = selectedLanguage;
-      try { window.localStorage.setItem("vaultClassifier.language", selectedLanguage); } catch (_) {}
-      void loadSelectedLanguage();
-      return;
-    }
+
     // Preserve creation choices across page re-renders.
     const choice = event.target.closest("input[data-platform-choice]");
     if (choice) {
       const dialog = choice.closest("[data-create-type-dialog]");
       if (dialog && pendingCreateType) {
         pendingCreateType.platformIDs = checkedPlatforms(dialog);
-        pendingCreateType.name = root.querySelector("[data-create-type-name]")?.value;
+        pendingCreateType.name = uiQuery("[data-create-type-name]")?.value;
         const hadIssue = pendingCreateType.issue;
         pendingCreateType.issue = false;
         if (hadIssue) render();
@@ -1956,13 +1379,13 @@
     }
   });
 
-  scope.addEventListener("input", (event) => {
+  listen("input", (event) => {
     if (pendingCreateType && event.target.matches("[data-create-type-name]")) {
       pendingCreateType.name = event.target.value;
     }
   });
 
-  scope.addEventListener("pointerdown", (event) => {
+  listen("pointerdown", (event) => {
     const resizer = event.target.closest("[data-navigation-resizer]");
     if (!resizer || event.button !== 0) return;
     navigationResize = { pointerID: event.pointerId };
@@ -1970,9 +1393,9 @@
     event.preventDefault();
   });
 
-  scope.addEventListener("pointermove", (event) => {
+  listen("pointermove", (event) => {
     if (!navigationResize || event.pointerId !== navigationResize.pointerID) return;
-    const layout = root.querySelector(".layout");
+    const layout = uiQuery(".layout");
     if (!layout) return;
     const bounds = layout.getBoundingClientRect();
     const width = Math.round(root.dir === "rtl" ? bounds.right - event.clientX : event.clientX - bounds.left);
@@ -1987,15 +1410,15 @@
     try { window.localStorage.setItem(navigationWidthStorageKey, String(navigationPanelWidth)); } catch (_) {}
   }
 
-  scope.addEventListener("pointerup", finishNavigationResize);
-  scope.addEventListener("pointercancel", finishNavigationResize);
+  listen("pointerup", finishNavigationResize);
+  listen("pointercancel", finishNavigationResize);
 
   // Drag-reorder the classifier-type list. Ported from the extension's group
   // reorder (customBlocker/popup.js): the whole row is the drag target (no
   // handle), a movement threshold keeps a short press a select, the dragged row
   // is clamped so it cannot leave the top of the list ("ceiling"), the others
   // glide aside, and on release the dragged row snaps to its slot.
-  function typeNavElement() { return root.querySelector("[data-classifier-type-nav]"); }
+  function typeNavElement() { return uiQuery("[data-classifier-type-nav]"); }
   function getTypeDragCards() {
     const nav = typeNavElement();
     return nav ? Array.from(nav.querySelectorAll(".classifier-type-row[data-type-id]")) : [];
@@ -2150,13 +1573,13 @@
     window.addEventListener("mouseup", handleUp);
   }
 
-  scope.addEventListener("mousedown", (event) => {
+  listen("mousedown", (event) => {
     const row = event.target.closest?.(".classifier-type-row[data-type-id]");
     if (!row) return;
     startTypeReorder(event, row.dataset.typeId);
   });
 
-  scope.addEventListener("keydown", (event) => {
+  listen("keydown", (event) => {
     const resizer = event.target.closest?.("[data-navigation-resizer]");
     if (!resizer) return;
     let nextWidth = navigationPanelWidth;
@@ -2189,7 +1612,7 @@
     event.stopPropagation();
   }
 
-  scope.addEventListener("contextmenu", (event) => {
+  listen("contextmenu", (event) => {
     const map = event.target.closest("[data-tree-map]");
     if (!map || event.target.closest("[data-tree-popover]")) return;
     event.preventDefault();
@@ -2228,10 +1651,10 @@
     treePan.map.classList.remove("panning");
     treePan = null;
   }
-  scope.addEventListener("pointerdown", beginTreePan);
-  scope.addEventListener("pointermove", moveTreePan);
-  scope.addEventListener("pointerup", finishTreePan);
-  scope.addEventListener("pointercancel", finishTreePan);
+  listen("pointerdown", beginTreePan);
+  listen("pointermove", moveTreePan);
+  listen("pointerup", finishTreePan);
+  listen("pointercancel", finishTreePan);
 
   function beginTagDrag(event) {
     const node = event.target.closest(".tree-map-node");
@@ -2294,7 +1717,7 @@
     if (!tagDrag.moved && Math.max(Math.abs(rawDeltaX), Math.abs(rawDeltaY)) < 3) return;
     tagDrag.moved = true;
     activeTagPanel = null;
-    root.querySelector("[data-tree-popover]")?.remove();
+    uiQuery("[data-tree-popover]")?.remove();
     const minStartX = tagDrag.nodes.reduce((value, entry) => Math.min(value, entry.startX), Infinity);
     const minStartY = tagDrag.nodes.reduce((value, entry) => Math.min(value, entry.startY), Infinity);
     const maxStartX = tagDrag.nodes.reduce((value, entry) => Math.max(value, entry.startX), -Infinity);
@@ -2329,33 +1752,15 @@
     });
   }
 
-  scope.addEventListener("pointerdown", beginTagDrag);
-  scope.addEventListener("mousedown", beginTagDrag);
-  scope.addEventListener("pointermove", moveTagDrag);
-  scope.addEventListener("mousemove", moveTagDrag);
-  scope.addEventListener("pointerup", finishTagDrag);
-  scope.addEventListener("pointercancel", finishTagDrag);
-  scope.addEventListener("mouseup", finishTagDrag);
+  listen("pointerdown", beginTagDrag);
+  listen("mousedown", beginTagDrag);
+  listen("pointermove", moveTagDrag);
+  listen("mousemove", moveTagDrag);
+  listen("pointerup", finishTagDrag);
+  listen("pointercancel", finishTagDrag);
+  listen("mouseup", finishTagDrag);
 
   window.VaultClassifier = {
-    receiveKnowledgeRow(row) {
-      if (!row?.id) return;
-      for (const [key, edit] of liveEdits) if (edit.action === "editKnowledgeEntry" && edit.identity.id === row.id && edit.sent && liveEditMatches(edit, row)) { clearTimeout(edit.timer); liveEdits.delete(key); }
-    },
-    receiveList(packet) {
-      const resolve = listRequests.get(packet.requestID);
-      if (resolve) {
-        listRequests.delete(packet.requestID);
-        for (const row of packet.items || []) {
-          knowledgeRows.set(row.id, row);
-          for (const [key, edit] of liveEdits) {
-            if (edit.action === "editKnowledgeEntry" && edit.identity.id === row.id && edit.sent && !state.issue && liveEditMatches(edit, row)) { clearTimeout(edit.timer); liveEdits.delete(key); }
-          }
-        }
-        while (knowledgeRows.size > 256) knowledgeRows.delete(knowledgeRows.keys().next().value);
-        resolve(packet);
-      }
-    },
     receive(payload) {
       const revision = Number(payload?.presentationRevision);
       if (Number.isSafeInteger(revision) && revision > 0) {
@@ -2381,11 +1786,21 @@
 
   window.addEventListener("resize", () => window.requestAnimationFrame(drawTreeConnections));
   window.VaultUI.observe(scope);
-  window.VaultInfo.watch(scope, { enabled: () => true, translate: (key, values = {}) => {
+  for (const infoScope of uiScopes) window.VaultInfo.watch(infoScope, { enabled: () => true, translate: (key, values = {}) => {
     const template = languageMessages[key];
     if (!template) return null;
     return template.replace(/\{([a-zA-Z0-9_]+)\}/g, (_, name) => String(values[name] ?? ""));
   } });
+  window.addEventListener("vault-language-changed", () => { void loadSelectedLanguage(); });
+  window.addEventListener("vault-settings-changed", event => {
+    utilityPanel = event.detail.open ? "settings" : null;
+    if (!event.detail.open) {
+
+      flushLiveEdits();
+    }
+    render();
+    if (event.detail.open) send("state", {});
+  });
   render();
   void loadSelectedLanguage();
   send("state", {});

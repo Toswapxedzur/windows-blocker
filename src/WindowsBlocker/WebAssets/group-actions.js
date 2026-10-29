@@ -242,6 +242,7 @@
       confirmationCount: Number.isFinite(confirmations) && confirmations >= 0 ? confirmations : 0,
       activeMsApplied: Boolean(raw?.activeMsApplied),
       ...(raw?.kind === "budget" && Number(raw?.extraMs) > 0 ? { kind: "budget", extraMs: Number(raw.extraMs) } : {}),
+      ...(raw?.kind === "budget" && Number.isFinite(Number(raw?.grantMs)) && Number(raw.grantMs) > 0 && Number(raw.grantMs) <= Number(raw.extraMs) ? { grantMs: Number(raw.grantMs) } : {}),
       ...(changedAtMs ? { changedAtMs } : {})
     };
   }
@@ -280,7 +281,7 @@
 
   // The new entry, from the group's stored settings (never unsaved form input).
   // `resetAtMs` (the group's budget anchor) only matters for a budget snooze.
-  function snoozeEntry(group, now, resetAtMs) {
+  function snoozeEntry(group, now, resetAtMs, usedMs = 0) {
     const startsAtMs = now + (Number(group.snoozeActivationDelayMinutes) || 0) * MINUTE_MS;
     const cooldownMs = (Number(group.snoozeCooldownMinutes) || 0) * MINUTE_MS;
     const common = {
@@ -290,9 +291,19 @@
     };
     if (isBudgetSnoozeGroup(group)) {
       const untilMs = budgetSnoozeExpiryMs(group, startsAtMs, resetAtMs);
+      const grantMs = Math.max(0, Number(group.snoozeMinutes) || 0) * MINUTE_MS;
+      // Usage retains previously spent extra until the budget resets. A new
+      // grant adds room above that usage, rather than repeating the old ceiling.
+      // extraMs remains the offset from the base allowance used by every host.
+      const anchor = Number(resetAtMs) > 0 ? Number(resetAtMs) : now;
+      const resetsBeforeActivation = group.rollingLimit
+        ? group.resetAtMidnight && cbStartOfDayMs(startsAtMs) !== cbStartOfDayMs(now)
+        : cbPeriodStartMs(anchor, group, startsAtMs) !== cbPeriodStartMs(anchor, group, now);
+      const used = !resetsBeforeActivation && Number.isFinite(Number(usedMs)) ? Math.max(0, Number(usedMs)) : 0;
       return {
         kind: "budget",
-        extraMs: (Number(group.snoozeMinutes) || 0) * MINUTE_MS,
+        extraMs: Math.max(0, used - getAllowedMs(group)) + grantMs,
+        grantMs,
         startsAtMs, untilMs, cooldownUntilMs: untilMs + cooldownMs, ...common
       };
     }
@@ -698,11 +709,34 @@
   // tools do exactly what the user can). Returns the first problem as
   // "invalid-<field>", or null. A tool's invalid value is refused, never
   // replaced by a default.
+  function utf8Length(value) {
+    let bytes = 0;
+    for (const character of value) {
+      const scalar = character.codePointAt(0);
+      bytes += scalar <= 0x7f ? 1 : scalar <= 0x7ff ? 2 : scalar <= 0xffff ? 3 : 4;
+      if (bytes > 16000) break;
+    }
+    return bytes;
+  }
+  function normalizeRuleAI(value) {
+    if (value == null) return null;
+    if (!value || typeof value !== "object" || Array.isArray(value)
+      || Object.keys(value).some(key => !["providerModel", "accountID", "reasoningEffort", "dailyRequestLimit", "prompt", "context"].includes(key))
+      || typeof value.providerModel !== "string" || value.providerModel.length > 520
+      || !/^(chatgpt:.+|api:[^:]+:.+)$/.test(value.providerModel)
+      || typeof value.accountID !== "string" || value.accountID.length > 256
+      || !["default", "low", "medium", "high"].includes(value.reasoningEffort)
+      || (value.dailyRequestLimit != null && (!Number.isInteger(value.dailyRequestLimit) || value.dailyRequestLimit < 1 || value.dailyRequestLimit > 100000))
+      || (value.prompt !== undefined && (typeof value.prompt !== "string" || utf8Length(value.prompt) > 16000))
+      || (value.context !== undefined && (typeof value.context !== "string" || utf8Length(value.context) > 16000))) return null;
+    return {providerModel: value.providerModel, accountID: value.accountID, reasoningEffort: value.reasoningEffort, dailyRequestLimit: value.dailyRequestLimit ?? null, prompt:value.prompt ?? "", context:value.context ?? ""};
+  }
   function validateGroupPatch(patch, groupType) {
     const has = (key) => Object.prototype.hasOwnProperty.call(patch || {}, key);
     const bad = (key, ok) => (has(key) && !ok(patch[key]) ? `invalid-${key}` : null);
     const bool = (value) => typeof value === "boolean";
     const checks = [
+      bad("ruleAI", v => groupType === "custom" && (v === null || normalizeRuleAI(v) !== null)),
       bad("name", (v) => typeof v === "string" && v.trim().length > 0),
       bad("enabled", bool), bad("allowSnooze", bool), bad("resetAtMidnight", bool), bad("rollingLimit", bool),
       bad("mode", (v) => v === "instant" || (v === "after-minutes" && groupType !== "custom")),
@@ -824,7 +858,7 @@
     cbUsageBucketStartMs, cbPruneUsageBuckets, cbBucketsUsedMs, cbNextReturnMs,
     sanitizeUsageTimers, sanitizeSnoozeTotals, sanitizeResetTimes, sanitizeUsageBuckets, sanitizeSnoozes,
     DEFAULT_GLOBAL_SETTINGS, AUTOSAVE_DEBOUNCE_MAX_MS, sanitizeGlobalSettings, validateSettingsPatch,
-    nameTaken, freeName, dedupeNames, budgetRestarts, validateGroupPatch
+    normalizeRuleAI, nameTaken, freeName, dedupeNames, budgetRestarts, validateGroupPatch
   });
   global.CBGroupActions = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;

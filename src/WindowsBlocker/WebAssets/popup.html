@@ -17,7 +17,7 @@
         <!-- Mac Vault: the scene switch (Vault / Classifier / Activity). -->
         <nav class="vui-tabs desktop-only" id="sceneTabs" aria-label="Scene">
           <button type="button" class="vui-tab is-active" data-scene="vault" data-i18n="scene.vault">Vault</button>
-          <button type="button" class="vui-tab" data-scene="classifier" data-i18n="scene.classifier">Classifier</button>
+          <button type="button" class="vui-tab" data-scene="classifier" data-i18n="scene.classifier">Content tagging</button>
           <button type="button" class="vui-tab" data-scene="activity" data-i18n="scene.activity">Activity</button>
         </nav>
         <h1 class="browser-only app-title" data-i18n="app.shortTitle">Adamancia Vault</h1>
@@ -217,7 +217,7 @@
             <div id="platformTagFields" class="platform-tag-fields hidden">
               <input id="platformTagMode" type="hidden" value="all" />
               <p class="field-help" data-i18n="tagFilter.help" data-info="tagFilter.help">
-                Filter content using its Classifier tags. One rule per line: "Gaming" matches that tag; "Gaming @3" sets a minimum confidence; "Gaming + Drama" requires both; "!Tutorial" makes an exception.
+                Filter content using tags from Content tagging. One rule per line: "Gaming" matches that tag; "Gaming @3" sets a minimum confidence; "Gaming + Drama" requires both; "!Tutorial" makes an exception.
               </p>
               <div id="platformTagListBlock">
                 <label class="label" for="platformTags" data-i18n="tagFilter.tags" data-info-key="tagFilter.tags" data-i18n-info="info.tagFilter.tags" data-info-copy="Add tags or tag rules to match against classified content. A confidence suffix such as @3 sets a minimum score.">Tags</label>
@@ -279,6 +279,17 @@
             <span class="label" data-i18n="custom.title" data-info-key="custom.title" data-i18n-info="info.custom.title" data-info-copy="Write a custom rule using the Vault rule API. Running the rule activates the code for this group.">Custom rule</span>
 
 
+            <details id="ruleAISettings" class="vui-expand">
+              <summary data-i18n="custom.ai.title">AI calls</summary>
+              <div class="rule-ai-fields">
+                <label class="label"><span data-i18n="custom.ai.model">Connection &amp; model</span><select id="ruleAIModel" aria-label="AI connection and model"></select></label>
+                <label class="label"><span data-i18n="custom.ai.effort">Reasoning</span><select id="ruleAIEffort" aria-label="AI reasoning effort"></select></label>
+                <label class="label"><span data-i18n="custom.ai.cap">Daily request cap</span><input id="ruleAICap" type="number" min="1" max="100000" step="1" placeholder="No cap" data-i18n-placeholder="custom.ai.noCap" /></label>
+                <label class="label rule-ai-text"><span data-i18n="custom.ai.prompt">Saved prompt</span><textarea id="ruleAIPrompt" rows="3" maxlength="16000"></textarea></label>
+                <label class="label rule-ai-text"><span data-i18n="custom.ai.context">Saved context</span><textarea id="ruleAIContext" rows="3" maxlength="16000"></textarea></label>
+              </div>
+              <div class="field-actions"><button id="ruleAIRefresh" type="button" class="secondary weird" data-i18n="custom.ai.refresh">Refresh models</button><span id="ruleAIStatus" class="field-help" role="status"></span></div>
+            </details>
             <div id="blockingRulesEditor" class="code-editor">
               <pre id="blockingRulesHighlight" class="code-editor-highlight" aria-hidden="true"></pre>
               <textarea
@@ -301,7 +312,7 @@
               </button>
               <span id="runCustomGroupStatus" class="run-status"></span>
             </div>
-            <!-- The rules' own output (v.log), under the code that writes it. -->
+            <!-- This rule's log output and errors, under the code that writes it. -->
             <details id="logFeedSection" class="vui-expand log-feed">
               <summary>
                 <span data-i18n="logFeed.title">Log</span>
@@ -309,11 +320,11 @@
               </summary>
               <div class="log-feed-toolbar">
                 <button id="logFeedDownload" type="button" class="weird" data-hint="Download logs" aria-label="Download logs">⬇</button>
-                <span class="log-feed-hint" data-i18n="logFeed.hint" data-info="logFeed.hint">Output from v.log() in this group’s custom rule.</span>
+                <span class="log-feed-hint" data-i18n="logFeed.hint" data-info="logFeed.hint">This rule’s v.log() output and execution or delivery errors.</span>
                 <button id="logFeedClear" type="button" class="weird" data-i18n="logFeed.clear">Clear</button>
               </div>
               <div id="logFeedList" data-vui-search="vault-logs" data-vui-search-label="Search log messages" data-vui-search-items=".log-feed-entry" class="log-feed-list" aria-live="polite"></div>
-              <p id="logFeedEmpty" class="log-feed-empty" data-i18n="logFeed.empty">No output from this rule yet. Call v.log("hello") in a handler to add an entry.</p>
+              <p id="logFeedEmpty" class="log-feed-empty" data-i18n="logFeed.empty">No log entries from this rule yet.</p>
             </details>
 
           </section>
@@ -449,10 +460,10 @@
             <div class="more-row" data-follows="appsSettingsSection">
               <label class="checkbox-row compact" for="appsAllowlist">
                 <input id="appsAllowlist" type="checkbox" />
-                <span data-i18n="apps.allowlistLabel" data-info-key="apps.allowlistLabel" data-i18n-info="info.apps.allowlistLabel" data-info-copy="Block apps outside this group’s app list instead of blocking the listed apps. System apps, browsers, and Vault are excluded.">Block every app except these</span>
+                <span data-i18n="apps.allowlistLabel" data-info-key="apps.allowlistLabel" data-i18n-info="info.apps.allowlistLabel" data-info-copy="Block apps outside this group’s app list instead of blocking the listed apps. Vault itself remains protected; availability of other apps depends on the desktop platform.">Block every app except these</span>
               </label>
               <p class="field-help desktop-only" data-i18n="apps.allowlistHelp" data-info="apps.allowlistHelp">
-                When on, this group blocks every app except those listed above. System apps, browsers, and Vault itself are excluded from blocking. When off, it blocks only the listed apps.
+                When on, this group blocks every app except those listed above, subject to the desktop platform’s app protections. Vault itself remains available. When off, it blocks only the listed apps.
               </p>
             </div>
             <div class="more-row" data-follows="platformTagListBlock">
@@ -692,6 +703,7 @@
     <script src="desktop-config.js"></script>
     <script src="chrome-shim.js"></script>
     <script src="browser-compat.js"></script>
+    <script src="storage-schema.js"></script>
     <script src="bridge-protocol.js"></script>
     <script src="platform-profiles.js"></script>
     <script src="group-scopes.js"></script>
@@ -701,6 +713,7 @@
     <script src="popup-markdown.js"></script>
     <script src="rule-core.js"></script>
     <script src="vault-info.js"></script>
+    <script src="rule-ai-ui.js"></script>
     <script src="popup.js"></script>
     <!-- Mac Vault: the Classifier and Activity scenes, in this same document. -->
     <script src="scenes.js"></script>

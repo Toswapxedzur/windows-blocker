@@ -15,7 +15,7 @@ dest = root / "src/WindowsBlocker/WebAssets"
 editor = mac / "Sources/MacBlockerWebUI/WebAssets"
 files = ["popup.js", "popup.css", "popup.html", "group-scopes.js", "parental-pin.js", "group-actions.js",
          "platform-profiles.js", "translations.js", "popup-markdown.js", "bridge-protocol.js", "browser-compat.js",
-         "rule-core.js", "vault-ui.css", "vault-ui.js", "vault-info.js", "vault-info.css", "chrome-shim.js",
+         "rule-core.js", "rule-ai-ui.js", "storage-schema.js", "vault-ui.css", "vault-ui.js", "vault-info.js", "vault-info.css", "chrome-shim.js",
          "scenes.js", "scenes.css", "activity.js", "activity.css", "activity-time-bins.js"]
 for name in files:
     # Browser assets stay canonical even if the Mac mirror has not been synced.
@@ -30,6 +30,15 @@ for name in ["translation", "code-manual", "manual"]:
         shutil.copy2(source / "en.md", target / "en.md")
     else:
         shutil.copytree(source, target)
+# The browser editor and the native Classifier scene have separate English
+# catalogs. Windows hosts both in one WebView, so it needs their union in every
+# locale. Keep browser wording for shared keys and add native-only scene keys.
+for catalog in (dest / "translation").glob("*.json"):
+    browser_strings = json.loads(catalog.read_text(encoding="utf-8"))
+    native_strings = json.loads((editor / "translation" / catalog.name).read_text(encoding="utf-8"))
+    for key, value in native_strings.items():
+        browser_strings.setdefault(key, value)
+    catalog.write_text(json.dumps(browser_strings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 # Windows editor branding comes solely from the selected Windows master.
 # Browser-only master previews must not leak into the desktop payload.
 icons = dest / "icons"
@@ -67,7 +76,9 @@ config = 'window.__CB_DESKTOP_PROGRAM_ID="windowsapp";\nwindow.__CB_DESKTOP_MANI
 html = (dest / "popup.html").read_text(encoding="utf-8")
 marker = '    <script src="chrome-shim.js"></script>'
 assert html.count(marker) == 1, "Mac popup template must load the native shim once"
-html = html.replace(marker, '    <script src="desktop-config.js"></script>\n' + marker)
+config_tag = '    <script src="desktop-config.js"></script>\n'
+if config_tag not in html:
+    html = html.replace(marker, config_tag + marker)
 (dest / "popup.html").write_text(html, encoding="utf-8")
 # tools/mcp-tools.mac.json is exported from the tested Swift tools/list
 # registry by PortableMCPCatalogTests, with handlers deliberately untouched.

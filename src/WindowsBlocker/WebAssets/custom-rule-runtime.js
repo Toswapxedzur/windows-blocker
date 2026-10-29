@@ -6,7 +6,7 @@
  * Runs inside JavaScriptCore after rule-core.js. The Swift host
  * (RuleRuntime.swift) calls, with JSON in and JSON out:
  *   MacBlockerRuntime.load(groupId, source, stateJSON)
- *     → { ok, handlers, types, error, logs, quarantine }
+ *     → { ok, handlers, types, error, logs, states: { groupId: stateJSON }, quarantine }
  *   MacBlockerRuntime.unload(groupId)
  *   MacBlockerRuntime.suppress(groupId, on)      // a disabled group's rule hears nothing
  *   MacBlockerRuntime.dispatch(descriptorJSON)   // { type, now, data, targetGroupId? }
@@ -49,12 +49,37 @@ var MacBlockerRuntime = (function () {
     return (list || []).map((entry) => ({ groupId: entry.groupId, level: entry.level, message: message(entry.args) }));
   }
 
+  // Keep the native writer outside user code's global namespace.
+  const nativeCommit = globalThis.__vaultBeforeRuleCommit;
+  delete globalThis.__vaultBeforeRuleCommit;
+  let registering = false;
+  const captureRecovery = globalThis.__vaultCaptureRuleLoadRecovery;
+  delete globalThis.__vaultCaptureRuleLoadRecovery;
+  if (typeof captureRecovery === "function") captureRecovery(() => { registering = false; });
+
+  function stateStrings(states) {
+    const out = {};
+    for (const [groupId, state] of Object.entries(states || {})) out[groupId] = JSON.stringify(state);
+    return out;
+  }
+
   return {
+    setTimeContext(groupId, contextJSON) {
+      return JSON.stringify(engine.setTimeContext(String(groupId), JSON.parse(contextJSON)));
+    },
     load(groupId, source, stateJSON) {
-      let state = {};
-      try { state = JSON.parse(stateJSON || "{}"); } catch (_) {}
-      const result = engine.load(String(groupId), source, state);
-      return JSON.stringify({ ...result, logs: logs(result.logs) });
+      if (registering) return JSON.stringify({ ok: false, handlers: 0, types: [], error: "A rule load is already in progress.", logs: [], states: {} });
+      registering = true;
+      try {
+        let state = {};
+        try { state = JSON.parse(stateJSON || "{}"); } catch (_) {}
+        const beforeCommit = typeof nativeCommit === "function" ? (states) => {
+          const error = nativeCommit(JSON.stringify(stateStrings(states)));
+          if (error) throw new Error(error);
+        } : undefined;
+        const result = engine.load(String(groupId), source, state, beforeCommit);
+        return JSON.stringify({ ...result, states: stateStrings(result.states), logs: logs(result.logs) });
+      } finally { registering = false; }
     },
     unload(groupId) {
       engine.unload(String(groupId));
@@ -62,14 +87,17 @@ var MacBlockerRuntime = (function () {
     suppress(groupId, on) {
       engine.suppress(String(groupId), on === true);
     },
+    acceptsRequest(groupId, token) { return engine.acceptsRequest(String(groupId), String(token)); },
     dispatch(descriptorJSON) {
-      const result = engine.dispatch(JSON.parse(descriptorJSON));
+      const descriptor = JSON.parse(descriptorJSON);
+      if (descriptor.timeContext) engine.setTimeContext(String(descriptor.targetGroupId), descriptor.timeContext);
+      const result = engine.dispatch(descriptor);
       const states = {};
       for (const [groupId, state] of Object.entries(result.states)) states[groupId] = JSON.stringify(state);
       const actions = result.actions.map((action) => (action.kind === "file"
         ? { ...action, payload: action.payload === null ? null : typeof action.payload === "string" ? action.payload : JSON.stringify(action.payload) }
         : action));
-      return JSON.stringify({ actions, logs: logs(result.logs), diagnostics: logs(result.diagnostics), panels: result.panels, states, quarantine: result.quarantine });
+      return JSON.stringify({ actions, logs: logs(result.logs), diagnostics: logs(result.diagnostics), panels: result.panels, states, types: result.types, stateFailures: result.stateFailures, quarantine: result.quarantine });
     }
   };
 })();

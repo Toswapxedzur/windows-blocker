@@ -194,7 +194,7 @@ function isNativeHost() {
 }
 
 // Stable identifier for this endpoint's "program", shown in the per-group
-// connection panel's program picker (macapp / chrome / edge / firefox / ...).
+// connection panel's program picker (macapp / chrome / edge / safari).
 function detectProgramId() {
   if (isNativeHost()) return window.CBBridgeProtocol.nativeProgramId(window.__CB_DESKTOP_PROGRAM_ID);
   let ua = "";
@@ -580,7 +580,7 @@ function focusVaultModal(modal, initialFocus, onEscape) {
   const returnFocus = () => {
     if (opener?.isConnected) return opener;
     if (opener?.id) return openerRoot?.getElementById(opener.id);
-    if (opener?.dataset?.action === "openManual") return openerRoot?.querySelector('[data-action="openManual"]');
+    if (["openManual", "openUtilityPanel"].includes(opener?.dataset?.action)) return openerRoot?.querySelector(`[data-action="${opener.dataset.action}"]`);
     return null;
   };
   modalFocusReleases.set(modal, VaultUI.focusDialog(modal.querySelector(".modal-card"), { initialFocus, onEscape, returnFocus }));
@@ -923,6 +923,9 @@ function applyClusters(list, rosters) {
   for (const cluster of state.clusters) {
     if (!cluster || !Array.isArray(cluster.members)) continue;
     if (!cluster.members.some((m) => m && m.program === LOCAL_PROGRAM_ID)) continue;
+    const identityKey = "browser-upgrade:" + cluster.id;
+    if (cluster.shared?.browserIdentityStatus?.state === "upgrade-required") warnBridgeOnce(identityKey, t("link.browserUpgradeRequired"));
+    else clearBridgeWarn(identityKey);
     const key = "offline:" + cluster.id;
     if (cluster.allOnline === false) {
       warnBridgeOnce(key, t("connectionGroup.warnMemberOffline"));
@@ -952,7 +955,7 @@ const groupLinkButton = document.getElementById("groupLinkButton");
 const groupUnlinkButton = document.getElementById("groupUnlinkButton");
 
 function programLabel(program) {
-  const labels = { macapp: "Mac Vault", windowsapp: "Windows Vault", chrome: "Chrome", edge: "Edge", firefox: "Firefox", opera: "Opera", safari: "Safari" };
+  const labels = { macapp: "Mac Vault", windowsapp: "Windows Vault", chrome: "Chrome", edge: "Edge", safari: "Safari" };
   return labels[program] || program;
 }
 
@@ -1001,7 +1004,18 @@ function renderLinkSection(group, editable) {
   groupLinkButton.disabled = groupLinkTarget.disabled || !groupLinkTarget.value;
 }
 
+function browserIdentityErrorText(reason) {
+  const value = String(reason || "");
+  if (["browser-upgrade-required", "browser-identity-upgrade-required"].includes(value)) return t("link.browserUpgradeRequired");
+  if (["browser-identity-sync-pending", "browser-sync-required"].includes(value)) return t("link.browserIdentitySyncPending");
+  if (value === "browser-connect-required") return t("link.browserConnectRequired");
+  if (["browser-identity-pending-edits-invalid", "browser-identity-pending-edits-too-large"].includes(value)) return t("link.browserIdentityPendingEditsInvalid");
+  return value;
+}
 function showLinkRefusal(reason) {
+  if (["browser-upgrade-required", "browser-identity-upgrade-required", "browser-identity-sync-pending", "browser-sync-required", "browser-connect-required"].includes(String(reason))) {
+    setStatus(browserIdentityErrorText(reason), true); return;
+  }
   const key = `link.refused.${String(reason || "")}`;
   const text = t(key);
   setStatus(text && text !== key ? text : t("link.refused.generic"), true);
@@ -2733,6 +2747,7 @@ function getSerializableGroupSnapshot(group) {
     activeDays: [...group.activeDays],
     timeWindowsText: group.timeWindowsText,
     blockingRulesText: group.blockingRulesText,
+    ruleAI: group.ruleAI ?? null,
     // The lock (and its PIN) is not part of an exported definition.
     fallbackUrl: group.fallbackUrl ?? "",
     pauseSeconds: group.pauseSeconds ?? DEFAULT_PAUSE_SECONDS
@@ -2847,6 +2862,7 @@ function groupToDraft(group) {
     discordTargetsText: group.discordTargets.join("\n"),
     surfaceHides: normalizeSurfaceHides(group.surfaceHides, group.groupType),
     blockingRulesText: group.blockingRulesText,
+    ruleAI: group.ruleAI ?? null,
     blockHomePage: Boolean(group.blockHomePage),
     allowlist: Boolean(group.allowlist),
     fallbackUrl: group.fallbackUrl ?? "",
@@ -2964,14 +2980,18 @@ function refuseUnlessEditable(group) {
   return true;
 }
 
+function browserIdentityUpgradeRequired(group) {
+  return groupConnectionCluster(group)?.shared?.browserIdentityStatus?.state === "upgrade-required";
+}
 function refuseWhileDesktopVaultAway(group) {
   if (!isEnforceOnly(group)) return false;
-  setStatus(t("link.enforceOnly"), true);
+  setStatus(t(browserIdentityUpgradeRequired(group) ? "link.browserUpgradeRequired" : "link.enforceOnly"), true);
   render();
   return true;
 }
 
 function isEnforceOnly(group) {
+  if (group && browserIdentityUpgradeRequired(group)) return true;
   if (!group || !desktopVaultAway()) return false;
   const links = Array.isArray(state.linkCopy) ? state.linkCopy : [];
   return links.some((cluster) => window.CBBridgeProtocol.clusterForGroup([cluster], group, LOCAL_PROGRAM_ID) === cluster);
@@ -3502,7 +3522,7 @@ function updateFreezeUI(group, now = Date.now()) {
   unfreezeButton.disabled = !freezeStatus.canUnfreeze || enforceOnly;
 
   if (enforceOnly) {
-    freezeSummary.textContent = t("link.enforceOnly");
+    freezeSummary.textContent = t(browserIdentityUpgradeRequired(group) ? "link.browserUpgradeRequired" : "link.enforceOnly");
     return;
   }
   if (!freezeStatus.isFrozen) {
@@ -3582,7 +3602,7 @@ function updateSnoozeUI(group, now = Date.now()) {
     snoozeSummary.textContent = budgetSnooze
       ? t("snooze.summary.pendingBudget", {
         delay: formatDurationMs(snooze.startsAtMs - now),
-        time: formatDurationMs(snooze.extraMs)
+        time: formatDurationMs(snooze.grantMs ?? snooze.extraMs)
       })
       : t("snooze.summary.pending", {
         delay: formatDurationMs(snooze.startsAtMs - now),
@@ -3593,7 +3613,7 @@ function updateSnoozeUI(group, now = Date.now()) {
   } else if (snoozePhase === "active") {
     snoozeSummary.textContent = budgetSnooze
       ? t("snooze.summary.activeBudget", {
-        time: formatDurationMs(snooze.extraMs),
+        time: formatDurationMs(snooze.grantMs ?? snooze.extraMs),
         until: formatDurationMs(snooze.untilMs - now)
       })
       : t("snooze.summary.active", {
@@ -3760,6 +3780,7 @@ function renderEditorFields(now) {
   if (blockedAppsData) blockedAppsData.value = draft?.appsData ?? serializeApps(group.apps || []);
   if (appsAllowlistField) appsAllowlistField.checked = Boolean(draft?.appsAllowlist ?? group.appsAllowlist);
   blockingRulesField.value = draft?.blockingRulesText ?? group.blockingRulesText;
+  if (isCustomGroup) window.CBRuleAIUI?.render(group, editable, draft && Object.hasOwn(draft,"ruleAI") ? draft.ruleAI : group.ruleAI, () => {stashCurrentDraft();scheduleAutosave();});
   platformAuthorsField.value = draft?.sourcesText ?? group.sources.join("\n");
   platformVideoModeField.value = draft?.platformVideoMode ?? group.platformVideoMode;
   platformAuthorModeField.value = normalizeSourceMode(
@@ -4020,6 +4041,7 @@ function stashCurrentDraft() {
     appsData: blockedAppsData ? blockedAppsData.value : "[]",
     appsAllowlist: appsAllowlistField ? appsAllowlistField.checked : false,
     blockingRulesText: blockingRulesField.value,
+    ruleAI: window.CBRuleAIUI?.read() ?? null,
     platformVideoMode: platformVideoModeField.value,
     sourceMode: platformAuthorModeField.value.startsWith("tags-") ? "nobody" : platformAuthorModeField.value,
     sourcesText: platformAuthorsField.value,
@@ -4067,7 +4089,7 @@ async function flushAutosave() {
 }
 
 // Best-effort sync persist used from pagehide / visibilitychange.
-// We can't await — Chrome's IPC layer forwards the unawaited set() before
+// We can't await — Chrome's IPC layer forwards the submitted message/write before
 // the popup tears down. Validation errors are swallowed so a half-typed
 // draft never blocks exit; partial input is recovered from state.drafts.
 function flushAutosaveOnExit() {
@@ -4082,8 +4104,8 @@ function flushAutosaveOnExit() {
   try {
     const next = applyDraft(group, getDraftForGroup(group.id)).group;
     state.groups = state.groups.map((item) => (item.id === group.id ? next : item));
-    // Unawaited: the write is sent before the popup tears down.
-    persistGroups([group.id]).catch(() => {});
+    // Unawaited: definition intent is sent before the popup tears down.
+    persistGroups([group.id], { before: [group] }).catch(() => {});
   } catch (_) {}
 }
 
@@ -4145,40 +4167,56 @@ async function loadStoredState() {
 // elsewhere meanwhile — a linked device, the "+", an AI tool — is kept).
 // Usage, snooze counting and links belong to the service worker / Mac Vault,
 // which share every stored change.
-async function persistGroups(ids, { reorder = false, message = "" } = {}) {
-  let list = state.storedGroups.filter((group) => group && group.id);
-  for (const id of ids) {
-    const at = list.findIndex((group) => group.id === id);
-    const index = state.groups.findIndex((group) => group.id === id);
-    if (index < 0) {
-      if (at >= 0) list.splice(at, 1);
-      continue;
-    }
-    const next = toStoredGroup(state.groups[index]);
-    // The other program's lines are never written from here: they stay as stored.
-    if (at >= 0) next.scopes = CBGroupScopes.withOwnLines(list[at], next, LOCAL_OWNER);
-    if (at >= 0) list[at] = next;
-    else list.splice(Math.min(index, list.length), 0, next);
-  }
-  if (reorder) {
-    const order = new Map(state.groups.map((group, index) => [group.id, index]));
-    list = list
-      .map((group, index) => ({ group, key: order.has(group.id) ? order.get(group.id) : state.groups.length + index }))
-      .sort((a, b) => a.key - b.key)
-      .map((entry) => entry.group);
-  }
-  state.storedGroups = list;
-  await chrome.storage.local.set({ [BLOCKED_GROUPS_KEY]: list });
-  if (message) setStatus(message);
+let editorPersistTail = Promise.resolve();
+const editorPendingTasks = new Set();
+function persistGroups(ids, options = {}) {
+  // Every producer supplies the pre-edit UI copy. Diff the actual action, not
+  // the whole stale editor list or an unacknowledged store notification.
+  const baseline = new Map((options.before || []).map(group => [group.id, toStoredGroup(group)]));
+  const changes = ids.map(id => CBGroupScopes.editorChange(baseline.get(id), state.groups.find(group => group.id === id) ? toStoredGroup(state.groups.find(group => group.id === id)) : null, LOCAL_OWNER));
+  const request = { type: "editor-definition-edit", changes, intent: options.intent || "edit" };
+  if (options.coveredPinHashes) request.coveredPinHashes = options.coveredPinHashes;
+  if (options.reorder) { request.order = state.groups.map(group => group.id); request.movedId = options.movedId; }
+  // Submit immediately, including pagehide flushes while an earlier save waits
+  // for acknowledgement. The worker's queue serializes commits, not this page.
+  ++popupDefinitionReadRevision;
+  const sent = chrome.runtime.sendMessage(request);
+  const task = Promise.resolve(sent).then(async reply => {
+    if (!reply?.ok) throw new Error(browserIdentityErrorText(reply?.error) || "Unable to save group.");
+    if (options.message) setStatus(options.message);
+    return reply;
+  }).finally(async () => {
+    editorPendingTasks.delete(task);
+    if (!editorPendingTasks.size) await refreshPopupDefinitionStorage();
+  });
+  editorPendingTasks.add(task);
+  editorPersistTail = Promise.allSettled([...editorPendingTasks]);
+  return task;
 }
 
 // A snooze entry the user started or ended here; the service worker / Mac
 // Vault count its time and share it with linked devices.
 async function persistSnooze(groupId, entry, message = "") {
-  if (refuseWhileDesktopVaultAway(state.groups.find((item) => item.id === groupId))) return;
-  const stored = (await chrome.storage.local.get({ [GROUP_SNOOZES_KEY]: {} }))[GROUP_SNOOZES_KEY];
-  await chrome.storage.local.set({ [GROUP_SNOOZES_KEY]: { ...(stored && typeof stored === "object" ? stored : {}), [groupId]: entry } });
-  if (message) setStatus(message);
+  const group = state.groups.find((item) => item.id === groupId);
+  if (refuseWhileDesktopVaultAway(group)) throw new Error(t(browserIdentityUpgradeRequired(group) ? "link.browserUpgradeRequired" : "link.enforceOnly"));
+  try {
+    if (IS_NATIVE_DESKTOP) {
+      const stored = (await chrome.storage.local.get({ [GROUP_SNOOZES_KEY]: {} }))[GROUP_SNOOZES_KEY];
+      await chrome.storage.local.set({ [GROUP_SNOOZES_KEY]: { ...(stored && typeof stored === "object" ? stored : {}), [groupId]: entry } });
+    } else {
+      const reply = await chrome.runtime.sendMessage({ type: "set-group-snooze", groupId, entry });
+      if (!reply?.ok) throw new Error(browserIdentityErrorText(reply?.error) || "Unable to save snooze.");
+      entry = reply.snooze || entry;
+    }
+    state.groupSnoozes[groupId] = entry;
+    if (message) setStatus(message);
+  } catch (error) {
+    const stored = (await chrome.storage.local.get({ [GROUP_SNOOZES_KEY]: {} }))[GROUP_SNOOZES_KEY];
+    state.groupSnoozes = sanitizeSnoozes(stored, state.groups);
+    render();
+    setStatus(browserIdentityErrorText(error?.message || error), true);
+    throw error;
+  }
 }
 
 async function loadGroups() {
@@ -4217,7 +4255,7 @@ function updateGroupEnabled(groupId, enabled) {
   }
 
   renderGroupList();
-  persistGroups([groupId], { message: t(enabled ? "status.enabled" : "status.disabled", { name: group.name }) }).catch(() => {
+  persistGroups([groupId], { before: [group], message: t(enabled ? "status.enabled" : "status.disabled", { name: group.name }) }).catch(() => {
     setStatus(t("status.errorSaveGroup"), true);
   });
 }
@@ -4310,7 +4348,7 @@ async function setGroupPlatformView(key) {
   }
   state.groups = state.groups.map((item) => (item.id === stored.id ? next : item));
   delete state.drafts[stored.id];
-  if (!known) await persistGroups([stored.id]);
+  if (!known) await persistGroups([stored.id], { before: [stored] });
   render();
 }
 
@@ -4339,7 +4377,7 @@ async function removeGroupPlatform(platform) {
   const next = viewGroupOnPlatform({ ...stored, scopes }, nextKey);
   state.groups = state.groups.map((item) => (item.id === stored.id ? next : item));
   delete state.drafts[stored.id];
-  await persistGroups([stored.id]);
+  await persistGroups([stored.id], { before: [stored] });
   render();
 }
 
@@ -4474,18 +4512,19 @@ async function deleteAllGroups() {
   await clearAllGroups();
 }
 
-async function clearAllGroups() {
+async function clearAllGroups(coveredPinHashes = []) {
   // The last step's own check: a linked group turned enforce-only meanwhile.
   const away = state.groups.find(isEnforceOnly);
   if (away && refuseWhileDesktopVaultAway(away)) return;
-  const ids = state.groups.map((group) => group.id);
+  const before = state.groups;
+  const ids = before.map((group) => group.id);
   state.groups = [];
   state.drafts = {};
   ++groupSelectionRevision;
   state.selectedGroupId = null;
 
   // The service worker / Mac Vault drop the groups' usage and snoozes.
-  await persistGroups(ids, { message: t("status.bulkDeleted") });
+  await persistGroups(ids, { before, intent: "delete-all", coveredPinHashes, message: t("status.bulkDeleted") });
   await rememberGroupSelection();
   render();
 }
@@ -4510,7 +4549,7 @@ async function deleteSelectedGroup() {
   ++groupSelectionRevision;
   state.selectedGroupId = state.groups[0]?.id ?? null;
 
-  await persistGroups([group.id], { message: t("status.deleted", { name: group.name }) });
+  await persistGroups([group.id], { before: [group], message: t("status.deleted", { name: group.name }) });
   await rememberGroupSelection();
   render();
 }
@@ -4593,10 +4632,12 @@ async function importIntoSelectedGroup() {
     state.groups = state.groups.map((item) => (item.id === group.id ? replacementGroup : item));
     delete state.drafts[group.id];
 
-    await persistGroups([group.id], { message: t("status.importedGroup", { name: replacementGroup.name }) });
+    await persistGroups([group.id], { before: [group] });
     // An imported group starts fresh (owner 2026-09-27): no time used, no
     // snooze. The runtime's owner (the worker, Mac Vault) resets it.
-    await chrome.runtime.sendMessage({ type: "reset-group-runtime", groupId: group.id });
+    const reset = await chrome.runtime.sendMessage({ type: "reset-group-runtime", groupId: group.id });
+    if (reset?.ok === false) throw new Error(browserIdentityErrorText(reset.error));
+    setStatus(t("status.importedGroup", { name: replacementGroup.name }));
     render();
   } catch (error) {
     console.error("Failed to import block group.", error);
@@ -4609,7 +4650,8 @@ function buildUpdatedGroupFromDraft(group, draft) {
   // field still gets committed, so an unrelated mid-edit field (e.g. a blank
   // name) can't discard the whole update. The first error is returned so the
   // UI can surface it.
-  let firstError = null;
+  const ruleAI = draft.ruleAI == null ? null : CBGroupActions.normalizeRuleAI(draft.ruleAI);
+  let firstError = draft.ruleAI != null && ruleAI === null ? new Error(t("custom.ai.invalid")) : null;
   const fail = (error) => {
     if (!firstError) firstError = error;
   };
@@ -4750,6 +4792,7 @@ function buildUpdatedGroupFromDraft(group, draft) {
         group.groupType === "discord" ? discordResults.validTargets : group.discordTargets,
       discordMode: group.groupType === "discord" ? discordMode : group.discordMode,
       blockingRulesText: isCustomGroup ? blockingRulesText : group.blockingRulesText,
+      ruleAI: isCustomGroup ? (draft.ruleAI != null && ruleAI === null ? group.ruleAI : ruleAI) : null,
       // An entry not in view keeps its own values (a custom group's site list).
       sites: usesSiteList ? siteResults.validSites : group.sites,
       // Blocklist (false) vs "block all except" (true).
@@ -4792,7 +4835,7 @@ async function autosaveSelectedGroup() {
   else delete state.drafts[group.id];
 
   try {
-    await persistGroups([group.id]);
+    await persistGroups([group.id], { before: [group] });
   } catch (error) {
     console.error("Failed to persist groups during autosave.", error);
     setStatus(t("status.errorSaveGroup"), true);
@@ -4858,7 +4901,7 @@ async function reorderGroups(draggedGroupId, insertIndex) {
   state.draggedGroupId = null;
   state.dragInsertIndex = null;
 
-  await persistGroups([], { reorder: true });
+  await persistGroups([], { reorder: true, movedId: draggedGroupId });
   render();
 }
 
@@ -4934,10 +4977,11 @@ async function persistGroupFields(groupId, fields, statusMsg) {
   // A long flow (a 10 × 5 s confirmation, an open PIN panel) checks again at
   // the end: Mac Vault may have gone away meanwhile.
   if (refuseWhileDesktopVaultAway(state.groups.find((item) => item.id === groupId))) return;
+  const before = state.groups.find(item => item.id === groupId);
   state.groups = state.groups.map((item) =>
     item.id === groupId ? { ...item, ...fields } : item
   );
-  await persistGroups([groupId], { message: statusMsg });
+  await persistGroups([groupId], { before: before ? [before] : [], intent: "lock-fields", message: statusMsg });
   render();
 }
 
@@ -5135,16 +5179,15 @@ function closeUnfreezeFlow() {
   }
 }
 
-function showSnoozeNotice(group, snoozeEntry, totalBeforeMs) {
-  const activationDelayMs = Math.max(0, snoozeEntry.startsAtMs - Date.now());
-  cbDialog.alert(
-    t(snoozeEntry.kind === "budget" ? "snooze.noticePopupBudget" : "snooze.noticePopup", {
+function showSnoozeNotice(group, totalBeforeMs) {
+  return cbDialog.confirm(
+    t(group.mode === "after-minutes" && group.snoozeKind === "budget" ? "snooze.noticePopupBudget" : "snooze.noticePopup", {
       name: group.name,
       total: formatDurationMs(totalBeforeMs),
-      upcoming: formatDurationMs(snoozeEntry.kind === "budget" ? snoozeEntry.extraMs : snoozeEntry.untilMs - snoozeEntry.startsAtMs),
-      delay: formatDurationMs(activationDelayMs)
+      upcoming: formatDurationMs((Number(group.snoozeMinutes) || 0) * 60_000),
+      delay: formatDurationMs((Number(group.snoozeActivationDelayMinutes) || 0) * 60_000)
     }),
-    { title: t("snooze.title"), confirmText: t("modal.confirm") }
+    { title: t("snooze.title"), confirmText: t("modal.confirm"), cancelText: t("modal.cancel") }
   );
 }
 
@@ -5225,7 +5268,7 @@ async function handleUnfreezeConfirm() {
         render();
         return;
       }
-      await clearAllGroups();
+      await clearAllGroups(passed);
       return;
     }
 
@@ -5355,27 +5398,37 @@ function showSnoozeInProgress(entry, phase) {
 // Starts the snooze after its confirmation. The plan is taken again here: a
 // snooze started meanwhile (the cover, a linked device) is not replaced.
 async function applySnoozeStart(group) {
-  const now = Date.now();
-  const current = state.groupSnoozes[group.id];
-  if (CBGroupActions.snoozePlan(group, current, now).error) {
-    showSnoozeInProgress(current, getSnoozePhase(current, now));
+  if (state.snoozeNoticeOpen) return;
+  state.snoozeNoticeOpen = true;
+  try {
+    const fields = ["allowSnooze", "snoozeKind", "snoozeMinutes", "snoozeActivationDelayMinutes", "snoozeCooldownMinutes", "snoozeConfirmations", "mode"];
+    const settings = fields.map(key => group[key]);
+    const totalBeforeMs = Math.max(0, Number(state.groupSnoozeTotalsMs[group.id]) || 0);
+    if (!(await showSnoozeNotice(group, totalBeforeMs))) return;
+    const fresh = state.groups.find(item => item.id === group.id);
+    // Confirmation covers the displayed settings. A deleted group or changed
+    // duration/gates must be requested again, rather than silently accepted.
+    if (!fresh || fields.some((key, index) => fresh[key] !== settings[index]) || refuseWhileDesktopVaultAway(fresh)) return;
+    group = fresh;
+    const now = Date.now();
+    const current = state.groupSnoozes[group.id];
+    if (CBGroupActions.snoozePlan(group, current, now).error) {
+      showSnoozeInProgress(current, getSnoozePhase(current, now));
+      render();
+      return;
+    }
+    const snoozeEntry = CBGroupActions.snoozeEntry(group, now, state.usageResetAtMs[group.id], state.usageTimersMs[group.id]);
+    const minutes = Number(group.snoozeMinutes) || 0;
+    await persistSnooze(
+      group.id,
+      snoozeEntry,
+      snoozeEntry.startsAtMs > now
+        ? t("status.snoozeScheduled", { name: group.name, delay: formatDurationMs(snoozeEntry.startsAtMs - now) })
+        : t(snoozeEntry.kind === "budget" ? "status.snoozedBudget" : "status.snoozed",
+          { name: group.name, minutes, suffix: timeUnitSuffix(minutes) })
+    );
     render();
-    return;
-  }
-  const totalBeforeMs = Math.max(0, Number(state.groupSnoozeTotalsMs[group.id]) || 0);
-  const snoozeEntry = CBGroupActions.snoozeEntry(group, now, state.usageResetAtMs[group.id]);
-  state.groupSnoozes[group.id] = snoozeEntry;
-  const minutes = Number(group.snoozeMinutes) || 0;
-  await persistSnooze(
-    group.id,
-    snoozeEntry,
-    snoozeEntry.startsAtMs > now
-      ? t("status.snoozeScheduled", { name: group.name, delay: formatDurationMs(snoozeEntry.startsAtMs - now) })
-      : t(snoozeEntry.kind === "budget" ? "status.snoozedBudget" : "status.snoozed",
-        { name: group.name, minutes, suffix: timeUnitSuffix(minutes) })
-  );
-  render();
-  showSnoozeNotice(group, snoozeEntry, totalBeforeMs);
+  } finally { state.snoozeNoticeOpen = false; }
 }
 
 async function endSnooze() {
@@ -5385,7 +5438,6 @@ async function endSnooze() {
   // devices as the newest change (group-actions.js).
   const result = CBGroupActions.endSnoozeEntry(state.groupSnoozes[group.id], Date.now());
   if (result.error) return;
-  state.groupSnoozes[group.id] = result.entry;
   await persistSnooze(group.id, result.entry, t("status.endedSnooze", { name: group.name }));
   render();
 }
@@ -5432,6 +5484,19 @@ function startResizingPanels(event) {
 
   window.addEventListener("mousemove", handleMove);
   window.addEventListener("mouseup", handleUp);
+}
+
+let popupDefinitionReadRevision = 0;
+async function refreshPopupDefinitionStorage(changes = {}) {
+  // Runtime/settings pushes remain prompt, even when group reconciliation waits
+  // for already-submitted local intents. They do not replace the editor list.
+  const other = { ...changes }; delete other[BLOCKED_GROUPS_KEY];
+  if (Object.keys(other).length) syncExternalState(other);
+  const revision = ++popupDefinitionReadRevision;
+  if (editorPendingTasks.size) return;
+  const current = await chrome.storage.local.get({ [BLOCKED_GROUPS_KEY]: [] });
+  if (revision !== popupDefinitionReadRevision || editorPendingTasks.size) return;
+  syncExternalState({ [BLOCKED_GROUPS_KEY]: { newValue: current[BLOCKED_GROUPS_KEY] } });
 }
 
 function syncExternalState(changes) {
@@ -6295,7 +6360,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     return;
   }
 
-  syncExternalState(changes);
+  if (changes[BLOCKED_GROUPS_KEY] && !IS_NATIVE_DESKTOP) {
+    refreshPopupDefinitionStorage(changes).catch(error => console.error("Failed to refresh groups.", error));
+  } else syncExternalState(changes);
 });
 
 window.addEventListener("keydown", (event) => {
@@ -6349,7 +6416,7 @@ function formatLogFeedTime(ts) {
 }
 
 function renderLogFeedEntry(entry) {
-  if (!entry || !logFeedList || entry.source !== "v.log" || !entry.groupId
+  if (!entry || !logFeedList || !["v.log", "page-error"].includes(entry.source) || !entry.groupId
       || entry.groupId !== state.selectedGroupId || entry.groupId !== logFeedGroupId) return;
   if (entry.id != null && logFeedSeenIds.has(entry.id)) return;
   if (entry.id != null) logFeedSeenIds.add(entry.id);
@@ -6436,11 +6503,19 @@ if (logFeedDownload) {
       });
     }
     if (entries.length === 0) { entries.push("(no log entries)"); }
-    const blob = new Blob([entries.join("\n")], { type: "text/plain" });
+    const filename = "blocker-logs-" + new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19) + ".txt";
+    const text = entries.join("\n");
+    if (typeof window.__cbSaveRuleLog === "function") {
+      window.__cbSaveRuleLog(filename, text).then(reply => {
+        if (!reply?.ok) setStatus(reply?.error || t("custom.copyFailed"), true);
+      });
+      return;
+    }
+    const blob = new Blob([text], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "blocker-logs-" + new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19) + ".txt";
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
   });
@@ -6459,6 +6534,10 @@ if (chrome.runtime && chrome.runtime.onMessage) {
     }
     if (message.type === "clusters-push") {
       applyClusters(message.clusters, message.rosters);
+      return;
+    }
+    if (message.type === "group-sync-refused") {
+      setStatus(browserIdentityErrorText(message.reason), true);
       return;
     }
     if (message.type === "link-refused") {
@@ -6585,7 +6664,9 @@ async function initializePopupApp() {
 
 initializePopupApp().catch((error) => {
   console.error("Failed to initialize popup.", error);
-  setStatus(t("status.errorLoadGroups"), true);
+  setStatus(error?.message || t("status.errorLoadGroups"), true);
 });
 
 window.VaultInfo?.watch(document, { enabled: () => true });
+
+window.CBRuleAIText = (key,fallback) => {const value=t(key);return value===key?fallback:value;};

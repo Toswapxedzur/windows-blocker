@@ -37,6 +37,48 @@
     scopes[name] = scope;
   }
 
+  // All pages edit the same app Settings. Content tagging belongs with app
+  // behavior; AI connections have their own column because custom rules also
+  // use them. Both keep the shared dialog and focus lifecycle.
+  const settingsModal = document.getElementById("settingsModal");
+  function settingsMount(parent, id) {
+    const host = document.createElement("div");
+    host.className = "native-settings-host";
+    host.dataset.scene = "classifier";
+    parent.appendChild(host);
+    const scope = host.attachShadow({ mode: "open" });
+    scope.innerHTML = ["vault-ui.css", "vault-info.css", "classifier/app.css"]
+      .map(href => `<link rel="stylesheet" href="${href}">`).join("")
+      + `<div id="${id}" class="utility-settings-body"></div>`;
+    return { scope, root: scope.getElementById(id) };
+  }
+  const tagging = settingsMount(settingsModal.querySelector(".settings-col"), "native-tagging-settings");
+  const connectionsColumn = document.createElement("section");
+  connectionsColumn.className = "settings-col ai-connections-col";
+  settingsModal.querySelector(".settings-cols").appendChild(connectionsColumn);
+  const connections = settingsMount(connectionsColumn, "native-settings");
+  let settingsVisible = false;
+  function notifyScene(scene) {
+    try { window.webkit.messageHandlers.cbBridge.postMessage({ kind: "scene-shown", scene }); } catch (_) {}
+  }
+  function settingsChanged() {
+    const visible = !settingsModal.classList.contains("hidden");
+    if (visible === settingsVisible) return;
+    settingsVisible = visible;
+    notifyScene(visible ? "settings" : document.body.dataset.scene || "vault");
+    window.dispatchEvent(new CustomEvent("vault-settings-changed", { detail: { open: visible } }));
+  }
+  new MutationObserver(settingsChanged).observe(settingsModal, { attributes: true, attributeFilter: ["class"] });
+  window.VaultSettings = Object.freeze({
+    scope: connections.scope, root: connections.root,
+    taggingScope: tagging.scope, taggingRoot: tagging.root,
+    isOpen: () => !settingsModal.classList.contains("hidden"),
+    open() { openSettings(); settingsChanged(); },
+    close() { closeSettings(); settingsChanged(); }
+  });
+  window.VaultUI.observe(connections.scope);
+  window.VaultUI.observe(tagging.scope);
+
   // A scene's script finds its shadow root here.
   window.VaultScenes = Object.freeze({ scope: (name) => scopes[name] || null });
 
