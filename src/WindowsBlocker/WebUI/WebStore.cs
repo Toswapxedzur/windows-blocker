@@ -71,6 +71,16 @@ public sealed class WebStore
     private static readonly HashSet<string> PerGroupKeys = new() { "usageTimersMs", "usageResetAtMs", "usageBucketsMs", "groupSnoozes", "groupSnoozeTotalsMs", "cbRuleLog", "cbRuleQuarantine", "cbRuleState" };
     private void Write(JsonObject root)
     {
+        // Native and editor deletion share this writer. Generic records belong
+        // only to live custom groups, never to a recreated ID or linked peer.
+        if (root["cbRuleRecords"] is JsonObject records && records["version"]?.GetValueKind() == JsonValueKind.Number &&
+            records["version"]?.GetValue<int>() == 1 && records["groups"] is JsonObject savedGroups &&
+            root["blockedGroups"] is JsonArray groups)
+        {
+            var active = groups.OfType<JsonObject>().Where(group => group["groupType"]?.ToString() == "custom")
+                .Select(group => group["id"]?.ToString()).ToHashSet();
+            foreach (var id in savedGroups.Select(entry => entry.Key).Where(id => !active.Contains(id)).ToArray()) savedGroups.Remove(id);
+        }
         var tmp = FilePath + ".tmp";
         File.WriteAllText(tmp, root.ToJsonString());
         File.Move(tmp, FilePath, overwrite: true);

@@ -56,6 +56,14 @@ public sealed class CustomRuleRuntime
     public Task<DispatchResult?> DispatchAsync(CustomRuleEvent ev)
         => RequestAsync<DispatchResult>("dispatch", ev.GroupId, null, new { descriptor = ev }, ExecutionTimeout);
 
+    public async Task<bool> AcceptsAsync(string groupId, string generation)
+    {
+        var answer = await RequestAsync<AcceptResult>("accepts", groupId, null, new { generation }, ExecutionTimeout);
+        return answer?.Accepted == true;
+    }
+
+    private sealed class AcceptResult { public bool Accepted { get; set; } }
+
     public Task<Dictionary<string,JsonElement>?> PolicyAsync(string module, string method, object?[] args)
         => RequestAsync<Dictionary<string,JsonElement>>("policy", "", null, new { module, method, args }, TimeSpan.FromSeconds(4));
 
@@ -85,6 +93,7 @@ public sealed class CustomRuleRuntime
             ["module"] = ev is not null && operation == "policy" ? ((dynamic)ev).module : null,
             ["method"] = ev is not null && operation == "policy" ? ((dynamic)ev).method : null,
             ["args"] = ev is not null && operation == "policy" ? ((dynamic)ev).args : null
+            , ["generation"] = ev is not null && operation == "accepts" ? ((dynamic)ev).generation : null
         };
 
         try

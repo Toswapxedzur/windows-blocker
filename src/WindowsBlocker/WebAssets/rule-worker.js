@@ -70,6 +70,8 @@
       } else if (request.operation === "suppress") {
         runtime.suppress(groupId, request.on === true);
         result = { ok: true };
+      } else if (request.operation === "accepts") {
+        result = { accepted: runtime.acceptsRequest(groupId, String(request.generation || "")) };
       } else {
         throw new Error("unsupported-operation");
       }

@@ -755,5 +755,26 @@
       "type": "object"
     },
     "name": "delete_activity_group"
+  },
+  {
+    "name": "rule_ai_models",
+    "description": "The connected AI models available for custom rules: credential-free value, accountID and supported reasoning efforts. Save one selection as ruleAI on a custom group; linked members share the optional UTC daily request cap.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "extension_rule_ai_models",
+    "description": "Available custom-rule AI connections/models and supported reasoning efforts, through the connected Windows Vault. Credentials are never returned. Save one ruleAI selection with extension_set_group; linked groups share settings and the optional UTC daily request allowance.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "browser": {
+          "description": "Which connected browser, by program name (chrome, edge); needed only when more than one browser is connected.",
+          "type": "string"
+        }
+      }
+    }
   }
 ]

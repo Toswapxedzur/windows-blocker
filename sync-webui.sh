@@ -15,7 +15,7 @@ dest = root / "src/WindowsBlocker/WebAssets"
 editor = mac / "Sources/MacBlockerWebUI/WebAssets"
 files = ["popup.js", "popup.css", "popup.html", "group-scopes.js", "parental-pin.js", "group-actions.js",
          "platform-profiles.js", "translations.js", "popup-markdown.js", "bridge-protocol.js", "browser-compat.js",
-         "rule-core.js", "rule-ai-ui.js", "storage-schema.js", "vault-ui.css", "vault-ui.js", "vault-info.js", "vault-info.css", "chrome-shim.js",
+         "rule-core.js", "rule-records.js", "rule-ai-ui.js", "storage-schema.js", "vault-ui.css", "vault-ui.js", "vault-info.js", "vault-info.css", "chrome-shim.js",
          "scenes.js", "scenes.css", "activity.js", "activity.css", "activity-time-bins.js"]
 for name in files:
     # Browser assets stay canonical even if the Mac mirror has not been synced.

@@ -22,8 +22,8 @@ in `utils/update_checkout/update-checkout-config.json`:
 - zlib 1.3.1: https://github.com/madler/zlib/blob/v1.3.1/LICENSE
 - libxml2 2.11.5: https://github.com/gnome/libxml2/blob/v2.11.5/Copyright
 
-The bundle additionally carries licenses from the exact checked-out llama.cpp
-revision, Swift Crypto and Swift ASN1 packages. The bundle manifest records
+The bundle additionally carries licenses from the resolved Swift Crypto and
+Swift ASN1 packages. The bundle manifest records
 their versions, every source digest and every shipped file digest. Original
 redistributable notices found in installed Swift/VC runtime directories are
 copied into the same bundle notice directory.

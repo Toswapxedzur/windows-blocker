@@ -35,6 +35,7 @@ public partial class MainWindow : Window
     private readonly NativePolicyTools _policy;
     private readonly EnforcementEngine _engine;
     private readonly RuleEngine _ruleEngine;
+    private readonly RuleAIService _ruleAI;
     private readonly SelfPreservationGuard _guard = new();
     private WinEventMonitor? _monitor;
     private DispatcherTimer? _timer;
@@ -61,6 +62,8 @@ public partial class MainWindow : Window
         NativeMenu.FlowDirection = NativeLanguage.Language == "ar" ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         _engine = new EnforcementEngine(_store, _registry, _hub);
         _ruleEngine = new RuleEngine(_store);
+        _ruleAI = new RuleAIService(_hub, _classifier);
+        _ruleEngine.AIService = _ruleAI;
         _policy = new NativePolicyTools(_store,_hub,_ruleEngine);
         _policy.Policy = InvokeCanonicalPolicy;
         _policy.RulesEvent = output => { foreach(var app in output.CloseOnce) _engine.CloseMatching([app]); _panel?.ReplaceAll(_ruleEngine.PanelsSnapshot()); };
@@ -68,6 +71,7 @@ public partial class MainWindow : Window
         _mcp.Tools = McpTools;
         _store.SeedIfNeeded();
         _hub.ClassifierRequest = HubClassifierRequest;
+        _hub.RuleAIRequest = _ruleAI.Request;
         _classifier.Event += OnClassifierEvent;
         Loaded += OnLoaded;
         Closing += OnClosing;
@@ -84,9 +88,6 @@ public partial class MainWindow : Window
         _hub.Start();
         _mcp.Start();
         if(_mcp.LastError==null) McpConnectorRegistry.ApplyDefaultConnections();
-        // Show the first-launch choice even when the editor opens before Classifier.
-        try { PromptDictionaryContribution(await _classifier.Request("snapshot", new())); }
-        catch (Exception ex) { System.Diagnostics.Trace.WriteLine("Dictionary startup snapshot unavailable: " + ex.Message); }
 
 
         // Bring the bridge up if the user previously enabled it (same as macOS,
@@ -272,6 +273,9 @@ public partial class MainWindow : Window
                     break;
                 case "vault-classifier-tag-names":
                     NativeReply(root, new JsonObject { ["ok"] = true, ["names"] = await _classifier.Request("tagNames", new JsonObject { ["platform"] = ReadMessageString(root,"platform") }) });
+                    break;
+                case "rule-ai-models":
+                    NativeReply(root, await _ruleAI.Request(ConnectionHub.LocalProgram, "", "models", ""));
                     break;
                 case "mcp-connectors": NativeReply(root,McpConnectorRegistry.Snapshot()); break;
                 case "mcp-connect": McpConnectorRegistry.Set(ReadMessageString(root,"id"),true); NativeReply(root,McpConnectorRegistry.Snapshot()); break;
@@ -542,11 +546,12 @@ public partial class MainWindow : Window
     private async Task<JsonNode?> InvokeMcpTool(string name,JsonObject args)
     {
         NativeToolSchema.Validate(await McpTools(),name,args);
+        if (name == "rule_ai_models") return await _ruleAI.Request(ConnectionHub.LocalProgram, "", "models", "");
         if (NativePolicyTools.Names.Contains(name))
             return await Dispatcher.InvokeAsync(async () => { var value = await _policy.Invoke(name,args); PushNativeStore(); return value; }).Task.Unwrap();
         if (name.StartsWith("extension_"))
         {
-            var operations = new Dictionary<string,string> { ["extension_state"]="settings-get",["extension_create_group"]="settings-create-group",["extension_set_group"]="settings-set-group",["extension_delete_group"]="settings-delete-group",["extension_lock_group"]="settings-lock-group",["extension_set_lock_gates"]="settings-set-lock-gates",["extension_delete_all"]="settings-delete-all",["extension_unlock_group"]="settings-unlock-group",["extension_snooze_group"]="settings-snooze-group",["extension_run_custom_rule"]="settings-run-custom-rule",["extension_end_snooze"]="settings-end-snooze",["extension_move_group"]="settings-move-group",["extension_set_global"]="settings-set-global" };
+            var operations = new Dictionary<string,string> { ["extension_state"]="settings-get",["extension_rule_ai_models"]="settings-rule-ai-models",["extension_create_group"]="settings-create-group",["extension_set_group"]="settings-set-group",["extension_delete_group"]="settings-delete-group",["extension_lock_group"]="settings-lock-group",["extension_set_lock_gates"]="settings-set-lock-gates",["extension_delete_all"]="settings-delete-all",["extension_unlock_group"]="settings-unlock-group",["extension_snooze_group"]="settings-snooze-group",["extension_run_custom_rule"]="settings-run-custom-rule",["extension_end_snooze"]="settings-end-snooze",["extension_move_group"]="settings-move-group",["extension_set_global"]="settings-set-global" };
             if (!operations.TryGetValue(name,out var operation)) throw new InvalidOperationException("unknown-tool");
             var body = (JsonObject)args.DeepClone(); body.Remove("browser");
             return await BrowserTool(operation,body,args["browser"]?.GetValue<string>());
@@ -590,28 +595,7 @@ public partial class MainWindow : Window
     });
     private void ApplyClassifierSnapshot(JsonNode? snapshot)
     {
-        PromptDictionaryContribution(snapshot);
         if (snapshot != null && Web.CoreWebView2 != null) _ = Web.CoreWebView2.ExecuteScriptAsync($"window.VaultClassifier && window.VaultClassifier.receive({snapshot.ToJsonString()});");
-    }
-    private bool _dictionaryContributionPromptShowing;
-    private async void PromptDictionaryContribution(JsonNode? snapshot)
-    {
-        var settings = snapshot?["settings"]?["dictionaries"];
-        if (!IsLoaded || _dictionaryContributionPromptShowing || settings is null || settings["contributionChoiceMade"]?.GetValue<bool>() != false) return;
-        _dictionaryContributionPromptShowing = true;
-        try
-        {
-            var answer = MessageBox.Show(this,
-                NativeLanguage.Text("native.dictionary.windowsBody", "Vault can occasionally send public creator IDs and their displayed subscriber/follower counts to customblocker.com to expand the creator dictionary. No term names, titles, browsing history or personal definitions are sent. Contributions are capped at 50 per day and retained for 7 days. You can disable this anytime in Classifier → Settings.\n\nShare creator IDs and subscriber counts?"),
-                NativeLanguage.Text("native.dictionary.title", "Help improve the creator dictionary"), MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.Yes,
-                NativeLanguage.Language == "ar" ? MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign : MessageBoxOptions.None);
-            var response = await _classifier.Request("action", new JsonObject {
-                ["action"] = "completeDictionaryOnboarding", ["data"] = new JsonObject { ["enabled"] = answer == MessageBoxResult.Yes }
-            });
-            if (response?["snapshot"] is JsonNode updated) ApplyClassifierSnapshot(updated);
-        }
-        catch (Exception ex) { System.Diagnostics.Trace.WriteLine("Dictionary first-launch choice could not be saved: " + ex.Message); }
-        finally { _dictionaryContributionPromptShowing = false; }
     }
 
     private void ApplyActivity(JsonNode? response)

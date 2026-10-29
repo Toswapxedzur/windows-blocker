@@ -2,7 +2,7 @@
 
 Original license and notice texts for the official Swift 6.4.0 Windows runtime.
 The build copies this directory into `ClassifierWorker/Notices` and adds the
-actual pinned llama.cpp and resolved Swift package licenses before hashing it.
+resolved Swift package licenses before hashing it.
 
 - `Swift-LICENSE.txt` — Swift runtime and runtime library exception.
 - `Foundation-LICENSE.txt` — corelibs Foundation and FoundationNetworking.

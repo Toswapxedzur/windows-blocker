@@ -18,6 +18,8 @@ public sealed class CustomRuleEvent
     [JsonPropertyName("targetGroupId")] public string GroupId { get; set; } = "";
     [JsonPropertyName("now")] public long Now { get; set; } = DateTimeOffset.Now.ToUnixTimeMilliseconds();
     [JsonPropertyName("data")] public object? Data { get; set; }
+    [JsonPropertyName("contextRevisions")] public Dictionary<string,string>? ContextRevisions { get; set; }
+    [JsonPropertyName("aiContexts")] public Dictionary<string,Dictionary<string,string>>? AIContexts { get; set; }
 }
 public sealed class RuleAction
 {
@@ -29,6 +31,7 @@ public sealed class RuleAction
     [JsonPropertyName("path")] public string? Path { get; set; }
     [JsonPropertyName("payload")] public string? Payload { get; set; }
     [JsonPropertyName("requestId")] public string? RequestId { get; set; }
+    [JsonPropertyName("generation")] public string? Generation { get; set; }
 }
 public sealed class RuntimeLog
 {
@@ -114,6 +117,7 @@ public sealed class DispatchResult
     [JsonPropertyName("panels")] public Dictionary<string,List<PanelSnapshot>> Panels { get; set; } = new();
     [JsonPropertyName("states")] public Dictionary<string,string> States { get; set; } = new();
     [JsonPropertyName("quarantine")] public JsonElement? Quarantine { get; set; }
+    [JsonPropertyName("stateFailures")] public List<string> StateFailures { get; set; } = new();
 }
 public sealed class LoadResult
 {
@@ -123,6 +127,7 @@ public sealed class LoadResult
     [JsonPropertyName("error")] public string? Error { get; set; }
     [JsonPropertyName("logs")] public List<RuntimeLog> Logs { get; set; } = new();
     [JsonPropertyName("panels")] public List<PanelSnapshot> Panels { get; set; } = new();
+    [JsonPropertyName("states")] public Dictionary<string,string> States { get; set; } = new();
 }
 public sealed class RuleLogEntry
 {

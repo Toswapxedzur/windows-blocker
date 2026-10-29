@@ -1,7 +1,7 @@
 # classifier-worker
 
 - `build-worker.ps1` — mini1 Windows source build of the shared Swift worker,
-  pinned llama.cpp CPU backends, transitive DLL bundle and provenance manifest.
+  transitive Swift/VC DLL bundle and provenance manifest. Local model code stays dormant.
 - `test-platform.ps1` / `platform-smoke.cpp` — mini1 guest checks for DPAPI, ACLs, image conversion and fail-closed package reclamation.
 - `test-worker.ps1` — relocated bundle, private pipe protocol, shared scene
   callbacks, UTF-8, persisted activation/DPAPI and graceful shutdown checks.

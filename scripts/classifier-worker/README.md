@@ -3,14 +3,14 @@
 Windows Vault bundles the production Swift Classifier service alongside the .NET
 host at `ClassifierWorker/VaultClassifierWorker.exe`. Its scene assets and
 translations are generated from Mac Vault. The worker hosts the same action,
-MCP, snapshot, tagging/correction, research, model-download and inference code.
+MCP, snapshot, tagging/correction, research and provider inference code.
 The six canonical Activity sources are shared by both native platforms.
 
-Build and test on mini1's Windows VM. Prerequisites are official Swift 6.4.0,
-Git, Visual Studio 2022 C++ x64 Build Tools and Windows SDK 22621. Swift's
-installer supplies its runtime. The build script pins the llama.cpp revision
-used by the current Mac package, builds portable CPU variants and bundles every
-imported Swift/llama/VC runtime DLL; end users do not install a Swift toolchain.
+Build and test on the campaign's Mini2 Windows VM. Prerequisites are official
+Swift 6.4.0, Visual Studio 2022 C++ x64 Build Tools and Windows SDK 22621.
+Swift's installer supplies its runtime. The build bundles imported Swift/VC
+runtime DLLs; end users do not install a Swift toolchain. The dormant local
+model backend is not built or bundled.
 This x64 build does not claim untested ARM64 or GPU support.
 
 ```powershell
@@ -23,21 +23,17 @@ This x64 build does not claim untested ARM64 or GPU support.
 `bundle-manifest.json` records versions and SHA-256 hashes of source and shipped
 files. Pass `-ClassifierRevision <verified-commit>` when exporting without Git.
 The bundle includes the pinned runtime and resolved dependency licenses in
-`Notices/`. No model or user
-state is copied into the app bundle. Model downloads remain explicit scene
-actions, just as on Mac. All port tests use isolated support directories.
+`Notices/`. No model or user state is copied into the app bundle. All port
+tests use isolated support directories.
 
-Run `test-worker.ps1 -BundleDirectory <bundle>` on mini1's guest after building.
+Run `test-worker.ps1 -BundleDirectory <bundle>` on Mini2's guest after building.
 It verifies the manifest, copies the bundle to a fresh location, removes Swift
 from the child's PATH, then checks the actual private pipe, UTF-8 actions,
-taxonomy, scene callbacks, persisted activation/DPAPI and graceful shutdown.
+taxonomy, rule AI admission, scene callbacks, persisted activation/DPAPI and
+graceful shutdown.
 
-`test-inference.py --bundle <bundle> --data-root <isolated-root> --evidence
-<new-directory>` additionally starts the production service with app-local
-runtimes and verifies actual 3B model inference, a browser tag broadcast,
-cached tags and a user correction. Explicitly stage an existing
-`models/Qwen2.5-3B-Instruct-Q4_K_M.gguf` in its fresh support root first; this
-fixture does not download a model or enable provider research.
+`test-inference.py` is retained for the dormant local model implementation; it
+is not a release acceptance test for the current provider-based build.
 
 The .NET host starts the worker without elevation, owns its private stdin/stdout
 pipe, supplies `VAULT_DATA_ROOT` and `VAULT_ENVIRONMENT`, validates WebView2
@@ -52,10 +48,11 @@ collections; the explicitly requested MCP `all` section retains full public stat
 
 Operations:
 
-- `snapshot`: current Classifier scene state.
+- `snapshot`: current Content tagging scene state.
+- `ruleAIModels`: credential-free connected model choices for custom rules.
+- `ruleAIGenerate`: validated custom-rule generation through the selected
+  provider, with the connection's retry policy and no fixed request timeout.
 - `action`: `{action, data}` using the existing bounded scene dispatcher.
-  `knowledgePage` returns `{list}` for `receiveList`; editing a knowledge entry
-  returns `{knowledgeRow}` for `receiveKnowledgeRow`, alongside any snapshot.
 - `mcp`: `{kind: "state"|"action"|"actions", section?, action?, data?}`.
 - `hub`: `{sourcePeerID, requestID, operation, body}`, response `{body}` or `{error}`.
 - `tagNames`: `{platform}`, returns names from the current taxonomy.

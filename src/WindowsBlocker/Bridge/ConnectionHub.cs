@@ -19,6 +19,7 @@ public sealed class ConnectionHub
     private readonly object _gate = new();
     private readonly Dictionary<Guid, Peer> _peers = new();
     private readonly Dictionary<string, JsonArray> _rosters = new();
+    private readonly Dictionary<string, string> _rosterEpochs = new();
     private readonly Dictionary<string, Cluster> _clusters = new();
     private readonly Dictionary<string, string> _seenDefinitions = new();
     private readonly Dictionary<string, PendingBrowserRequest> _browserRequests = new();
@@ -28,6 +29,7 @@ public sealed class ConnectionHub
     private string _error = "";
     private JsonObject? _rejection;
     public Func<string, string, string, JsonObject, Task<JsonObject>>? ClassifierRequest { get; set; }
+    public Func<string, string, string, string, Task<JsonObject>>? RuleAIRequest { get; set; }
 
     private sealed class Peer(WebSocket socket)
     {
@@ -59,8 +61,9 @@ public sealed class ConnectionHub
         public JsonObject Snooze { get; set; } = new();
         public double SnoozeTimestamp { get; set; }
         public double SnoozeTotal { get; set; }
+        public string AiEpoch { get; set; } = Guid.NewGuid().ToString("N");
     }
-    public static readonly string[] ScalarFields = ["name", "enabled", "mode", "allowedMinutes", "resetIntervalHours", "resetAtMidnight", "rollingLimit", "allowSnooze", "snoozeKind", "snoozeMinutes", "snoozeActivationDelayMinutes", "snoozeCooldownMinutes", "snoozeConfirmations", "activeDays", "timeWindowsText", "fallbackUrl", "pauseSeconds"];
+    public static readonly string[] ScalarFields = ["name", "enabled", "groupType", "ruleAI", "mode", "allowedMinutes", "resetIntervalHours", "resetAtMidnight", "rollingLimit", "allowSnooze", "snoozeKind", "snoozeMinutes", "snoozeActivationDelayMinutes", "snoozeCooldownMinutes", "snoozeConfirmations", "activeDays", "timeWindowsText", "fallbackUrl", "pauseSeconds"];
     public static readonly string[] LockFields = ["lockedAtMs", "lockWaitHours", "parentalPasswordHash", "parentalPasswordSalt", "lockVersion"];
 
     public void Start()
@@ -122,7 +125,7 @@ public sealed class ConnectionHub
                     lock (_gate) if (reason == null && _peers.Values.Any(p => p.Id != peer.Id && p.Connected && p.Program == Text(message["program"]))) reason = "duplicate-program";
                     if (reason != null) { await Reject(peer, reason); return; }
                     peer.Program = Text(message["program"]); peer.Connected = true;
-                    await SendAsync(peer, new() { ["kind"] = "welcome", ["v"] = ProtocolVersion, ["hubProgram"] = LocalProgram, ["peers"] = PeerList() });
+                    await SendAsync(peer, new() { ["kind"] = "welcome", ["v"] = ProtocolVersion, ["hubProgram"] = LocalProgram, ["ruleAIVersion"] = RuleAIRequest == null ? 0 : 1, ["peers"] = PeerList() });
                     await SendAsync(peer, new() { ["kind"] = "clusters", ["clusters"] = JsonNode.Parse(ClustersJson())?["clusters"]?.DeepClone(), ["rosters"] = JsonNode.Parse(ClustersJson())?["rosters"]?.DeepClone() });
                     Broadcast(new() { ["kind"] = "peers", ["peers"] = PeerList() }); continue;
                 }
@@ -135,6 +138,7 @@ public sealed class ConnectionHub
                         if (refusal != null) await SendAsync(peer, new() { ["kind"] = "link-refused", ["reason"] = refusal, ["groupId"] = Text(message["groupId"]) }); break;
                     case "group-sync": ApplySync(peer.Program, Text(message["groupId"]), message); break;
                     case "classifier-request": _ = RouteClassifierAsync(peer, message); break;
+                    case "rule-ai-request": _ = RouteRuleAIAsync(peer, message); break;
                     case "browser-response": ResolveBrowser(peer, message); break;
                     case "ping": await SendAsync(peer, new() { ["kind"] = "pong", ["t"] = Number(message["t"]) }); break;
                 }
@@ -177,6 +181,23 @@ public sealed class ConnectionHub
         catch (Exception ex) { reply["error"] = ex is TimeoutException ? "classifier-timeout" : ex.Message; }
         finally { if(lease!=Guid.Empty) EndClassifierRequest(peer.Id,requestId,lease); }
         await SendAsync(peer, reply);
+    }
+    private async Task RouteRuleAIAsync(Peer peer, JsonObject message)
+    {
+        var id = Text(message["requestID"]);
+        if (id.Length is < 1 or > 128 || id.Any(c => c < '!' || c > '~') || !peer.Connected) return;
+        var operation = Text(message["operation"]);
+        var groupId = Text(message["groupId"]);
+        var payload = Text(message["payload"]);
+        if (operation is not ("models" or "generate") || Encoding.UTF8.GetByteCount(payload) > 48_000) return;
+        try
+        {
+            var body = RuleAIRequest == null ? new JsonObject { ["ok"] = false, ["error"] = "ai-unavailable", ["text"] = null, ["citations"] = new JsonArray() }
+                : await RuleAIRequest(peer.Program, groupId, operation, payload);
+            lock (_gate) if (!_peers.TryGetValue(peer.Id, out var current) || current != peer || !peer.Connected) return;
+            await SendAsync(peer, new() { ["kind"] = "rule-ai-response", ["requestID"] = id, ["body"] = body });
+        }
+        catch (Exception error) { System.Diagnostics.Trace.WriteLine("Rule AI response unavailable: " + error.Message); }
     }
     public async Task<JsonObject> SendBrowserRequest(string operation, JsonObject body, string? target = null)
     {
@@ -223,6 +244,7 @@ public sealed class ConnectionHub
             if (!_peers.Remove(peer.Id)) return;
             RemoveClassifierRequests(peer.Id);
             _rosters.Remove(peer.Program);
+            _rosterEpochs[peer.Program] = Guid.NewGuid().ToString("N");
             foreach (var pending in _browserRequests.Values.Where(p => p.PeerId == peer.Id)) pending.Reply.TrySetException(new InvalidOperationException("browser-unavailable"));
         }
         peer.Socket.Dispose(); Broadcast(new() { ["kind"] = "peers", ["peers"] = PeerList() }); BroadcastRosters(); BroadcastClusters();
@@ -240,6 +262,33 @@ public sealed class ConnectionHub
         }
     }
     public string CurrentStatusJson() => new JsonObject { ["running"] = _listener != null, ["state"] = _error.Length > 0 ? "error" : _listener != null ? "running" : "off", ["address"] = $"ws://127.0.0.1:{Storage.HubPort}", ["peers"] = PeerList(), ["error"] = _error, ["hubProgram"] = LocalProgram }.ToJsonString();
+    public sealed record RuleAIContext(JsonObject Configuration, string[] Members, string Revision);
+
+    /// Capture an exact, credential-free rule selection and its current reply
+    /// destination. A later roster, link, or connection change invalidates it.
+    public RuleAIContext? CaptureRuleAI(string program, string groupId)
+    {
+        lock (_gate)
+        {
+            var group = _rosters.GetValueOrDefault(program)?.OfType<JsonObject>()
+                .FirstOrDefault(item => Text(item["id"]) == groupId);
+            if (group == null || Text(group["groupType"]) != "custom" || group["enabled"]?.GetValueKind() != JsonValueKind.True) return null;
+            var cluster = Find(program, groupId);
+            if (cluster?.Scalars.ContainsKey("enabled") == true && cluster.Scalars["enabled"]?.GetValueKind() != JsonValueKind.True) return null;
+            if (cluster?.Scalars.ContainsKey("groupType") == true && Text(cluster.Scalars["groupType"]) != "custom") return null;
+            var configuration = cluster?.Scalars.ContainsKey("ruleAI") == true
+                ? cluster.Scalars["ruleAI"] as JsonObject : group["ruleAI"] as JsonObject;
+            if (configuration == null) return null;
+            string[] members = cluster == null ? [program + ":" + groupId]
+                : cluster.Members.Select(member => member.Key + ":" + member.Value).OrderBy(value => value, StringComparer.Ordinal).ToArray();
+            var peer = program == LocalProgram ? "local"
+                : _peers.Values.FirstOrDefault(item => item.Connected && item.Program == program)?.Id.ToString() ?? "offline";
+            if (peer == "offline") return null;
+            var revision = _rosterEpochs.GetValueOrDefault(program, "") + ":" +
+                (cluster == null ? "unlinked" : cluster.Id + ":" + cluster.AiEpoch) + ":" + peer;
+            return new((JsonObject)configuration.DeepClone(), members, revision);
+        }
+    }
     public void BroadcastClassifier(JsonObject evt) { if(Text(evt["operation"]) is not ("video-tags-updated" or "classifier-state-updated") || evt["body"] is not JsonObject body || Encoding.UTF8.GetByteCount(body.ToJsonString())>88_000) return; Broadcast(new JsonObject { ["kind"] = "classifier-broadcast", ["operation"] = evt["operation"]?.DeepClone(), ["body"] = body.DeepClone() }); }
     public int ActiveClusterCount() { lock (_gate) return _clusters.Count; }
     public string? TakeLocalRejectionJson() { var r = _rejection?.ToJsonString(); _rejection = null; return r; }
@@ -257,6 +306,8 @@ public sealed class ConnectionHub
     {
         lock (_gate)
         {
+            if (!_rosters.TryGetValue(program, out var previous) || previous.ToJsonString() != groups.ToJsonString())
+                _rosterEpochs[program] = Guid.NewGuid().ToString("N");
             _rosters[program] = (JsonArray)groups.DeepClone();
             foreach (var c in _clusters.Values.Where(c => c.Members.ContainsKey(program)).ToList())
                 if (!groups.OfType<JsonObject>().Any(g => Text(g["id"]) == c.Members[program])) RemoveMember(c, program);
@@ -280,7 +331,7 @@ public sealed class ConnectionHub
             var c = own ?? other ?? new Cluster { Name = Text(a["name"]), Initiator = program };
             if (IsLocked(c.Lock)) return "group-locked";
             if (c.Members.ContainsKey(program) && c.Members[program] != groupId || c.Members.ContainsKey(targetProgram) && c.Members[targetProgram] != targetGroupId) return "program-already-linked";
-            c.Members[program] = groupId; c.Members[targetProgram] = targetGroupId; _clusters[c.Id] = c; Persist();
+            c.Members[program] = groupId; c.Members[targetProgram] = targetGroupId; c.AiEpoch = Guid.NewGuid().ToString("N"); _clusters[c.Id] = c; Persist();
         }
         BroadcastClusters(); return null;
     }
@@ -292,7 +343,7 @@ public sealed class ConnectionHub
     private void RemoveMember(Cluster c, string program)
     {
         if (c.Members.TryGetValue(LocalProgram, out var localId)) { _unlinkedLocal.Add(localId); _seenDefinitions.Remove(localId); }
-        c.Members.Remove(program); c.Contributed.Remove(program);
+        c.Members.Remove(program); c.Contributed.Remove(program); c.AiEpoch = Guid.NewGuid().ToString("N");
         if (c.Members.Count < 2) _clusters.Remove(c.Id);
     }
     public static bool IsLocked(JsonObject obj) => obj["lockedAtMs"]?.GetValueKind() == JsonValueKind.Number;
@@ -304,6 +355,8 @@ public sealed class ConnectionHub
             var first = !c.Contributed.Contains(program); var ts = Number(frame["ts"]); var priority = first && program == c.Initiator; var wins = priority || ts >= c.Timestamp;
             if (frame["scalars"] is JsonObject scalars && wins)
             {
+                if (c.Scalars["ruleAI"]?.ToJsonString() != scalars["ruleAI"]?.ToJsonString() || c.Scalars["enabled"]?.ToJsonString() != scalars["enabled"]?.ToJsonString())
+                    c.AiEpoch = Guid.NewGuid().ToString("N");
                 var budgetChanged = new[] { "mode", "allowedMinutes", "resetIntervalHours", "resetAtMidnight", "rollingLimit" }.Any(k => c.Scalars.ContainsKey(k) && c.Scalars[k]?.ToJsonString() != scalars[k]?.ToJsonString());
                 c.Scalars = (JsonObject)scalars.DeepClone(); c.Timestamp = priority ? Math.Max(ts, c.Timestamp) + 1 : ts; c.Name = Text(c.Scalars["name"]);
                 if (budgetChanged) { c.Usage = 0; c.Anchor = DateTimeOffset.Now.ToUnixTimeMilliseconds(); c.Buckets.Clear(); c.UsageSeeded = c.BucketsSeeded = true; }
@@ -381,7 +434,7 @@ public sealed class ConnectionHub
     {
         if (JsonNode.Parse(store.LoadRawJson() ?? "{}") is not JsonObject document) return;
         var groups = document["blockedGroups"] as JsonArray ?? new();
-        var roster = new JsonArray(groups.OfType<JsonObject>().Select(g => (JsonNode)new JsonObject { ["id"] = Text(g["id"]), ["name"] = Text(g["name"]), ["frozen"] = IsLocked(g) }).ToArray());
+        var roster = new JsonArray(groups.OfType<JsonObject>().Select(g => (JsonNode)new JsonObject { ["id"] = Text(g["id"]), ["name"] = Text(g["name"]), ["frozen"] = IsLocked(g), ["groupType"] = Text(g["groupType"]), ["enabled"] = g["enabled"]?.DeepClone(), ["ruleAI"] = g["ruleAI"]?.DeepClone() }).ToArray());
         var key = roster.ToJsonString();
         lock (_gate) { if (!_rosters.TryGetValue(LocalProgram, out var previous) || previous.ToJsonString() != key) SetRoster(LocalProgram, roster); }
         foreach (var g in groups.OfType<JsonObject>())

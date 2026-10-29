@@ -26,7 +26,6 @@ $script:transcript = [Collections.Generic.List[string]]::new()
 $chinese = [string][char]0x4e2d + [char]0x6587
 $groupName = 'Fixture ' + $chinese
 $tagName = 'Tag ' + $chinese
-$savedMeaning = 'Saved meaning ' + $chinese + [char]0x3002
 $appName = 'App ' + $chinese
 $data = Join-Path $EvidenceDirectory 'Data\Classifier'
 New-Item -ItemType Directory -Force $data | Out-Null
@@ -44,7 +43,7 @@ function Start-Worker {
     $encoding = [Text.UTF8Encoding]::new($false)
     $info.StandardOutputEncoding = $encoding
     $info.StandardErrorEncoding = $encoding
-    # Only Windows system paths remain. Every Swift, VC and llama dependency
+    # Only Windows system paths remain. Every Swift and VC dependency
     # must resolve beside the relocated executable, as on an end-user PC.
     $info.EnvironmentVariables['PATH'] = $env:WINDIR + '\System32;' + $env:WINDIR
     $info.EnvironmentVariables['VAULT_ENVIRONMENT'] = 'development'
@@ -108,13 +107,10 @@ try {
     $null = Request-Worker 'action' @{action='addTag'; data=@{treeID=$group.treeID; name=$tagName; positionX=0; positionY=0}}
     $names = Request-Worker 'tagNames' @{platform='youtube'}
     Assert-Worker (@($names) -contains $tagName) 'Portable taxonomy is incomplete.'
-    $null = Request-Worker 'action' @{action='addKnowledgeTerm';data=@{subject='Fixture knowledge';meaning='Initial meaning.'}}
-    $page = Request-Worker 'action' @{action='knowledgePage';data=@{requestID='knowledge-page';kind='term';platformID='';query='Fixture knowledge';offset=0;limit=1}}
-    Assert-Worker ($page.list.total -eq 1 -and $page.list.requestID -eq 'knowledge-page') 'Knowledge list callback is incomplete.'
-    $row = @($page.list.items)[0]
-    $edited = Request-Worker 'action' @{action='editKnowledgeEntry';data=@{id=$row.id;meaning=$savedMeaning}}
-    Assert-Worker ($edited.knowledgeRow.meaning -eq $savedMeaning) 'Knowledge edit acknowledgement lost UTF-8.'
-    Assert-Worker ($edited.snapshot.assets.knowledge.paged -and @($edited.snapshot.assets.knowledge.terms).Count -eq 0) 'Knowledge snapshots must use native list paging.'
+    $models = Request-Worker 'ruleAIModels' @{}
+    Assert-Worker ($null -ne $models.models) 'Rule AI model projection is unavailable.'
+    $badRuleAI = Request-Worker 'ruleAIGenerate' @{configuration=@{providerModel='api:missing:model';accountID='';reasoningEffort='medium'};payload='{"prompt":"fixture"}'} $false
+    Assert-Worker ($badRuleAI -match 'invalid-rule-ai-request|ai-not-configured') 'Unconfigured rule AI was not refused.'
     $null = Request-Worker 'action' @{action='restoreClassifierType'; data=@{}} $false
     $null = Request-Worker 'resource' @{url='file:///C:/Windows/win.ini'} $false
     $null = Request-Worker 'activity' @{kind='setSettings'; category='app-usage'; enabled=$true}
@@ -140,7 +136,7 @@ try {
     Assert-Worker (!$unlocked.issue) 'Protected Windows owner code did not persist.'
     Stop-Worker
     $script:transcript | Set-Content -Encoding UTF8 (Join-Path $EvidenceDirectory 'worker.jsonl')
-    Write-Output ('PASS: relocated worker, app-local dependencies, UTF-8 actions, taxonomy, Activity callbacks, DPAPI persistence and EOF flush. Evidence: ' + $EvidenceDirectory)
+    Write-Output ('PASS: relocated worker, app-local dependencies, rule AI admission, UTF-8 actions, taxonomy, Activity callbacks, DPAPI persistence and EOF flush. Evidence: ' + $EvidenceDirectory)
 } finally {
     if ($script:process -and !$script:process.HasExited) { $script:process.Kill() }
     if ($script:process) { $script:process.Dispose() }

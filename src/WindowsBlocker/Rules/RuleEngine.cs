@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using WindowsBlocker.Bridge;
@@ -14,8 +16,8 @@ public sealed class RuleTickOutput
     public List<string> CloseOnce { get; } = new();
 }
 
-// Current bare (on,v) rules. The isolated worker retains state on Run and
-// suppresses disabled groups; native code honors only desktop actions.
+// The isolated worker retains state on Run and suppresses disabled groups;
+// native code honors desktop actions, AI and generic group-owned records.
 public sealed class RuleEngine(WebStore store)
 {
     public const string SystemGroupId = "__system__";
@@ -28,6 +30,8 @@ public sealed class RuleEngine(WebStore store)
     private readonly HashSet<string> _suppressed = new();
     private readonly List<RuleLogEntry> _logs = new();
     private readonly List<Dictionary<string,string>> _systemEvents = new();
+    private readonly RuleRecordService _records = new(store);
+    public RuleAIService? AIService { get; set; }
     private Dictionary<string,AppIdentity> _running = new();
     private string _front = "";
     private bool _seeded;
@@ -74,6 +78,8 @@ public sealed class RuleEngine(WebStore store)
         var result = _runtime == null ? null : await _runtime.LoadAsync(group.Id, source, state);
         if (result != null) AppendLogs(result.Logs);
         if (result == null || !result.Ok) return result;
+        try { SaveStates(result.States); }
+        catch { await _runtime!.UnloadAsync(group.Id); return null; }
         _loaded[group.Id] = source; _quarantined.Remove(group.Id); _blocks.Remove(group.Id); _panels[group.Id] = result.Panels;
         return result;
     }
@@ -117,12 +123,17 @@ public sealed class RuleEngine(WebStore store)
         foreach (var id in ids)
         {
             if (_suppressed.Contains(id) || !_loaded.ContainsKey(id)) continue;
-            var result = await _runtime.DispatchAsync(new() { Type = type, GroupId = id, Data = data });
+            var context = RuleContext(id);
+            var result = await _runtime.DispatchAsync(new() { Type = type, GroupId = id, Data = data,
+                ContextRevisions = new() { [id] = context.Revision },
+                AIContexts = new() { [id] = context.Prompt } });
             if (result == null) continue;
-            AppendLogs(result.Logs);
             foreach (var diagnostic in result.Diagnostics) Trace.WriteLine($"Rule {diagnostic.GroupId}: {diagnostic.Message}");
+            if (result.StateFailures.Count > 0) { _logs.Add(new() { Timestamp = DateTimeOffset.Now.ToString("o"), GroupId = id, Message = "Invalid event state; no actions were performed." }); await UnloadCore(id); continue; }
+            try { SaveStates(result.States); }
+            catch { _logs.Add(new() { Timestamp = DateTimeOffset.Now.ToString("o"), GroupId = id, Message = "Event state could not be saved; no actions were performed." }); await UnloadCore(id); continue; }
+            AppendLogs(result.Logs);
             foreach (var (gid, panels) in result.Panels) _panels[gid] = panels;
-            if (result.States.Count > 0) store.Update(root => { var states = root["cbRuleState"] as JsonObject ?? new(); root["cbRuleState"] = states; foreach (var (gid, json) in result.States) states[gid] = JsonNode.Parse(json); });
             foreach (var action in result.Actions)
             {
                 switch (action.Kind)
@@ -131,10 +142,59 @@ public sealed class RuleEngine(WebStore store)
                     case "quit": if (action.AppId != null) output.CloseOnce.Add(action.AppId); break;
                     case "open": OpenApp(action.AppId); break;
                     case "file": await Dispatch("file", LocalFolderGrant.Handle(action), action.GroupId, output, depth + 1); break;
+                    case "ai":
+                        if (AIService != null && action.Payload != null && action.Generation is { Length: > 0 }) _ = CompleteAIAsync(action);
+                        break;
+                    case "store":
+                        if (action.Payload != null && action.Generation is { Length: > 0 } && await _runtime.AcceptsAsync(action.GroupId, action.Generation))
+                        {
+                            var admission = await _runtime.PolicyAsync("VaultRuleRecords", "admit", [action.GroupId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()]);
+                            var decision = admission?.GetValueOrDefault("value").GetString();
+                            if (decision == "drop") break;
+                            var reply = decision == "busy" ? new JsonObject { ["ok"] = false, ["error"] = "store-busy" }
+                                : await _records.Request(_runtime, action.GroupId, action.Payload);
+                            reply["requestId"] = action.RequestId ?? ""; reply["generation"] = action.Generation;
+                            await Dispatch("record", reply, action.GroupId, output, depth + 1);
+                        }
+                        break;
                 }
             }
             if (result.Quarantine.HasValue && result.Quarantine.Value.ValueKind == JsonValueKind.Object) { var source = _loaded.GetValueOrDefault(id, ""); await UnloadCore(id); _quarantined[id] = source; }
         }
+    }
+    private (string Revision, Dictionary<string,string> Prompt) RuleContext(string id)
+    {
+        var root = JsonNode.Parse(store.LoadRawJson() ?? "{}");
+        var config = (root?["blockedGroups"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault(group => group["id"]?.ToString() == id)?["ruleAI"] as JsonObject;
+        var json = config?.ToJsonString() ?? "null";
+        var revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+        var prompt = new Dictionary<string,string> { ["prompt"] = Text(config?["prompt"]), ["context"] = Text(config?["context"]) };
+        return (revision, prompt);
+    }
+    private static string Text(JsonNode? value) => value?.GetValueKind() == JsonValueKind.String ? value.GetValue<string>() : "";
+    private void SaveStates(Dictionary<string,string> states)
+    {
+        if (states.Count == 0) return;
+        store.Update(root => {
+            var groups = (root["blockedGroups"] as JsonArray)?.OfType<JsonObject>().Where(group => group["groupType"]?.ToString() == "custom").Select(group => group["id"]?.ToString()).ToHashSet();
+            var saved = root["cbRuleState"] as JsonObject ?? new(); root["cbRuleState"] = saved;
+            foreach (var (id, json) in states) {
+                if (groups == null || !groups.Contains(id) || Encoding.UTF8.GetByteCount(json) > 65_536 || JsonNode.Parse(json) is not JsonObject state) throw new InvalidOperationException("invalid-rule-state");
+                saved[id] = state;
+            }
+        });
+    }
+    private async Task CompleteAIAsync(RuleAction action)
+    {
+        var ai = AIService; if (ai == null || action.Payload == null || action.Generation == null) return;
+        try {
+            if (_runtime == null || !await _runtime.AcceptsAsync(action.GroupId, action.Generation)) return;
+            var reply = await ai.Request(ConnectionHub.LocalProgram, action.GroupId, "generate", action.Payload);
+            reply["requestId"] = action.RequestId ?? ""; reply["generation"] = action.Generation;
+            await _operations.WaitAsync();
+            try { if (_runtime != null && await _runtime.AcceptsAsync(action.GroupId, action.Generation)) await Dispatch("ai", reply, action.GroupId, new RuleTickOutput()); }
+            finally { _operations.Release(); }
+        } catch (Exception error) { Trace.WriteLine($"Rule AI {action.GroupId}: {error.Message}"); }
     }
     private static void OpenApp(string? appId)
     {

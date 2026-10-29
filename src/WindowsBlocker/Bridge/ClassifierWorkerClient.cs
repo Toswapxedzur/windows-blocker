@@ -27,7 +27,11 @@ public sealed class ClassifierWorkerClient : IDisposable
             await _write.WaitAsync();
             try { await process.StandardInput.WriteLineAsync(new JsonObject { ["id"] = id, ["operation"] = operation, ["data"] = data.DeepClone() }.ToJsonString()); await process.StandardInput.FlushAsync(); }
             finally { _write.Release(); }
-            return await completion.Task.WaitAsync(TimeSpan.FromSeconds(operation is "action" or "mcp" ? 120 : operation=="hub" ? 30 : 20));
+            // Generation has no Vault deadline. The provider's connection
+            // retry policy governs transient failures; closing the worker
+            // still settles pending calls through ReadAsync's finalizer.
+            if (operation == "ruleAIGenerate") return await completion.Task;
+            return await completion.Task.WaitAsync(TimeSpan.FromSeconds(operation is "action" or "mcp" ? 120 : operation == "hub" ? 30 : operation == "ruleAIModels" ? 5 : 20));
         }
         finally { _pending.TryRemove(id, out _); }
     }
