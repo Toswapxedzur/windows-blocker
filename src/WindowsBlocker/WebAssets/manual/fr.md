@@ -61,66 +61,34 @@ Utilisez le sélecteur + d’une cible Applications pour choisir les application
 
 Une application bloquée reçoit une demande de fermeture. **Redemander la fermeture d’une application bloquée toutes les (minutes)** règle les nouvelles tentatives. Les redirections de sites, les pauses de pages et le masquage des fils sont appliqués par l’extension ; ils ne deviennent pas des actions sur les applications natives.
 
-## Classificateur
+## Étiquetage du contenu
 
-Un groupe du Classificateur attribue des tags au contenu de ses plateformes avec son propre arbre de tags et ses paramètres de modèle. Chaque plateforme appartient à un groupe. Choisissez les plateformes à la création du groupe ; elles ne peuvent plus être modifiées ensuite. Les horaires et filtres des groupes de blocage ne contrôlent pas le tagging.
+Un groupe Étiquetage du contenu étiquette le contenu de ses plateformes avec son arbre de tags et ses réglages de modèle. Chaque plateforme appartient à un groupe ; choisissez-les à la création car elles ne sont plus modifiables ensuite. Les horaires et filtres de blocage ne contrôlent pas le tagging. Activez-le dans Réglages et mettez chaque groupe en pause/reprise séparément. Désactiver l’enregistrement du flux dans **Activité → Enregistrement** arrête aussi son tagging.
 
-Activez le tagging dans les paramètres du Classificateur. Utilisez séparément **Suspendre le tagging / Reprendre le tagging** dans chaque groupe. Désactiver l’enregistrement du fil d’une plateforme dans **Activité → Enregistrement** arrête également son tagging.
+### Tags et réglages du modèle
 
-### Tags et paramètres du modèle
+Créez des tags, décrivez leur sens et définissez ou retirez leurs parents dans l’arbre. Le glisser-déposer déplace une branche. **Confiance minimale du tag** définit le niveau de preuve de 1 à 5 ; les nouveaux groupes commencent à 4 (preuve forte). Aucun nombre de tags n’est imposé ; un élément peut n’en recevoir aucun. **Consignes d’étiquetage** mémorise les préférences du groupe. Les modifications s’enregistrent automatiquement ; chaque groupe utilise connexion, modèle et effort explicitement choisis.
 
-Créez des tags, décrivez leur sens et définissez ou supprimez leurs parents dans l’arbre. Faites glisser un tag pour déplacer sa branche. Des descriptions claires aident le modèle à distinguer les tags similaires. Les paramètres de chaque groupe sont indépendants.
+### Connexions IA
 
-- **Vitesse ↔ Qualité** sélectionne un niveau de modèle local. Les modèles plus grands utilisent plus de mémoire ; la vitesse et les résultats dépendent du PC et de la charge. Les téléchargements sont partagés entre les groupes.
-- **Strict ↔ Large** définit les exigences de confiance et les nombres de tags par défaut.
-- **Tags minimum / Tags maximum** dans Plus remplacent ces nombres par défaut. Strict ↔ Large contrôle toujours la confiance des tags supplémentaires. Laissez un champ vide pour utiliser sa valeur par défaut.
-- **Instructions de tagging** ajoute des instructions facultatives pour ce groupe.
+**Connexions IA** propose ChatGPT subscription, OpenAI API, Gemini API et Grok API. L’abonnement utilise la connexion Vault et un forfait admissible ; les clés API suivent la facturation et les limites du fournisseur. Choisissez le fournisseur et saisissez la clé sous la liste commune ; elle est enregistrée automatiquement, la vider la supprime. **Récupérer la liste des modèles** récupère les modèles sans en choisir un. **Effort de raisonnement** propose modèle par défaut, Low, Medium ou High selon prise en charge. Les nouveaux choix commencent à Medium ; les anciens restent enregistrés. Un effort plus élevé peut prendre du temps et utiliser plus de jetons. La recherche Web est toujours activée pour le tagging ; le modèle décide quand l’utiliser. En cas d’échec, les résultats valides en cache restent ; les nouveaux éléments restent en attente jusqu’à **Réessayer la classification cloud**. Aucun changement automatique de fournisseur ; chaque connexion a son intervalle et sa limite d’essais. Corrigez les tags dans l’extension avec **+ tag** ; commande de retrait ou Delete une fois pour supprimer. **Sans étiquette** signifie terminé sans tag ; **Étiquetage en cours** signifie en attente. Votre correction fait autorité.
 
-Les modifications courantes du Classificateur sont enregistrées automatiquement. Le niveau sélectionné doit être téléchargé avant de pouvoir attribuer des tags. Les groupes utilisant le même niveau partagent un modèle chargé ; deux niveaux au maximum restent chargés à la fois.
-
-Corrigez les tags d’un contenu dans l’extension. Cliquez sur **+ tag**, recherchez les tags existants du Classificateur et choisissez-en un pour l’ajouter. Utilisez la commande de suppression d’un tag, ou sélectionnez-le et appuyez une fois sur Suppr, pour le retirer. **Sans tag** signifie que le tagging est terminé sans tags ; **Tagging en cours** indique qu’un résultat est attendu. Les corrections servent au tagging futur.
-
-## Connaissances et recherche web
-
-Les Connaissances stockent de courtes descriptions sur ce PC pour le modèle local de tagging. Les **Sources de contenu** comprennent les créateurs, comptes, chaînes et communautés. Leurs descriptions accompagnent leur contenu. Les **Termes connus** s’appliquent lorsqu’un terme apparaît dans un titre.
-
-Ajoutez une source ou un terme avec sa description, ou laissez la description vide pour demander une recherche lorsque celle-ci est activée. Les suggestions de créateurs aident à trouver une source collectée par le Classificateur. Les listes d’au moins six entrées ont une recherche juste au-dessus : les Termes et les Sources de contenu de chaque plateforme ont des recherches séparées par nom, identifiant ou description. Modifier une description affecte le tagging futur ; supprimer les connaissances d’une source n’empêche pas une recherche ultérieure de les recréer.
-
-### Configurer un fournisseur de recherche
-
-1. Ouvrez **Paramètres du Classificateur → Clés API et fournisseurs**.
-2. Choisissez un type de fournisseur et **Ajouter un fournisseur**. Cela crée une configuration ; aucune clé API n’est délivrée.
-3. Obtenez les identifiants auprès de ce fournisseur et saisissez-les. Pour un endpoint personnalisé compatible, configurez également son endpoint et les champs de protocole.
-4. Dans **Recherche web**, choisissez un fournisseur avec recherche web intégrée. Récupérez sa liste de modèles et sélectionnez un modèle de recherche. Utilisez la recherche du sélecteur pour réduire la liste ; actualisez-la pour la récupérer à nouveau.
-5. Lisez la déclaration de consentement et donnez votre consentement. Choisissez **Activé**, **Désactivé** ou **Suivre les paramètres du Classificateur** dans chaque groupe.
-
-**Configurer la recherche web…** ouvre les paramètres si la configuration manque. Un groupe ne peut pas contourner le consentement à la recherche. **Tester la connexion** confirme la réussite de la requête de test, sans garantir que chaque modèle prend en charge la recherche. Le modèle de test du fournisseur est distinct du modèle de recherche sélectionné.
-
-Les clés sont stockées dans le dossier de support de l’application sur ce PC, avec un accès limité à l’utilisateur Windows actuel. Elles authentifient les requêtes auprès du fournisseur configuré ; Vault ne les envoie pas à son propre serveur. La recherche envoie des sujets publics nettoyés au fournisseur choisi, pas le corps de contenus privés ni leurs résumés. Lisez la déclaration de consentement pour connaître les champs envoyés. L’utilisation du fournisseur comprend les tests de connexion et les requêtes de listes de modèles ainsi que la recherche.
-
-L’état de la recherche affiche les requêtes en attente, les délais avant nouvelle tentative, les échecs et les tokens utilisés dans la journée. **Réessayer les sujets en échec maintenant** relance les échecs admissibles ; cela ne contourne pas l’allocation quotidienne ni le consentement.
 
 ## Activité
 
-Activité enregistre localement l’utilisation des applications activée, les visites de sites et le **Contenu consulté** pris en charge. Ses graphiques reflètent les données enregistrées ; une zone vide ne prouve pas que le PC était inactif.
+Activité enregistre localement l’utilisation des apps activées, les visites de sites et **Contenu consulté** pris en charge. Les graphiques reflètent les données enregistrées ; une zone vide ne prouve pas que le PC était inactif. Choisissez une période. **Chronologie** montre l’utilisation selon l’heure de la journée ; **Totaux** additionne les durées ; **Intervalle de temps** regroupe l’usage de chaque intervalle en blocs verticaux. **Couleurs** est une légende cliquable : choisissez une source pour centrer les graphiques dessus. Choisissez un jour pour afficher l’usage à partir de cette date.
 
-Choisissez une période. **Chronologie** affiche l’utilisation selon l’heure ; **Totaux** additionne les durées. **Intervalle de temps** regroupe l’utilisation de chaque intervalle en blocs verticaux. **Couleurs** est une légende cliquable : sélectionnez une source pour centrer les graphiques sur elle. Sélectionnez un jour pour voir l’utilisation depuis ce jour.
+### Groupes Activité
 
-### Groupes d’Activité
-
-Créez un groupe pour afficher ensemble ses applications et sites sélectionnés dans Utilisation. **Fusionner** utilise un nom et une couleur pour ses membres dans toute l’Activité. Un groupe d’Activité organise l’utilisation enregistrée ; il est distinct d’un groupe de blocage ou du Classificateur. Enregistrez explicitement l’éditeur de groupe d’Activité avec **Enregistrer**.
+Créez un groupe pour afficher ensemble dans Usage les apps et sites sélectionnés. **Merge** donne un nom et une couleur communs à ses membres dans Activité. Le groupe organise l’utilisation enregistrée ; il est distinct des groupes de blocage et de Étiquetage du contenu. Enregistrez explicitement l’éditeur avec **Save**.
 
 ### Enregistrement et conservation
 
-Dans **Enregistrement**, activez ou désactivez l’enregistrement par catégorie ou par source. **Conserver** contrôle la durée de conservation de l’historique ; **Toujours** le garde sans expiration automatique. Les choix individuels peuvent suivre le réglage général. Désactiver l’enregistrement arrête les nouveaux enregistrements ; supprimer l’historique efface les entrées enregistrées.
+Dans **Enregistrement**, activez ou désactivez l’enregistrement par catégorie ou source individuelle. **Conserver** définit la durée de conservation de l’historique ; **Toujours** évite l’expiration automatique. Les choix individuels peuvent suivre le réglage général. Arrêter l’enregistrement empêche les nouveaux enregistrements ; supprimer l’historique retire les entrées enregistrées. Les flux recueillent le contenu affiché sur les pages prises en charge, ouvertes ou non. Un flux **Étiquetage pris en charge** peut alimenter Étiquetage du contenu lorsque l’enregistrement est actif. Sa conservation est indépendante de l’usage des apps et sites. Mettre en pause un groupe de tagging n’arrête pas l’enregistrement.
 
-Les fils de plateforme collectent le contenu affiché sur les pages prises en charge, qu’il soit ouvert ou non. Un fil marqué **Tagging pris en charge** peut alimenter le Classificateur tant que l’enregistrement est activé. Sa conservation contrôle le contenu collecté séparément de l’utilisation des applications et sites. Suspendre un groupe du Classificateur ne désactive pas l’enregistrement.
+## Réglages
 
-## Paramètres du Classificateur
-
-**Mises à jour des paquets de tags** choisit quand les mises à jour vérifiées prennent effet : **Automatique**, **Demander d’abord** ou **Manuel**. Ce réglage est distinct du téléchargement du modèle local choisi dans un groupe. Les modèles sont téléchargés depuis Hugging Face lorsque vous choisissez **Télécharger** ; utilisez les commandes de progression, d’état et **Annuler** du groupe pendant le téléchargement.
-
-Choisissez la langue de l’interface dans les Paramètres. Les petits boutons Info expliquent les champs dans la langue sélectionnée.
+Choisissez la langue de l’interface dans Réglages. Les boutons Info affichent les explications dans la langue sélectionnée.
 
 ## Enregistrement et dépannage
 

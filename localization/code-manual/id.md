@@ -12,19 +12,52 @@ Sumber: satu ekspresi fungsi `(on, v) => { ... }`. Hanya JavaScript sinkron dan 
 - Disable menekan handler dan mencabut panel/blok aplikasi. Enable melanjutkan aturan yang dimuat beserta panel/blok tersimpannya. Delete menghapus handler/state/efeknya. Aplikasi yang sebelumnya dihentikan tidak dibuka lagi; penulisan berkas tidak dibatalkan.
 - Peristiwa tidak dibatasi target grup biasa; pilih app dalam aturan. Aksi diantrekan lalu diterapkan setelah dispatch. Exception menghentikan handler itu tanpa membatalkan state/aksinya; handler berikutnya masih dapat berjalan. Hanya aksi file memiliki event hasil.
 
+## Timer terkelola dan penggunaan bergulir
+
+`v.timer(id, {direction:"down", durationMs:300000})` membuat atau mengembalikan hitung mundur bernama, awalnya dijeda. Gunakan `{direction:"up"}` untuk timer hitung naik. Handle menyediakan `start()`, `pause()`, `resume()`, `reset()` dan `snapshot()`. Start/resume bersifat idempoten; reset mengembalikannya ke keadaan dijeda dengan waktu berlalu nol. Field snapshot mencakup `ready`, `error`, `elapsedMs`, `remainingMs` (null untuk hitung naik), `running` dan `completed`.
+
+Timer yang berjalan terus maju menurut waktu jam nyata saat app/browser ditutup atau aturan dinonaktifkan. Hitung mundur yang selesai mengirim `timerEnded` dengan `{id, direction, durationMs, generation, incarnation}` sekali per inkarnasi dan generasi timer untuk setiap anggota saat aturannya berjalan berikutnya; Run tidak mengirimnya ulang. Pengiriman bergantung pada peristiwa host; ini bukan alarm waktu nyata. Masukkan `{type:"timer", timerId:"focus", label:"Focus"}` ke panel untuk menampilkannya melalui kontrol teks yang sudah ada.
+
+`v.rolling(id, {windowMs:3600000, limitMs:600000})` membuat atau mengembalikan pelacak penggunaan aktif bernama. `assign({websites:["youtube.com","reddit.com"], apps:[]})` mengganti penetapan target anggota ini. Aturan native dapat menetapkan ID app platform sebagai gantinya. Domain mencakup subdomain. Satu pelacak menggabungkan penggunaan targetnya; ID lain memiliki jatah terpisah. `snapshot()` mengembalikan `ready`, `error`, `usedMs`, `remainingMs`, `available`, dan `nextReturnAtMs` (milidetik berikutnya saat penggunaan tercatat mana pun kedaluwarsa). `available(target?)` juga memeriksa penetapan jika target diberikan. `reset()` menghapus riwayat objek ini.
+
+Semua penggunaan teramati yang memenuhi syarat dihitung, termasuk yang melampaui jatah; pelacak itu sendiri tidak memblokir halaman/app. Interval halaman terlihat yang tumpang tindih dihitung sekali, dan app native menghitung penggunaan latar depan yang teramati. Aturan nonaktif tidak menambah penggunaan; riwayat tetap kedaluwarsa tepat pada batas interval. Ketersediaan baru kembali saat riwayat yang tersisa berada di bawah batas. Sampel heartbeat dibatasi hingga lima detik; jeda karena penutupan/nonaktif tidak menciptakan aktivitas. Peristiwa yang dikirim pengguna tidak menambah penggunaan.
+
+ID objek yang sama dalam grup kustom tertaut berbagi satu otoritas hub native lokal. Penautan menggabungkan riwayat dan penetapan pelacak serta mempertahankan keadaan timer pihak yang memulai; konfigurasi yang tidak kompatibel menolak penautan. Setiap anggota menerima peristiwa selesainya sendiri. Putus koneksi membuat pelacak bersama tidak tersedia dan menolak kontrol timer sampai otoritas terbaru kembali. Saat tautan diputus, setiap anggota menyimpan penggunaan bersama dan keadaan timer terakhir, memulihkan targetnya sendiri, serta membuang perintah dari tautan lama. Hub menyimpan snapshot akhir sampai anggota yang kembali menyimpan dan mengakuinya; serah terima tertunda diselesaikan sebelum tautan baru tersedia.
+
+Objek bernama bertahan melewati Run dan restart dalam `v.state.$vaultTime` yang dicadangkan; jangan sunting field itu secara langsung. Hapus secara eksplisit dengan `v.removeTime(id)`. ID terdiri dari 1–80 huruf ASCII, digit, `_` atau `-`; nama properti cadangan ditolak. Maksimal 32 objek berbagi batas state aturan sebesar 64 KiB UTF-8. Durasi berupa milidetik bulat hingga 365 hari. Riwayat bergulir dibatasi hingga 1024 bucket menit dan 2048 interval gabungan. Kesalahan kapasitas riwayat membuat pelacak tidak tersedia sampai direset secara eksplisit; konfigurasi tidak valid dan penyimpanan terlalu besar melaporkan kesalahan tanpa menghapus data tersimpan.
+
+```js
+(on, v) => {
+  const timer = v.timer("focus", {durationMs: 300000});
+  v.panel("focus", {controls: [
+    {type: "timer", timerId: "focus", label: "Focus"},
+    {id: "start", type: "button", label: "Start"},
+    {id: "pause", type: "button", label: "Pause"},
+    {id: "reset", type: "button", label: "Reset"}
+  ]});
+  on("panel", ev => {
+    if (ev.data.eventName !== "click") return;
+    if (ev.data.controlId === "start") timer.start();
+    if (ev.data.controlId === "pause") timer.pause();
+    if (ev.data.controlId === "reset") timer.reset();
+  });
+  on("timerEnded", ev => v.log("Finished", ev.data.id));
+}
+```
+
 ## API
 
-- `on(type, handler)` → boolean. Mendaftarkan `handler(ev)`; beberapa handler berjalan sesuai urutan pendaftaran. False berarti argumen tak valid atau batas handler tercapai. `ev = { type: string, now: number, data }`; `now` adalah Unix milliseconds.
-- `v.state`: objek JSON yang dapat diubah dan disimpan setelah dispatch. Inisialisasi field hilang alih-alih menimpa state lama. Nilai non-object/array meresetnya menjadi `{}`; update tak dapat diserialisasi/terlalu besar tidak disimpan.
+- `on(type, handler)` → boolean. Mendaftarkan `handler(ev)`; beberapa handler berjalan sesuai urutan pendaftaran. False berarti argumen tak valid atau batas handler tercapai. `ev = { type: string, now: number, origin: "host" | "user" | "rule", data }`; `now` adalah Unix milliseconds. Event kontrol yang benar-benar dirender memiliki `origin: "user"`; event `v.emit` memiliki `origin: "rule"`.- `v.state`: objek JSON yang dapat diubah dan disimpan setelah dispatch. Inisialisasi field hilang alih-alih menimpa state lama. Nilai non-object/array meresetnya menjadi `{}`; update tak dapat diserialisasi/terlalu besar tidak disimpan.
 - `v.log(...values)`: satu-satunya pembuat Log grup ini. Logs/Clear terpisah per grup. Kesalahan pemuatan tampak di status Run; diagnostik handler tidak masuk Log.
 - `v.emit(type, data)`: mengantre salinan JSON `data` untuk handler grup ini setelah peristiwa saat ini, dengan `now` baru; bukan panggilan sinkron.
 - `v.panel(id, spec)`: mengganti panel mengambang bernama grup; null `spec` menghapusnya. Lihat Panels.
 - `v.file(op, path, payload?)` → string ID permintaan. Lihat Files.
+- `v.store(request)` mengembalikan ID permintaan; lihat catatan grup.
 - `v.block(appId, on)`: true mempertahankan blok aplikasi, false menghapus blok grup ini. Blok bergabung antarkelompok aktif; pemanggilan ini tidak dapat membuka target grup lain. Pemblokiran meminta quit biasa dan mencoba ulang pada interval Setelan; tidak mencegah proses dimulai atau menjamin app menerima Quit.
 - `v.quit(appId)`: satu permintaan quit biasa, tunduk pada kebijakan perlindungan/coba ulang yang sama; tanpa blok berkelanjutan.
 - `v.open(appId)`: meminta Windows membuka app terpasang; tanpa callback sukses.
 
-Pemanggilan lain mengembalikan `undefined`. ID app adalah path executable penuh atau application user model ID yang tersedia dalam peristiwa dan pemilih app. Block/Quit mengabaikan proses sistem Windows, browser, Vault/pembantunya, dan ID kosong. ID/state panel milik satu grup, bukan nama tampilannya.
+Pemanggilan lain mengembalikan `undefined` `com.valvesoftware.steam`. ID app adalah path executable penuh atau application user model ID yang tersedia dalam peristiwa dan pemilih app. Block/Quit mengabaikan proses sistem Windows, browser, Vault/pembantunya, dan ID kosong. ID/state panel milik satu grup, bukan nama tampilannya.
 
 ## Peristiwa
 
@@ -38,6 +71,9 @@ snooze: {}
 panel: { panelId: string, controlId: string, eventName: string,
          value: string, values: { [controlId: string]: string } }
 file: see Files
+record: { requestId: string, ok: boolean, op?: string, key?: string,
+          record?: Record | null, entries?: Header[], next?: string | null,
+          deleted?: number, error?: string }
 App = { appId: string, name: string }
 ```
 
@@ -91,6 +127,22 @@ file.data = { requestId: string, op: string, path: string, ok: boolean,
 
 Field hasil yang tak dipakai bernilai null; sukses memiliki error kosong. Kegagalan termasuk invalid-path, unsupported-file-type, folder tak tersedia, file hilang, dan file-too-large. Perlakukan error sebagai string, bukan enum tetap lengkap. Tidak ada API transaksi; serialkan operasi read-modify-write per path.
 
+## Catatan grup
+
+`v.store(request)` memulai operasi record JSON asinkron di dalam handler. Record bersifat privat bagi grup, bertahan melewati Run dan restart, lalu dihapus bersama grup. Grup tertaut memiliki store terpisah. Rule memilih key, value, version, invalidasi cache, dan prioritas feedback. Mac dan browser rule memakai API sama, tetapi store tiap app/browser terpisah.
+
+| Request | Result |
+|---|---|
+| `{op:"get", key}` | `record` atau `null` |
+| `{op:"put", key, value, version?, ifRevision?}` | `record` tersimpan |
+| `{op:"delete", key, ifRevision?}` | `record: null` |
+| `{op:"list", prefix?, after?, limit?}` | `entries` terurut dan `next` |
+| `{op:"clear", prefix?}` | jumlah `deleted` |
+
+Record berbentuk `{value, revision, version, updatedAt}`. revision opaque berubah pada write nyata; `version` adalah metadata caller. `list` memberi header tanpa value; gunakan `get` untuk membaca dan `after: next` untuk halaman berikutnya. Tanpa `put`/`delete`, `ifRevision`, put/delete unconditional; `null` mensyaratkan key tidak ada, string revision harus cocok persis. Ketidakcocokan memberi `ok:false`, `error:"store-conflict"` dan `record` kini. Ini mencegah balasan otomatis tertunda menimpa feedback pengguna. `v.context.revision` adalah marker konfigurasi rule opaque yang dapat disertakan dalam version; framework tidak menentukan kebijakan cache.
+
+Batas: key 1–2048 karakter, version ≤128, JSON value ≤64KiB, depth ≤32, 10000 key per grup, dokumen penuh16MiB. `list` paling banyak100 header dan96KiB per halaman. Maksimum32 request per grup dan128 start per detik total; overload mengirim satu `store-busy` per grup per detik dan membuang sisanya. Storage error memberi `ok:false`; dokumen future/malformed dipertahankan dan melaporkan `store-unavailable`. Tidak ada retry/eviction otomatis. Gunakan ticks untuk deadline.
+
 ## Batas
 
 Per event/grup: 256 aksi antrean, 200 panggilan log, 64 emit; selebihnya dibuang. Per aturan: 1000 handler, 24 panel; setiap daftar kontrol berisi 32 entri dan tiap pilihan 64 opsi; selebihnya diabaikan/dipotong. Rantai emit berhenti setelah 16 generasi. Batas state terserialisasi 65536 karakter string JavaScript. Jaga registrasi dan gabungan handler setiap event di bawah 1 detik; kelebihan berulang atau timeout keras menghentikan aturan sampai Run. Log menyimpan 200 entri per grup. Waktu/balasan best-effort, bukan jaminan real-time.
@@ -111,3 +163,33 @@ Steam diblokir kecuali selama jeda lima menit yang dipicu Snooze atau tombol pan
   on("tick", ev => v.block("C:\\Program Files (x86)\\Steam\\steam.exe", ev.now >= v.state.pauseUntil));
 }
 ```
+
+
+## Panggilan AI dari aturan berjalan
+
+Setiap custom group memilih satu connection/model dan reasoning effort di **AI calls**. Mac dan browser rule menggunakan API sama; request browser memerlukan Windows Vault terhubung, kredensial provider tetap di sana. Grup tertaut berbagi pilihan dan optional daily request cap. Kosong berarti tanpa cap grup, tetapi limit akun tetap berlaku. Cap memakai hari UTC, bertahan setelah restart, menghitung semua attempt terkirim termasuk gagal. Link menggabungkan usage yang ada; unlink mempertahankan usage sebelumnya.
+
+`v.ai({ prompt, input? })` langsung mengembalikan request ID. Panggil di dalam handler, bukan saat mendaftarkan rule. `input` boleh berupa JSON apa pun; prompt/input masing-masing dibatasi20KB. Balasan hadir sebagai event `ai`: `{requestId, ok, text, citations,
+error}`. Success text is at most48KB; citations are `{url,title}`. Pertahankan link sumber yang terlihat dan dapat diklik saat menampilkan jawaban web-search. Search selalu tersedia bagi model. Tidak ada deadline app tetap; concurrency terbatas; tidak ada provider fallback atau retry otomatis. Respons adalah data, tidak dieksekusi sebagai JavaScript. Rule menentukan tindakan yang sudah ada.
+
+Untuk panel dengan tombol `ask` dan field `note`:
+
+```javascript
+(on, v) => {
+  let pending = null;
+  on("panel", ({ data }) => {
+    if (data.controlId !== "ask" || pending) return;
+    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+  });
+  on("ai", ({ data }) => {
+    if (data.requestId !== pending) return;
+    pending = null;
+    if (!data.ok) { v.log("AI request failed:", data.error); return; }
+    v.log(data.text, data.citations);
+  });
+}
+```
+
+Call yang masih berjalan tidak diputar ulang setelah restart. Run, disable/re-enable, dan delete membuang balasan usang; browser terputus melaporkan `ai-unavailable`. Error lain: `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`. Call gagal tidak menimpa hasil lama yang dipertahankan rule. Batas state tetap64KB.
+
+Temukan pilihan bebas kredensial dengan `rule_ai_models` di Mac atau `settings-rule-ai-models` di browser; konfigurasi `ruleAI` melalui jalur set-group yang ada. Field: `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`), `dailyRequestLimit` (null atau1–100000). Gunakan pilihan yang dikembalikan; jangan taruh key atau URL provider di source rule.

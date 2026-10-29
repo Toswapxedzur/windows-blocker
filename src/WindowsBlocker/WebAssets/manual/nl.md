@@ -61,66 +61,36 @@ Gebruik de +-kiezer van een Apps-doel om geïnstalleerde apps te selecteren. **A
 
 Een geblokkeerde app krijgt een verzoek om af te sluiten. **Een geblokkeerde app elke (minuten) opnieuw vragen af te sluiten** regelt de nieuwe pogingen. Websiteomleidingen, paginapauzes en het verbergen van feeds worden door de browserextensie afgedwongen; het zijn geen native app-acties.
 
-## Classifier
+## Inhoud taggen
 
-Een Classifier-groep tagt inhoud van toegewezen platforms met een eigen tagstructuur en modelinstellingen. Elk platform hoort bij één groep. Kies platforms bij het maken van de groep; daarna kunnen ze niet meer worden gewijzigd. Schema's en filters van blokkeergroepen sturen tagging niet.
-
-Schakel tagging in bij de Classifier-instellingen. Gebruik **Tagging pauzeren / Tagging hervatten** apart per groep. Als je de platformfeedregistratie uitschakelt via **Activity → Registratie**, stopt ook tagging daarvan.
+Elke Content taggen-groep tagt inhoud van de toegewezen platforms met een eigen tagboom en modelinstellingen. Elk platform hoort bij één groep; kies platforms bij het maken, later wijzigen kan niet. Planningen en filters van blocking groups bepalen tagging niet. Schakel tagging in Instellingen in en gebruik **Taggen pauzeren / Taggen hervatten** per groep. Het uitschakelen van feedopname onder **Activiteit → Registratie** stopt ook tagging van die feed.
 
 ### Tags en modelinstellingen
 
-Maak tags, beschrijf hun betekenis en stel bovenliggende tags in de tagstructuur in of verwijder ze. Sleep een tag om de tak te verplaatsen. Duidelijke beschrijvingen helpen het model vergelijkbare tags te onderscheiden. De instellingen van elke groep zijn onafhankelijk.
+Maak tags, beschrijf hun betekenis en stel ouders in de boom in of verwijder ze. Sleep een tag om de tak te verplaatsen. Duidelijke beschrijvingen helpen het model vergelijkbare tags onderscheiden. Instellingen zijn per groep onafhankelijk. **Minimale tagzekerheid** stelt het vereiste bewijsniveau in van 1 tot 5; nieuwe groepen beginnen op 4 (sterke steun). Er is geen doel voor het aantal tags; een item kan geen tags krijgen. **Taginstructies** bewaart groepsvoorkeuren. Gewone wijzigingen worden automatisch opgeslagen; elke groep gebruikt één expliciet gekozen verbinding, model en reasoning effort.
 
-- **Snelheid ↔ Kwaliteit** kiest een lokaal modelniveau. Grotere modellen gebruiken meer geheugen; snelheid en resultaten hangen af van de PC en werklast. Downloads worden door groepen gedeeld.
-- **Strikt ↔ Breed** stelt betrouwbaarheidsvereisten en standaardaantallen tags in.
-- **Minimumtags / Maximumtags** in Meer vervangen die standaardaantallen. Strikt ↔ Breed bepaalt nog steeds de betrouwbaarheid voor extra tags. Laat een veld leeg om de standaardwaarde te gebruiken.
-- **Taginstructies** voegt optionele instructies voor deze groep toe.
+### AI-verbindingen
 
-Gewone Classifier-wijzigingen worden automatisch opgeslagen. Het gekozen niveau moet zijn gedownload voordat het inhoud kan taggen. Groepen met hetzelfde niveau delen een geladen model; maximaal twee niveaus blijven tegelijk geladen.
+Instellingen biedt ChatGPT subscription, OpenAI API, Gemini API en Grok API. De ChatGPT-subscriptie gebruikt Vault-aanmelding en een geschikt plan. API-sleutels vallen onder facturering en limieten van de gekozen provider. Kies de provider en voer de sleutel direct onder de gedeelde keuzelijst in. Wijzigingen worden automatisch opgeslagen; het veld leegmaken verwijdert de sleutel. **Modellijst ophalen** haalt modellen op, maar kiest er geen; selecteer daarna een model in de Content taggen- of custom-rule-groep.
 
-Corrigeer tags van inhoud in de browserextensie. Klik op **+ tag**, zoek bestaande Classifier-tags en kies er een om toe te voegen. Gebruik de verwijderknop van een tag of selecteer deze en druk eenmaal op Delete om te verwijderen. **Niet getagd** betekent dat tagging klaar is zonder tags; **Tagging** betekent dat een resultaat nog in behandeling is. Correcties helpen toekomstige tagging.
+**Redeneerniveau** bepaalt hoeveel het model nadenkt: Model default, Low, Medium of High waar ondersteund. Nieuwe keuzes beginnen op Medium; bestaande blijven opgeslagen. Meer inspanning kan tijd en tokens kosten. Web search is voor tagging altijd ingeschakeld; het model bepaalt wanneer het die gebruikt. Kies een model dat zoeken en gestructureerde tagging ondersteunt. Mislukte of niet-beschikbare verzoeken behouden geldige cache-resultaten; nieuwe items blijven onopgelost tot **Cloudclassificatie opnieuw proberen**. Vault wisselt niet automatisch van provider. Elke verbinding heeft een eigen retry-interval en pogingslimiet. Corrigeer tags in de browserextensie met **+ tag**; verwijder via de verwijderknop of selecteer een tag en druk eenmaal op Delete. **Geen tag** betekent klaar zonder tags; **Taggen** betekent dat het resultaat wacht. Je correctie is leidend voor dat item.
 
-## Knowledge en webonderzoek
 
-Knowledge bewaart korte beschrijvingen op deze PC voor het lokale taggingmodel. **Inhoudsbronnen** omvat creators, accounts, kanalen en communities. Beschrijvingen van bronnen worden aan hun inhoud gekoppeld. **Bekende termen** gelden wanneer een term in een titel voorkomt.
+## Activiteit
 
-Voeg een bron of term met beschrijving toe, of laat de beschrijving leeg om onderzoek aan te vragen wanneer dit is ingeschakeld. Creator-suggesties helpen een bron vinden die Classifier al heeft verzameld. Lijsten met zes of meer items hebben direct erboven een zoekveld: Terms en Content sources van elk platform hebben aparte zoekvelden voor naam, identificatie of beschrijving. Een beschrijving aanpassen werkt door in toekomstige tagging; bronkennis verwijderen verhindert niet dat onderzoek die later opnieuw aanmaakt.
+Activiteit legt lokaal gebruik van ingeschakelde apps, websitebezoeken en ondersteunde **Bekeken inhoud** vast. Grafieken tonen vastgelegde gegevens; een leeg gebied bewijst niet dat de PC inactief was. Kies een periode. **Tijdlijn** toont gebruik per tijdstip; **Totalen** telt duur op; **Tijdsinterval** bundelt gebruik in verticale blokken per interval. **Kleuren** is een klikbare legenda waarmee je een bron kiest om grafieken daarop te richten. Kies een dag om gebruik vanaf die dag te zien.
 
-### Een onderzoeksprovider instellen
+### Activiteit-groepen
 
-1. Open **Classifier-instellingen → API keys & providers**.
-2. Kies een providertype en **Provider toevoegen**. Dit maakt een configuratie aan, geen API key.
-3. Vraag gegevens op bij de provider en voer ze in. Configureer bij een compatibel aangepast endpoint ook endpoint- en protocolvelden.
-4. Kies in **Webonderzoek** een provider met ingebouwde web search. Haal de modellijst op en selecteer een onderzoeksmodel. Gebruik de zoekfunctie van de modelkiezer om de lijst te beperken; vernieuw om de lijst opnieuw op te halen.
-5. Lees de toestemmingsmelding en schakel toestemming in. Kies per groep **Aan**, **Uit** of **Classifier-instellingen volgen**.
+Maak een groep om gekozen apps en websites samen in Usage te tonen. **Merge** gebruikt in heel Activiteit één naam en kleur voor leden. Een Activiteit-groep ordent vastgelegd gebruik en staat los van blocking- en tagging-groepen. Sla de editor expliciet op met **Save**.
 
-**Webonderzoek instellen…** opent de instellingen als configuratie ontbreekt. Een groep kan onderzoekstoestemming niet omzeilen. **Verbinding testen** bevestigt dat de testaanvraag is gelukt, niet dat elk model onderzoek ondersteunt. Het testmodel van een provider verschilt van het geselecteerde onderzoeksmodel.
+### Registratie en bewaartermijn
 
-Keys worden bewaard in de supportmap van de app op deze PC, met toegang beperkt tot de huidige Windows-gebruiker. Ze verifiëren verzoeken aan de geconfigureerde provider; Vault uploadt ze niet naar een eigen server. Onderzoek stuurt opgeschoonde openbare onderwerpen naar de geselecteerde provider, geen privé-inhoud of samenvattingen. Lees de toestemmingsmelding voor de exacte verzonden fields. Providergebruik omvat verbindingstests en modellijstverzoeken naast onderzoek.
+Schakel onder **Registratie** opname per categorie of bron in of uit. **Bewaren** bepaalt de bewaartermijn; **Altijd** voorkomt automatische vervaldatum. Individuele keuzes kunnen de bredere instelling volgen. Opname uitschakelen stopt nieuwe opnamen; geschiedenis verwijderen wist vastgelegde items. Platformfeeds verzamelen inhoud die op ondersteunde pagina’s wordt getoond, ook als de pagina niet is geopend. Een feed met **Taggen ondersteund** kan Content taggen voeden zolang opname aanstaat. De bewaartermijn ervan staat los van app- en websitegebruik. Een tagging-groep pauzeren stopt opname niet vanzelf.
 
-Onderzoeksstatus toont wachtrijverzoeken, afkoelperiodes voor nieuwe pogingen, fouten en tokengebruik van vandaag. **Mislukte onderwerpen nu opnieuw proberen** probeert geschikte fouten opnieuw; het omzeilt daglimieten of toestemming niet.
+## Instellingen
 
-## Activity
-
-Activity registreert lokaal ingeschakeld appgebruik, websitebezoeken en ondersteunde **Bekeken inhoud**. Grafieken tonen geregistreerde gegevens; een leeg gebied bewijst niet dat de PC inactief was.
-
-Kies een datumbereik. **Tijdlijn** toont gebruik op het tijdstip van de dag; **Totalen** telt duur op. **Tijdsinterval** combineert gebruik binnen elk interval tot verticale blokken. **Kleuren** is een aanklikbare legenda: selecteer een bron om de grafieken daarop te richten. Selecteer een dag om gebruik vanaf die dag te bekijken.
-
-### Activity-groepen
-
-Maak een groep om de geselecteerde apps en websites samen in Usage weer te geven. **Samenvoegen** gebruikt overal in Activity één naam en kleur voor de leden. Een Activity-groep ordent geregistreerd gebruik en staat los van een blokkeer- of Classifier-groep. Sla de editor van een Activity-groep expliciet op met **Opslaan**.
-
-### Registratie en bewaren
-
-Schakel in **Registratie** registratie in of uit per categorie of afzonderlijke bron. **Bewaren** bepaalt hoe lang geschiedenis wordt bewaard; **Voor altijd** bewaart deze zonder automatische vervaldatum. Individuele keuzes kunnen de bredere instelling volgen. Registratie uitschakelen stopt nieuwe gegevens; geschiedenis verwijderen verwijdert geregistreerde items.
-
-Platformfeeds verzamelen inhoud die op ondersteunde platformpagina's wordt getoond, of deze nu geopend is of niet. Een feed met **Tagging ondersteund** kan Classifier voorzien van gegevens zolang registratie aanstaat. Bewaren van de feed beheert verzamelde inhoud apart van app- en websitegebruik. Een gepauzeerde Classifier-groep schakelt registratie niet zelf uit.
-
-## Classifier-instellingen
-
-**Tagpakketupdates** bepaalt wanneer geverifieerde tagpakketupdates ingaan: **Automatisch**, **Eerst vragen** of **Handmatig**. Dit staat los van het downloaden van het lokale model dat in een groep is gekozen. Modelbestanden worden van Hugging Face gedownload wanneer je **Downloaden** kiest; gebruik tijdens het downloaden de voortgang/status van de groep en **Annuleren**.
-
-Kies de interfacetaal in Settings. Veldtoelichting is beschikbaar via de kleine Info-knoppen in de gekozen interfacetaal.
+Kies de interfacetaal in Instellingen. Veldverklaringen zijn beschikbaar via Info-knoppen in de gekozen taal.
 
 ## Opslaan en problemen oplossen
 

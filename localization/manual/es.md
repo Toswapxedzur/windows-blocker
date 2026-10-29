@@ -61,66 +61,34 @@ Use el selector + de un objetivo de aplicaciones para seleccionar aplicaciones i
 
 Se solicita a una aplicación bloqueada que se cierre. **Volver a pedir el cierre de una aplicación bloqueada cada (minutos)** controla los reintentos. La extensión del navegador aplica las redirecciones de sitios, las pausas de página y la ocultación de fuentes; estas no se convierten en acciones de aplicaciones nativas.
 
-## Clasificador
+## Etiquetado de contenido
 
-Un grupo del Clasificador etiqueta contenido de sus plataformas asignadas con su propio árbol de etiquetas y ajustes de modelo. Cada plataforma pertenece a un grupo. Elija las plataformas al crear el grupo; no se pueden cambiar después. Los horarios y filtros de los grupos de bloqueo no controlan el etiquetado.
+Un grupo Etiquetado de contenido etiqueta contenido de sus plataformas asignadas con su árbol de tags y modelos. Cada plataforma pertenece a un grupo; elígelas al crearlo, pues no se cambian después. Los horarios y filtros de bloqueo no controlan el etiquetado. Actívalo en Ajustes y pausa/reanuda cada grupo por separado. Desactivar el registro de un feed en **Actividad → Grabación** también detiene su etiquetado.
 
-Active el etiquetado en los ajustes del Clasificador. Use **Pausar etiquetado / Reanudar etiquetado** de cada grupo por separado. Desactivar el registro de una fuente de plataforma en **Actividad → Registro** también detiene su etiquetado.
+### Tags y ajustes del modelo
 
-### Etiquetas y ajustes del modelo
+Crea tags, describe su significado y define o quita sus padres. Arrastrar mueve la rama. **Confianza mínima de la etiqueta** fija el grado de evidencia de 1 a 5; los grupos nuevos empiezan en 4 (apoyo sólido). No hay cantidad objetivo; un elemento puede no recibir tags. **Instrucciones de etiquetado** guarda las preferencias. Los cambios se guardan automáticamente; cada grupo usa una conexión, modelo y esfuerzo de razonamiento elegidos expresamente.
 
-Cree etiquetas, describa sus significados y establezca o elimine sus padres en el árbol de etiquetas. Arrastre una etiqueta para mover su rama. Las descripciones claras ayudan al modelo a distinguir etiquetas similares. Los ajustes de cada grupo son independientes.
+### Conexiones de IA
 
-- **Velocidad ↔ Calidad** selecciona un nivel de modelo local. Los modelos mayores usan más memoria; la velocidad y los resultados dependen de PC y la carga de trabajo. Las descargas se comparten entre grupos.
-- **Estricto ↔ Amplio** establece los requisitos de confianza y los recuentos de etiquetas predeterminados.
-- **Mínimo de etiquetas / Máximo de etiquetas** en Más sustituyen esos recuentos predeterminados. Estricto ↔ Amplio sigue controlando la confianza para etiquetas adicionales. Deje cualquiera de los campos vacío para usar su valor predeterminado.
-- **Instrucciones de etiquetado** añade instrucciones opcionales para este grupo.
+En **Conexiones de IA** hay ChatGPT subscription, OpenAI API, Gemini API y Grok API. La suscripción usa el inicio de sesión de Vault y un plan válido; las claves API siguen la facturación y límites del proveedor. Elige proveedor e introduce la clave debajo del menú compartido; se guarda automáticamente y borrarla elimina la clave. **Obtener lista de modelos** obtiene modelos pero no selecciona uno. **Nivel de razonamiento** ofrece predeterminado, Low, Medium o High según compatibilidad; nuevas opciones comienzan en Medium y se conservan las existentes. Más esfuerzo puede tardar y usar tokens. La búsqueda web siempre está habilitada para etiquetar; el modelo decide cuándo usarla. Si falla, se conservan resultados válidos en caché; nuevos elementos quedan pendientes hasta **Reintentar clasificación en la nube**. No hay cambio automático de proveedor; cada conexión tiene intervalo y límite de intentos propios. En la extensión corrige con **+ tag**; usa el control de quitar o Delete una vez. **Sin etiqueta** significa terminado sin tags; **Etiquetando**, pendiente. Tu corrección prevalece.
 
-Los cambios habituales del Clasificador se guardan automáticamente. Un nivel seleccionado debe estar descargado antes de poder etiquetar contenido. Los grupos que usan el mismo nivel comparten un modelo cargado; hasta dos niveles permanecen cargados a la vez.
-
-Corrija las etiquetas de un elemento de contenido en la extensión del navegador. Pulse **+ etiqueta**, busque entre las etiquetas existentes del Clasificador y elija una para añadirla. Use el control de eliminación de una etiqueta o selecciónela y presione Supr una vez para quitarla. **Sin etiqueta** significa que el etiquetado terminó sin etiquetas; **Etiquetando** significa que hay un resultado pendiente. Las correcciones orientan futuros etiquetados.
-
-## Conocimiento e investigación web
-
-Conocimiento almacena descripciones breves en este PC para el modelo local de etiquetado. **Fuentes de contenido** incluye creadores, cuentas, canales y comunidades. Las descripciones de las fuentes acompañan su contenido. **Términos conocidos** se aplica cuando un término aparece en un título.
-
-Añada una fuente o término y su descripción, o deje la descripción vacía para solicitar investigación cuando esté activada. Las sugerencias de creadores ayudan a encontrar una fuente que el Clasificador haya recopilado. Las listas con seis o más entradas tienen una búsqueda justo encima: Términos y las Fuentes de contenido de cada plataforma tienen búsquedas separadas por nombre, identificador o descripción. Editar una descripción afecta a futuros etiquetados; eliminar el conocimiento de una fuente no impide que una investigación posterior lo vuelva a crear.
-
-### Configurar un proveedor de investigación
-
-1. Abra **Ajustes del Clasificador → Claves de API y proveedores**.
-2. Elija un tipo de proveedor y **Añadir proveedor**. Esto crea una configuración; no emite una clave de API.
-3. Obtenga las credenciales de ese proveedor e introdúzcalas. Para un punto de conexión personalizado compatible, configure también su dirección y campos de protocolo.
-4. En **Investigación web**, elija un proveedor con búsqueda web integrada. Obtenga su lista de modelos y seleccione un modelo de investigación. Use la búsqueda del selector de modelos para reducir la lista; actualícela para obtenerla de nuevo.
-5. Lea la información de consentimiento y actívelo. Elija **Activado**, **Desactivado** o **Seguir los ajustes del Clasificador** en cada grupo.
-
-**Configurar investigación web…** le lleva a los ajustes cuando falta configuración. Un grupo no puede omitir el consentimiento de investigación. **Probar conexión** confirma que la solicitud de prueba se completó correctamente, no que todos los modelos admitan investigación. El modelo de prueba de un proveedor es independiente del modelo de investigación seleccionado.
-
-Las claves se almacenan en la carpeta de soporte de la aplicación en este PC, con acceso restringido al usuario actual de Windows. Autentican solicitudes al proveedor configurado; Vault no las sube a su propio servidor. La investigación envía temas públicos saneados al proveedor seleccionado, no cuerpos de contenido privados ni resúmenes. Lea la información de consentimiento para conocer los campos exactos enviados. El uso del proveedor incluye pruebas de conexión y solicitudes de listas de modelos, además de investigación.
-
-El estado de investigación muestra solicitudes en cola, esperas de reintento, fallos y el uso de tokens del día. **Reintentar ahora los temas fallidos** reintenta fallos aptos; no omite el tiempo permitido diario ni el consentimiento.
 
 ## Actividad
 
-Actividad registra localmente el uso de aplicaciones habilitado, las visitas a sitios web y el **Contenido visto** compatible. Sus gráficos reflejan datos registrados; un área vacía no demuestra que PC estuviera inactivo.
+Actividad registra localmente el uso de apps habilitadas, visitas web y **Contenido visto** compatible. Los gráficos reflejan datos registrados; un área vacía no demuestra que el PC estuviera inactivo. Elige un intervalo de fechas. **Cronología** muestra el uso por hora del día; **Totales** suma duración; **Intervalo de tiempo** agrupa el uso de cada intervalo en bloques verticales. **Colores** es una leyenda interactiva: selecciona una fuente para enfocar los gráficos. Elige un día para ver el uso desde esa fecha.
 
-Elija un intervalo de fechas. **Línea de tiempo** muestra el uso a su hora del día; **Totales** suma la duración. **Intervalo de tiempo** combina el uso dentro de cada intervalo en bloques verticales. **Colores** es una leyenda interactiva: seleccione una fuente para centrar los gráficos en ella. Seleccione un día para ver el uso desde ese día.
+### Grupos de Actividad
 
-### Grupos de actividad
+Crea un grupo para mostrar juntas en Usage las apps y sitios seleccionados. **Merge** usa un nombre y color para sus miembros en todo Actividad. El grupo organiza el uso registrado y es distinto de los grupos de bloqueo y Etiquetado de contenido. Guarda el editor explícitamente con **Save**.
 
-Cree un grupo para mostrar juntas sus aplicaciones y sitios seleccionados en Uso. **Combinar** usa un solo nombre y color para sus miembros en toda Actividad. Un grupo de actividad organiza el uso registrado; es independiente de un grupo de bloqueo o del Clasificador. Guarde explícitamente el editor del grupo de actividad con **Guardar**.
+### Grabación y retención
 
-### Registro y conservación
+En **Grabación**, activa o desactiva la grabación por categoría o fuente individual. **Conservar** determina cuánto se conserva el historial; **Siempre** evita el vencimiento automático. Las opciones individuales pueden seguir el ajuste general. Desactivar la grabación detiene nuevos registros; borrar el historial elimina las entradas registradas. Los feeds de plataforma recopilan contenido mostrado en páginas compatibles, se hayan abierto o no. Un feed **Etiquetado compatible** puede suministrar contenido a Etiquetado de contenido mientras la grabación esté activa. Su retención es independiente del uso de apps y sitios. Pausar un grupo de etiquetado no detiene por sí solo la grabación.
 
-En **Registro**, active o desactive el registro de cada categoría o fuente individual. **Conservar** controla cuánto tiempo se conserva el historial; **Para siempre** lo mantiene sin caducidad automática. Las elecciones individuales pueden seguir el ajuste general. Desactivar el registro detiene los nuevos registros; eliminar el historial quita las entradas registradas.
+## Ajustes
 
-Las fuentes de plataformas recopilan contenido mostrado en páginas compatibles, se abra o no. Una fuente con **Etiquetado compatible** puede abastecer al Clasificador mientras el registro está activado. Su conservación controla el contenido recopilado por separado del uso de aplicaciones y sitios web. Un grupo del Clasificador pausado no desactiva por sí mismo el registro.
-
-## Ajustes del Clasificador
-
-**Actualizaciones de paquetes de etiquetas** selecciona cuándo entran en vigor las actualizaciones verificadas: **Automático**, **Preguntar primero** o **Manual**. Es independiente de descargar el modelo local elegido en un grupo. Los archivos de modelos se descargan de Hugging Face al elegir **Descargar**; use el progreso/estado del grupo y los controles **Cancelar** durante una descarga.
-
-Elija el idioma de la interfaz en Ajustes. Las explicaciones de los campos están disponibles mediante los pequeños botones de información en el idioma seleccionado.
+Elige el idioma de interfaz en Ajustes. Los botones Info muestran explicaciones en el idioma seleccionado.
 
 ## Guardado y solución de problemas
 

@@ -61,66 +61,34 @@ Verwenden Sie die + Auswahl eines Apps-Ziels, um installierte Apps auszuwählen.
 
 Eine blockierte App wird zum Beenden aufgefordert. **Eine blockierte App erneut zum Beenden auffordern alle (Minuten)** steuert Wiederholungen. Websiteweiterleitungen, Seitenpausen und das Verbergen von Feed-Inhalten werden von der Browsererweiterung durchgesetzt; sie werden nicht zu nativen App-Aktionen.
 
-## Klassifizierung
+## Inhaltskennzeichnung
 
-Eine Klassifizierungsgruppe weist Inhalten ihrer zugeordneten Plattformen mit ihrem eigenen Tag-Baum und ihren eigenen Modelleinstellungen Tags zu. Jede Plattform gehört zu einer Gruppe. Wählen Sie Plattformen beim Erstellen der Gruppe; sie lassen sich danach nicht ändern. Zeitpläne und Filter von Blockierungsgruppen steuern die Tag-Zuweisung nicht.
-
-Aktivieren Sie die Tag-Zuweisung in den Klassifizierungseinstellungen. Verwenden Sie **Tag-Zuweisung pausieren / Tag-Zuweisung fortsetzen** für jede Gruppe getrennt. Das Ausschalten der Aufzeichnung eines Plattformfeeds in **Aktivität → Aufzeichnung** stoppt auch dessen Tag-Zuweisung.
+Eine Content-tagging-Gruppe versieht Inhalte ihrer Plattformen mit einem eigenen Tag-Baum und Modelleinstellungen. Jede Plattform gehört zu einer Gruppe; wählen Sie sie bei der Erstellung, später kann sie nicht geändert werden. Blocking-Zeitpläne und Filter steuern kein Tagging. Aktivieren Sie Tagging in Einstellungen und pausieren/fortsetzen Sie jede Gruppe separat. Wird die Feed-Aufzeichnung unter **Aktivität → Aufzeichnung** ausgeschaltet, stoppt auch das Tagging.
 
 ### Tags und Modelleinstellungen
 
-Erstellen Sie Tags, beschreiben Sie ihre Bedeutung und setzen oder entfernen Sie ihre Eltern im Tag-Baum. Ziehen Sie einen Tag, um seinen Zweig zu verschieben. Klare Beschreibungen helfen dem Modell, ähnliche Tags zu unterscheiden. Die Einstellungen jeder Gruppe sind unabhängig.
+Erstellen Sie Tags, beschreiben Sie ihre Bedeutung und setzen oder entfernen Sie Eltern im Baum. Ziehen verschiebt einen Zweig. Klare Beschreibungen helfen dem Modell, ähnliche Tags zu unterscheiden. **Mindestkonfidenz für Tags** setzt die Evidenzstufe von 1 bis 5; neue Gruppen beginnen bei 4 (starke Unterstützung). Es gibt keine Zielanzahl; ein Element kann ohne Tags bleiben. **Anweisungen zum Taggen** speichert Gruppenpräferenzen. Änderungen werden automatisch gespeichert; jede Gruppe verwendet ausdrücklich eine Verbindung, ein Modell und einen Reasoning-Aufwand.
 
-- **Geschwindigkeit ↔ Qualität** wählt eine lokale Modellstufe. Größere Modelle benötigen mehr Arbeitsspeicher; Geschwindigkeit und Ergebnisse hängen von PC und Arbeitslast ab. Downloads werden von Gruppen gemeinsam genutzt.
-- **Streng ↔ Breit** legt Konfidenzanforderungen und standardmäßige Tag-Anzahlen fest.
-- **Minimum an Tags / Maximum an Tags** unter Mehr ersetzen diese Standardanzahlen. Streng ↔ Breit steuert weiterhin die Konfidenz für zusätzliche Tags. Lassen Sie eines der Felder leer, um seinen Standardwert zu verwenden.
-- **Anweisungen zur Tag-Zuweisung** ergänzt optionale Anweisungen für diese Gruppe.
+### AI-Verbindungen
 
-Gewöhnliche Klassifizierungsänderungen werden automatisch gespeichert. Eine ausgewählte Stufe muss heruntergeladen sein, bevor sie Tags zuweisen kann. Gruppen derselben Stufe teilen ein geladenes Modell; bis zu zwei Stufen bleiben gleichzeitig geladen.
+Unter **KI-Verbindungen** stehen ChatGPT subscription, OpenAI API, Gemini API und Grok API. Das Abo verwendet Vault-Anmeldung und einen berechtigten Tarif. API-Schlüssel folgen Abrechnung und Limits des Anbieters. Anbieter wählen und Schlüssel unter der gemeinsamen Liste eingeben; Änderungen speichern automatisch, Leeren löscht den Schlüssel. **Modellliste abrufen** und danach ein Modell in der Tagging- oder Regelgruppe wählen; der Abruf wählt keines aus. **Denkaufwand** bietet Standard, Low, Medium oder High, soweit unterstützt. Neue Auswahl beginnt mit Medium, vorhandene bleibt gespeichert. Höherer Aufwand kann Zeit und Tokens erhöhen. Websuche ist immer aktiviert; das Modell wählt ihren Einsatz. Bei Fehlern bleiben gültige Cache-Ergebnisse erhalten; neue Inhalte bleiben ungelöst bis **Cloud-Klassifizierung erneut versuchen**. Vault wechselt den Anbieter nicht automatisch; jede Verbindung hat eigenes Intervall und Versuchslimit. Korrigieren Sie Tags in der Erweiterung mit **+ tag**; Entfernen-Steuerung oder einmal Delete entfernt sie. **Ohne Tag** bedeutet abgeschlossen ohne Tags, **Tag-Zuweisung läuft** bedeutet ausstehend. Ihre Korrektur bleibt maßgeblich.
 
-Korrigieren Sie die Tags eines Inhalts in der Browsererweiterung. Klicken Sie auf **+ Tag**, durchsuchen Sie die vorhandenen Tags der Klassifizierung und wählen Sie einen zum Hinzufügen. Verwenden Sie die Entfernen-Steuerung eines Tags oder wählen Sie ihn aus und drücken Sie einmal Entf. **Ohne Tag** bedeutet, dass die Tag-Zuweisung ohne Tags abgeschlossen wurde; **Tag-Zuweisung läuft** bedeutet, dass ein Ergebnis aussteht. Korrekturen beeinflussen künftige Tag-Zuweisungen.
-
-## Wissen und Webrecherche
-
-Wissen speichert auf diesem PC kurze Beschreibungen für das lokale Tag-Modell. **Inhaltsquellen** umfassen Ersteller, Konten, Kanäle und Communitys. Quellbeschreibungen begleiten deren Inhalte. **Bekannte Begriffe** gelten, wenn ein Begriff in einem Titel vorkommt.
-
-Fügen Sie eine Quelle oder einen Begriff und deren Beschreibung hinzu oder lassen Sie die Beschreibung leer, um bei aktivierter Recherche eine Recherche anzufordern. Erstellervorschläge helfen beim Finden einer bereits von der Klassifizierung erfassten Quelle. Listen mit sechs oder mehr Einträgen haben direkt darüber eine Suche: Begriffe und die Inhaltsquellen jeder Plattform haben getrennte Suchen nach Name, Kennung oder Beschreibung. Das Bearbeiten einer Beschreibung beeinflusst künftige Tag-Zuweisungen; das Löschen von Quellenwissen verhindert nicht, dass spätere Recherche es erneut erstellt.
-
-### Rechercheanbieter konfigurieren
-
-1. Öffnen Sie **Klassifizierungseinstellungen → API-Schlüssel und Anbieter**.
-2. Wählen Sie einen Anbietertyp und **Anbieter hinzufügen**. Dies erstellt eine Konfiguration; es stellt keinen API-Schlüssel aus.
-3. Besorgen Sie Anmeldedaten bei diesem Anbieter und tragen Sie sie ein. Konfigurieren Sie bei einem kompatiblen benutzerdefinierten Endpunkt auch dessen Endpunkt- und Protokollfelder.
-4. Wählen Sie in **Webrecherche** einen Anbieter mit integrierter Websuche. Rufen Sie dessen Modellliste ab und wählen Sie ein Recherchemodell. Verwenden Sie die Suche der Modellauswahl, um die Liste einzugrenzen; aktualisieren Sie sie zum erneuten Abruf.
-5. Lesen Sie die Einwilligungserklärung und aktivieren Sie die Einwilligung. Wählen Sie in jeder Gruppe **Ein**, **Aus** oder **Klassifizierungseinstellungen folgen**.
-
-**Webrecherche einrichten…** führt Sie bei fehlender Konfiguration zu den Einstellungen. Eine Gruppe kann die Rechercheeinwilligung nicht umgehen. **Verbindung testen** bestätigt den Erfolg der Testanfrage, nicht, dass jedes Modell Recherche unterstützt. Das Testmodell eines Anbieters ist vom ausgewählten Recherchemodell getrennt.
-
-Schlüssel werden im Unterstützungsordner der App auf diesem PC gespeichert, mit Zugriff nur für den aktuellen Windows-Nutzer. Sie authentifizieren Anfragen beim konfigurierten Anbieter; Vault lädt sie nicht auf seinen eigenen Server hoch. Recherche sendet bereinigte öffentliche Themen an den ausgewählten Anbieter, keine privaten Inhaltskörper oder Zusammenfassungen. Lesen Sie die Einwilligungserklärung für die genauen gesendeten Felder. Zur Anbieternutzung gehören Verbindungstests und Modelllistenanfragen ebenso wie Recherche.
-
-Der Recherchestatus zeigt eingereihte Anfragen, Wartezeiten für Wiederholungen, Fehler und den Tokenverbrauch des Tages. **Fehlgeschlagene Themen jetzt erneut versuchen** wiederholt geeignete Fehler; es umgeht weder das Tageskontingent noch die Einwilligung.
 
 ## Aktivität
 
-Aktivität zeichnet aktivierte App-Nutzung, Websitebesuche und unterstützte **Angesehene Inhalte** lokal auf. Ihre Diagramme spiegeln aufgezeichnete Daten wider; ein leerer Bereich beweist nicht, dass PC ungenutzt war.
+Aktivität zeichnet die Nutzung aktivierter Apps, Websitebesuche und unterstützte **Angesehene Inhalte** lokal auf. Die Diagramme zeigen aufgezeichnete Daten; ein leerer Bereich beweist nicht, dass der PC untätig war. Wählen Sie einen Zeitraum. **Zeitachse** zeigt Nutzung nach Tageszeit, **Summen** summiert Dauer, **Zeitintervall** bündelt die Nutzung jedes Intervalls in vertikalen Blöcken. **Farben** ist eine anklickbare Legende: Wählen Sie eine Quelle, um die Diagramme darauf zu fokussieren. Wählen Sie einen Tag, um Nutzung ab diesem Tag anzuzeigen.
 
-Wählen Sie einen Datumsbereich. **Zeitleiste** zeigt die Nutzung zur jeweiligen Tageszeit; **Gesamtsummen** summiert die Dauer. **Zeitintervall** fasst die Nutzung innerhalb jedes Intervalls zu vertikalen Blöcken zusammen. **Farben** ist eine anklickbare Legende: Wählen Sie eine Quelle, um die Diagramme darauf zu fokussieren. Wählen Sie einen Tag, um die Nutzung seit diesem Tag anzuzeigen.
+### Aktivität-Gruppen
 
-### Aktivitätsgruppen
-
-Erstellen Sie eine Gruppe, um ihre ausgewählten Apps und Websites gemeinsam in Nutzung anzuzeigen. **Zusammenführen** verwendet für ihre Mitglieder überall in Aktivität einen Namen und eine Farbe. Eine Aktivitätsgruppe organisiert aufgezeichnete Nutzung; sie ist von einer Blockierungsgruppe oder Klassifizierungsgruppe getrennt. Speichern Sie den Aktivitätsgruppeneditor ausdrücklich mit **Speichern**.
+Erstellen Sie eine Gruppe, um ausgewählte Apps und Websites gemeinsam unter Usage anzuzeigen. **Merge** verwendet für Mitglieder überall in Aktivität einen Namen und eine Farbe. Aktivität-Gruppen ordnen aufgezeichnete Nutzung und sind von Blocking- und Content-tagging-Gruppen getrennt. Speichern Sie den Editor ausdrücklich mit **Save**.
 
 ### Aufzeichnung und Aufbewahrung
 
-Schalten Sie in **Aufzeichnung** die Aufzeichnung für jede Kategorie oder einzelne Quelle ein oder aus. **Aufbewahren** steuert, wie lange der Verlauf erhalten bleibt; **Für immer** behält ihn ohne automatischen Ablauf. Einzelne Auswahlmöglichkeiten können der übergeordneten Einstellung folgen. Das Ausschalten der Aufzeichnung stoppt neue Aufzeichnungen; das Löschen des Verlaufs entfernt aufgezeichnete Einträge.
+Unter **Aufzeichnung** Aufzeichnung je Kategorie oder Quelle schalten. **Aufbewahren** bestimmt die Aufbewahrung, **Für immer** läuft nicht ab. Ausschalten stoppt neue Aufzeichnungen; Löschen entfernt Historie. Plattform-Feeds sammeln angezeigte Inhalte unterstützter Seiten, unabhängig davon, ob sie geöffnet wurden. **Tagging unterstützt**-Feeds können bei aktiver Aufzeichnung Tagging speisen; die Aufbewahrung ist von App- und Webnutzung getrennt. Eine pausierte Tagging-Gruppe stoppt die Aufzeichnung nicht.
 
-Plattformfeeds erfassen Inhalte auf unterstützten Plattformseiten, unabhängig davon, ob diese geöffnet wurden. Ein Feed mit **Tag-Zuweisung unterstützt** kann bei eingeschalteter Aufzeichnung die Klassifizierung versorgen. Seine Aufbewahrung steuert erfasste Inhalte getrennt von App- und Websitenutzung. Eine pausierte Klassifizierungsgruppe schaltet die Aufzeichnung nicht selbst aus.
+## Einstellungen
 
-## Klassifizierungseinstellungen
-
-**Tagpaket-Updates** wählt, wann geprüfte Tagpaket-Updates wirksam werden: **Automatisch**, **Zuerst fragen** oder **Manuell**. Dies ist vom Herunterladen des in einer Gruppe gewählten lokalen Modells getrennt. Modelldateien werden von Hugging Face heruntergeladen, wenn Sie **Herunterladen** wählen; verwenden Sie während eines Downloads die Fortschritts-/Statusanzeige und **Abbrechen** der Gruppe.
-
-Wählen Sie die Oberflächensprache in den Einstellungen. Felderklärungen sind über die kleinen Info-Schaltflächen in der gewählten Oberflächensprache verfügbar.
+Wählen Sie unter Einstellungen die Oberflächensprache; Info-Schaltflächen zeigen lokalisierte Erklärungen.
 
 ## Speichern und Fehlerbehebung
 

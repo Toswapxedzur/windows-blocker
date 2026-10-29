@@ -12,19 +12,52 @@ Source: একটি function expression `(on, v) => { ... }`। শুধু sy
 - Disable handler থামায় ও panel/app block তোলে। Enable loaded rule এবং থাকা panel/block resume করে। Delete handler/state/effect মুছে। আগে quit করা app আবার খোলে না; file write ফেরানো হয় না।
 - সাধারণ group target event সীমিত করে না; rule-এ app বেছে নিন। Action queue হয় ও dispatch-এর পরে চলে। Exception handler থামালেও তার state/action ফেরায় না; পরের handler চলতে পারে। কেবল file action result event দেয়।
 
+## পরিচালিত টাইমার ও চলমান সময়সীমার ব্যবহার
+
+`v.timer(id, {direction:"down", durationMs:300000})` একটি নামযুক্ত countdown তৈরি করে অথবা বিদ্যমানটি ফেরত দেয়; শুরুতে সেটি paused থাকে। Count-up timer-এর জন্য `{direction:"up"}` ব্যবহার করুন। Handle-এ আছে `start()`, `pause()`, `resume()`, `reset()` ও `snapshot()`। Start/resume বারবার ডাকলেও একই ফল হয়; reset করলে elapsed সময় শূন্য হয়ে paused অবস্থায় ফেরে। Snapshot field-এর মধ্যে আছে `ready`, `error`, `elapsedMs`, `remainingMs` (count-up-এর জন্য null), `running` ও `completed`।
+
+App/browser বন্ধ থাকলেও বা rule disabled থাকলেও চলমান timer ঘড়ির প্রকৃত সময় অনুযায়ী এগোয়। Countdown শেষ হলে প্রতিটি timer incarnation ও generation-এর জন্য প্রতিটি member-এর rule পরেরবার চলার সময় একবার `timerEnded` এবং `{id, direction, durationMs, generation, incarnation}` পৌঁছে দেয়; Run এটি আবার পাঠায় না। Delivery host event-এর ওপর নির্ভর করে; এটি real-time alarm নয়। বিদ্যমান text control দিয়ে দেখাতে panel-এ `{type:"timer", timerId:"focus", label:"Focus"}` রাখুন।
+
+`v.rolling(id, {windowMs:3600000, limitMs:600000})` একটি নামযুক্ত সক্রিয় ব্যবহার tracker তৈরি করে অথবা বিদ্যমানটি ফেরত দেয়। `assign({websites:["youtube.com","reddit.com"], apps:[]})` এই member-এর target assignment প্রতিস্থাপন করে। Native rule পরিবর্তে platform app ID দিতে পারে। Domain-এর মধ্যে subdomain-ও পড়ে। একটি tracker তার target-গুলোর ব্যবহার একত্র করে; অন্য ID-এর allowance স্বাধীন। `snapshot()` ফেরত দেয় `ready`, `error`, `usedMs`, `remainingMs`, `available` ও `nextReturnAtMs` (পরের যে millisecond-এ কোনো নথিভুক্ত ব্যবহারের মেয়াদ শেষ হবে)। Target দিলে `available(target?)` assignment-ও পরীক্ষা করে। `reset()` এই object-এর history মুছে দেয়।
+
+Allowance-এর অতিরিক্ত ব্যবহারসহ পর্যবেক্ষিত সব যোগ্য ব্যবহার গণনা হয়; tracker নিজে page/app block করে না। একই সময়ের overlapping visible-page interval একবার গণনা হয়, আর native app-এ পর্যবেক্ষিত foreground ব্যবহার গণনা হয়। Disabled rule ব্যবহার যোগ করে না; তবে interval-এর সুনির্দিষ্ট সীমানায় history-এর মেয়াদ শেষ হতে থাকে। অবশিষ্ট history-এর ব্যবহার limit-এর নিচে নামলেই কেবল availability ফেরে। Heartbeat sample সর্বোচ্চ পাঁচ সেকেন্ডের; shutdown/disabled gap থেকে কৃত্রিম activity তৈরি হয় না। ব্যবহারকারীর emit করা event ব্যবহার যোগ করে না।
+
+Linked custom group-এ একই object ID একটি স্থানীয় native hub-এর কর্তৃত্ব ভাগ করে। Linking tracker history ও assignment একত্র করে এবং যে পক্ষ linking শুরু করেছে তার timer state রাখে; অসামঞ্জস্যপূর্ণ configuration linking প্রত্যাখ্যান করে। প্রতিটি member নিজস্ব completion event পায়। Disconnect হলে নতুন authoritative তথ্য না ফেরা পর্যন্ত shared tracker unavailable হয় এবং timer control প্রত্যাখ্যাত হয়। Unlink-এ প্রতিটি member চূড়ান্ত shared usage ও timer state রাখে, নিজস্ব target ফেরত পায় এবং পুরোনো link-এর command বাদ দেয়। ফিরে আসা member চূড়ান্ত snapshot save করে acknowledgement না দেওয়া পর্যন্ত hub সেটি রাখে; নতুন link পাওয়ার আগে pending handover শেষ হয়।
+
+নামযুক্ত object Run ও restart-এর পরেও সংরক্ষিত `v.state.$vaultTime`-এ থাকে; field-টি সরাসরি edit করবেন না। স্পষ্টভাবে সরাতে `v.removeTime(id)` ব্যবহার করুন। ID-তে 1–80টি ASCII অক্ষর, সংখ্যা, `_` বা `-` থাকতে পারে; সংরক্ষিত property name প্রত্যাখ্যাত হয়। সর্বোচ্চ 32টি object rule-এর 64KiB UTF-8 state limit ভাগ করে। Duration পূর্ণসংখ্যা millisecond, সর্বোচ্চ 365 দিন। Rolling history সর্বোচ্চ 1024টি minute bucket ও 2048টি merged interval রাখে। History capacity error হলে স্পষ্টভাবে reset না করা পর্যন্ত tracker unavailable থাকে; invalid configuration ও oversized save error জানায় কিন্তু saved data মুছে না।
+
+```js
+(on, v) => {
+  const timer = v.timer("focus", {durationMs: 300000});
+  v.panel("focus", {controls: [
+    {type: "timer", timerId: "focus", label: "Focus"},
+    {id: "start", type: "button", label: "Start"},
+    {id: "pause", type: "button", label: "Pause"},
+    {id: "reset", type: "button", label: "Reset"}
+  ]});
+  on("panel", ev => {
+    if (ev.data.eventName !== "click") return;
+    if (ev.data.controlId === "start") timer.start();
+    if (ev.data.controlId === "pause") timer.pause();
+    if (ev.data.controlId === "reset") timer.reset();
+  });
+  on("timerEnded", ev => v.log("Finished", ev.data.id));
+}
+```
+
 ## API
 
-- `on(type, handler)` → boolean। `handler(ev)` নিবন্ধন করে; একাধিক handler registration order-এ চলে। False মানে invalid argument বা handler limit। `ev = { type: string, now: number, data }`; `now` Unix milliseconds।
-- `v.state`: mutable JSON object, event dispatch-এর পরে সংরক্ষিত। পুরনো state না মুছে missing field initialize করুন। Object নয় বা array দিলে `{}` হয়; nonserializable/oversized update save হয় না।
+- `on(type, handler)` → boolean। `handler(ev)` নিবন্ধন করে; একাধিক handler registration order-এ চলে। False মানে invalid argument বা handler limit। `ev = { type: string, now: number, origin: "host" | "user" | "rule", data }`; `now` Unix milliseconds। প্রকৃত রেন্ডার করা control event-এ `origin: "user"`; `v.emit` event-এ `origin: "rule"` থাকে।- `v.state`: mutable JSON object, event dispatch-এর পরে সংরক্ষিত। পুরনো state না মুছে missing field initialize করুন। Object নয় বা array দিলে `{}` হয়; nonserializable/oversized update save হয় না।
 - `v.log(...values)`: এই group-এর Log-এর একমাত্র উৎস। Log/Clear group-ভেদে আলাদা। Load error Run status-এ; handler diagnostic Log-এ নয়।
 - `v.emit(type, data)`: বর্তমান event-এর পরে group handler-এ `data`-র JSON copy queue করে, নতুন `now`-সহ; synchronous call নয়।
 - `v.panel(id, spec)`: group-এর named floating panel প্রতিস্থাপন করে; null `spec` সরায়। Panels দেখুন।
 - `v.file(op, path, payload?)` → request ID string। Files দেখুন।
+- `v.store(request)` request ID ফেরায়; group record দেখুন।
 - `v.block(appId, on)`: true app block বজায় রাখে, false এই group-এর block সরায়। Enabled group-এর block একত্র হয়; অন্য group-এর target unblock করতে পারে না। Blocking normal quit চায় এবং Settings interval-এ retry করে; process start আটকায় না বা app Quit গ্রহণের নিশ্চয়তা দেয় না।
 - `v.quit(appId)`: একই protection/retry policy-তে একবার normal quit; চলমান block নয়।
 - `v.open(appId)`: Windows-কে installed app খুলতে বলে; success callback নেই।
 
-অন্য call `undefined` দেয়। App ID full executable path বা application user model ID; event ও app picker-এ পাওয়া যায়। Block/Quit Windows system process, browser, Vault ও helper, এবং empty ID উপেক্ষা করে। Panel ID/state group-এর, display name-এর নয়।
+অন্য call `undefined` `com.valvesoftware.steam` দেয়। App ID full executable path বা application user model ID; event ও app picker-এ পাওয়া যায়। Block/Quit Windows system process, browser, Vault ও helper, এবং empty ID উপেক্ষা করে। Panel ID/state group-এর, display name-এর নয়।
 
 ## Event
 
@@ -38,6 +71,9 @@ snooze: {}
 panel: { panelId: string, controlId: string, eventName: string,
          value: string, values: { [controlId: string]: string } }
 file: see Files
+record: { requestId: string, ok: boolean, op?: string, key?: string,
+          record?: Record | null, entries?: Header[], next?: string | null,
+          deleted?: number, error?: string }
 App = { appId: string, name: string }
 ```
 
@@ -91,6 +127,22 @@ file.data = { requestId: string, op: string, path: string, ok: boolean,
 
 Unused result field null; success-এ error ফাঁকা। Failure-এ invalid-path, unsupported-file-type, folder unavailable, missing file, file-too-large আছে। Error string, সম্পূর্ণ নির্দিষ্ট enum নয়। Transaction API নেই; প্রতি path-এ read-modify-write ধারাবাহিক করুন।
 
+## গ্রুপ রেকর্ড
+
+`v.store(request)` handler-এর মধ্যে asynchronous JSON record operation শুরু করে। Record এই গ্রুপের ব্যক্তিগত, Run ও restart-এর পর থাকে এবং গ্রুপ মুছলে মুছে যায়; linked group-এর record আলাদা। Key, value, version, cache invalidation ও feedback precedence নিয়মই নির্ধারণ করে। Mac ও browser একই API ব্যবহার করলেও প্রতিটি app/browser store আলাদা।
+
+| Request | Result |
+|---|---|
+| `{op:"get", key}` | `record` বা `null` |
+| `{op:"put", key, value, version?, ifRevision?}` | সংরক্ষিত `record` |
+| `{op:"delete", key, ifRevision?}` | `record: null` |
+| `{op:"list", prefix?, after?, limit?}` | সাজানো `entries` ও `next` |
+| `{op:"clear", prefix?}` | `deleted` সংখ্যা |
+
+প্রতিটি record-এ `{value, revision, version, updatedAt}` থাকে। বাস্তব write হলে opaque revision বদলায়; `version` caller-এর metadata। `list` value ছাড়া header ফেরায়; একটি পড়তে `get`, পরের page-এ যেতে `after: next` ব্যবহার করুন। `put`/`delete`, `ifRevision` বাদ দিলে put/delete unconditional; `null` মানে key অনুপস্থিত হতে হবে, revision string হলে exact match চাই। Mismatch-এ `ok:false`, `error:"store-conflict"` ও বর্তমান `record` ফেরে—এটি delayed automatic reply-কে user feedback overwrite করা থেকে আটকায়। `v.context.revision` opaque rule-configuration marker; rule চাইলে নিজের version-এ রাখতে পারে। Framework cache policy নির্ধারণ করে না।
+
+সীমা: key 1–2048 অক্ষর, version ≤128, JSON value ≤64KiB, depth ≤32, প্রতি group 10000 key, পুরো record document 16MiB। `list` প্রতি page-এ সর্বোচ্চ100 header ও96KiB দেয়। প্রতি group 32 এবং মোট প্রতি সেকেন্ডে 128 request start; overload-এ প্রতি group-এ প্রতি সেকেন্ডে একটি `store-busy` error, অতিরিক্ত request drop হয়। Storage error `ok:false`; future/malformed document সংরক্ষণ করে `store-unavailable` জানায়। Auto retry/eviction নেই; deadline-এর জন্য ticks ব্যবহার করুন।
+
 ## সীমা
 
 প্রতি event/group: 256 queued action, 200 log call, 64 emit; অতিরিক্ত বাদ। প্রতি rule: 1000 handler, 24 panel; প্রতি control list-এ 32 entry এবং choice-এ 64 option; অতিরিক্ত ignore/truncate। Emit chain 16 generation-এ থামে। Serialized state limit 65536 JavaScript character। Registration ও প্রতি event-এর combined handler 1 সেকেন্ডের মধ্যে রাখুন; বারবার limit ছাড়ালে বা hard timeout হলে Run পর্যন্ত rule থামে। প্রতি group-এ Log 200 entry রাখে। Timing/reply best-effort, real-time guarantee নয়।
@@ -111,3 +163,33 @@ Snooze বা তার panel button চালু করা পাঁচ মি�
   on("tick", ev => v.block("C:\\Program Files (x86)\\Steam\\steam.exe", ev.now >= v.state.pauseUntil));
 }
 ```
+
+
+## চলমান নিয়ম থেকে AI কল
+
+প্রতিটি custom group **AI calls**-এ একটি connection/model ও reasoning effort বেছে নেয়। Mac ও browser rule একই API ব্যবহার করে; browser request-এর জন্য Windows Vault connected থাকতে হবে, provider credential সেখানেই থাকে। Linked group নির্বাচন ও ঐচ্ছিক দৈনিক request cap ভাগ করে। ফাঁকা মানে group cap নেই; account limit থাকে। Cap UTC দিন ধরে, restart-এ স্থায়ী এবং ব্যর্থসহ submitted attempt গোনে। Link করলে আগের usage যোগ হয়; unlink করলেও আগের usage থাকে।
+
+`v.ai({ prompt, input? })` সঙ্গে সঙ্গে request ID দেয়। Registration-এ নয়, handler-এর মধ্যে কল করুন। `input` যেকোনো JSON; prompt/input প্রত্যেকটি সর্বোচ্চ20KB। উত্তর `ai` event-এ আসে: `{requestId, ok, text, citations,
+error}`. Success text is at most48KB; citations are `{url,title}`। Web search-এর উত্তর দেখালে source link দৃশ্যমান ও clickable রাখুন। Model-এর জন্য search সর্বদা উপলভ্য। নির্দিষ্ট app deadline নেই; bounded concurrency থাকে; provider fallback বা auto retry নেই। উত্তর data, JavaScript হিসেবে execute হয় না; বিদ্যমান action নেবে কি না rule ঠিক করে।
+
+`ask` বোতাম ও `note` field-সহ panel-এর জন্য:
+
+```javascript
+(on, v) => {
+  let pending = null;
+  on("panel", ({ data }) => {
+    if (data.controlId !== "ask" || pending) return;
+    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+  });
+  on("ai", ({ data }) => {
+    if (data.requestId !== pending) return;
+    pending = null;
+    if (!data.ok) { v.log("AI request failed:", data.error); return; }
+    v.log(data.text, data.citations);
+  });
+}
+```
+
+Restart-এ outstanding call replay হয় না। Run, disable/enable বা delete পুরনো reply বাতিল করে; disconnected browser `ai-unavailable` দেয়। অন্য error: `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`। Failed call rule-এর আগের রাখা result বদলায় না; rule state-এর64KB সীমা আগের মতোই।
+
+Credential-মুক্ত model পছন্দ Mac-এ `rule_ai_models`, browser-এ `settings-rule-ai-models` দিয়ে খুঁজুন; বর্তমান set-group path-এ `ruleAI` কনফিগার করুন। Field: `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`) এবং `dailyRequestLimit` (null বা1–100000)। ফেরত পাওয়া choice ব্যবহার করুন; rule source-এ key বা provider URL দেবেন না।

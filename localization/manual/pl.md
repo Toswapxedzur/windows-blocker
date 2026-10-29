@@ -61,66 +61,36 @@ Użyj selektora + celu Apps, aby wybrać zainstalowane aplikacje. **Blokuj wszys
 
 Zablokowana aplikacja otrzymuje prośbę o zamknięcie. **Ponownie proś zablokowaną aplikację o zamknięcie co (minuty)** steruje ponawianiem. Przekierowania witryn, pauzy stron i ukrywanie feedów są egzekwowane przez rozszerzenie przeglądarki; nie stają się akcjami aplikacji natywnej.
 
-## Classifier
+## Oznaczanie treści
 
-Grupa Classifier taguje treści z przypisanych platform, korzystając z własnego drzewa tagów i ustawień modelu. Każda platforma należy do jednej grupy. Wybierz platformy podczas tworzenia grupy; później nie można ich zmienić. Harmonogramy i filtry grup blokowania nie sterują tagowaniem.
-
-Włącz tagowanie w ustawieniach Classifier. Używaj osobno **Wstrzymaj tagowanie / Wznów tagowanie** dla każdej grupy. Wyłączenie rejestrowania feedu platformy w **Activity → Rejestrowanie** również zatrzymuje tagowanie tego feedu.
+Grupa taguje treści z przypisanych platform przy użyciu własnego drzewa tagów i ustawień modelu. Każda platforma należy do jednej grupy; wybierz je przy tworzeniu, później nie można ich zmienić. Harmonogramy i filtry blokowania nie sterują tagowaniem. Włącz tagowanie w Ustawienia; używaj **Wstrzymaj tagowanie / Wznów tagowanie** osobno dla każdej grupy. Wyłączenie nagrywania feedu w **Aktywność → Nagrywanie** także zatrzymuje jego tagowanie.
 
 ### Tagi i ustawienia modelu
 
-Utwórz tagi, opisz ich znaczenie, ustaw lub usuń tagi nadrzędne w drzewie. Przeciągnij tag, aby przenieść jego gałąź. Jasne opisy pomagają modelowi rozróżniać podobne tagi. Ustawienia każdej grupy są niezależne.
+Twórz tagi, opisuj ich znaczenie i ustawiaj lub usuwaj rodziców w drzewie. Przeciąganie przenosi gałąź. Jasne opisy pomagają modelowi rozróżniać podobne tagi. Ustawienia grup są niezależne. **Minimalna pewność tagu** określa wymagany poziom dowodów 1–5; nowe grupy zaczynają od 4 (silne wsparcie). Nie ma docelowej liczby tagów; element może nie otrzymać żadnego. **Instrukcje tagowania** zapisuje preferencje grupy. Zwykłe zmiany zapisują się automatycznie; każda grupa używa jawnie wybranego połączenia, modelu i reasoning effort.
 
-- **Szybkość ↔ Jakość** wybiera lokalny poziom modelu. Większe modele zużywają więcej pamięci; szybkość i wyniki zależą od PC i obciążenia. Pobrane modele są współdzielone między grupami.
-- **Ścisłe ↔ Szerokie** ustawia wymagany poziom pewności i domyślną liczbę tagów.
-- **Minimalna liczba tagów / Maksymalna liczba tagów** w Więcej zastępuje te liczby. Ścisłe ↔ Szerokie nadal steruje pewnością dodatkowych tagów. Zostaw pole puste, aby użyć wartości domyślnej.
-- **Instrukcje tagowania** dodają opcjonalne wskazówki dla tej grupy.
+### Połączenia AI
 
-Zwykłe zmiany Classifier zapisują się automatycznie. Wybrany poziom musi zostać pobrany przed tagowaniem treści. Grupy używające tego samego poziomu współdzielą załadowany model; jednocześnie załadowane mogą być najwyżej dwa poziomy.
+Ustawienia zawiera ChatGPT subscription, OpenAI API, Gemini API i Grok API. Subskrypcja korzysta z logowania Vault i kwalifikującego się planu. Klucze API podlegają rozliczeniom i limitom wybranego dostawcy. Wybierz dostawcę i wpisz klucz pod wspólną listą; zmiany zapisują się automatycznie, wyczyszczenie pola usuwa klucz. **Pobierz listę modeli** pobiera modele, ale nie wybiera żadnego; wybierz go w grupie tagowania lub custom-rule.
 
-Popraw tagi elementu treści w rozszerzeniu przeglądarki. Kliknij **+ tag**, wyszukaj istniejące tagi Classifier i wybierz jeden do dodania. Użyj przycisku usuwania tagu albo zaznacz go i raz naciśnij Delete. **Bez tagu** oznacza zakończone tagowanie bez tagów; **Tagowanie** oznacza wynik oczekujący. Poprawki usprawniają przyszłe tagowanie.
+**Poziom rozumowania** określa poziom rozumowania modelu: Model default, Low, Medium lub High, jeśli obsługiwane. Nowe wybory zaczynają od Medium; istniejące pozostają zapisane. Wyższy poziom może zużyć więcej czasu i tokenów. Web search jest zawsze włączone dla tagowania; model decyduje, kiedy go użyć. Wybierz model obsługujący wyszukiwanie i ustrukturyzowane tagowanie. Nieudane lub niedostępne żądania zachowują prawidłowe wyniki cache; nowe elementy pozostają nierozstrzygnięte do **Ponów klasyfikację w chmurze**. Vault nie przełącza dostawcy automatycznie; każde połączenie ma własny odstęp i limit prób. W rozszerzeniu popraw tagi przez **+ tag**, wyszukanie i wybór; usuń przyciskiem usuwania lub wybierz tag i naciśnij Delete raz. **Bez tagu** oznacza zakończenie bez tagów; **Tagowanie** oznacza oczekujący wynik. Twoja korekta jest wiążąca dla elementu.
 
-## Knowledge i badania w sieci
 
-Knowledge przechowuje krótkie opisy na tym PC dla lokalnego modelu tagowania. **Źródła treści** obejmują twórców, konta, kanały i społeczności. Opisy źródła towarzyszą jego treściom. **Znane terminy** mają zastosowanie, gdy termin występuje w tytule.
+## Aktywność
 
-Dodaj źródło lub termin z opisem albo pozostaw opis pusty, aby zażądać badań po ich włączeniu. Sugestie twórców pomagają znaleźć źródło zebrane przez Classifier. Listy zawierające co najmniej sześć pozycji mają wyszukiwanie bezpośrednio nad nimi: Terms i Content sources każdej platformy mają osobne wyszukiwanie po nazwie, identyfikatorze lub opisie. Zmiana opisu wpływa na przyszłe tagowanie; usunięcie wiedzy o źródle nie uniemożliwia późniejszego odtworzenia jej przez badania.
+Aktywność lokalnie zapisuje użycie włączonych aplikacji, odwiedziny witryn i obsługiwane **Wyświetlone treści**. Wykresy pokazują zapisane dane; pusty obszar nie dowodzi bezczynności PCa. Wybierz zakres dat. **Oś czasu** pokazuje godziny, **Sumy** sumuje czas, **Przedział czasu** łączy użycie z przedziałów w pionowe bloki. **Kolory** to klikalna legenda; wybierz źródło, by skupić wykresy. Wybierz dzień, aby zobaczyć użycie od niego.
 
-### Konfigurowanie dostawcy badań
+### Grupy Aktywność
 
-1. Otwórz **Ustawienia Classifier → API keys & providers**.
-2. Wybierz typ dostawcy i **Dodaj dostawcę**. Tworzy to konfigurację; nie wydaje API key.
-3. Uzyskaj dane logowania od dostawcy i wpisz je. Dla zgodnego niestandardowego endpointu skonfiguruj też pola endpoint i protocol.
-4. W **Badaniach internetowych** wybierz dostawcę z wbudowanym web search. Pobierz listę modeli i wybierz model badawczy. Użyj wyszukiwania w selektorze modelu, aby zawęzić listę; odśwież ją, by pobrać ponownie.
-5. Przeczytaj informację o zgodzie i ją włącz. W każdej grupie wybierz **Włącz**, **Wyłącz** lub **Zgodnie z ustawieniami Classifier**.
+Utwórz grupę, by pokazać wybrane aplikacje i witryny razem w Usage. **Merge** stosuje jedną nazwę i kolor dla członków w całym Aktywność. Grupa porządkuje zapisane użycie i jest odrębna od grup blokowania i tagowania. Zapisz edytor jawnie przyciskiem **Save**.
 
-**Skonfiguruj badania internetowe…** otwiera ustawienia, gdy brakuje konfiguracji. Grupa nie może ominąć zgody na badania. **Testuj połączenie** potwierdza powodzenie żądania testowego, nie obsługę badań przez każdy model. Model testowy dostawcy różni się od wybranego modelu badawczego.
+### Nagrywanie i przechowywanie
 
-Keys są przechowywane w folderze support aplikacji na tym PC, z dostępem ograniczonym do bieżącego użytkownika Windows. Uwierzytelniają żądania do skonfigurowanego providera; Vault nie wysyła ich na własny serwer. Badania wysyłają oczyszczone publiczne tematy do wybranego providera, nie prywatną treść ani podsumowania. Przeczytaj informację o zgodzie, by poznać wysyłane fields. Użycie providera obejmuje testy połączenia i żądania listy modeli, nie tylko badania.
+W **Nagrywanie** włączaj lub wyłączaj nagrywanie kategorii albo źródeł. **Zachowaj** określa czas przechowywania historii; **Zawsze** nie wygasa automatycznie. Ustawienia pojedyncze mogą dziedziczyć szersze. Wyłączenie nagrywania zatrzymuje nowe dane; usunięcie historii usuwa zapisane wpisy. Feedy platform zbierają treści wyświetlone na obsługiwanych stronach, otwartych lub nie. Feed **Tagowanie obsługiwane** może zasilać Tagowanie treści, gdy nagrywanie jest włączone. Jego retencja jest niezależna od użycia aplikacji i stron. Wstrzymanie grupy tagowania samo nie wyłącza nagrywania.
 
-Status badań pokazuje żądania w kolejce, przerwy przed ponowieniem, błędy i dzienne użycie tokenów. **Ponów teraz nieudane tematy** ponawia kwalifikujące się błędy; nie omija dziennego limitu ani zgody.
+## Ustawienia
 
-## Activity
-
-Activity lokalnie rejestruje użycie włączonych aplikacji, odwiedziny witryn i obsługiwane **Wyświetlone treści**. Wykresy odzwierciedlają zarejestrowane dane; pusty obszar nie dowodzi, że PC był bezczynny.
-
-Wybierz zakres dat. **Oś czasu** pokazuje użycie o danej porze dnia; **Sumy** sumują czas. **Przedział czasu** grupuje użycie w każdym przedziale w pionowe bloki. **Kolory** to klikalna legenda: wybierz źródło, aby skupić na nim wykresy. Wybierz dzień, aby zobaczyć użycie od tego dnia.
-
-### Grupy Activity
-
-Utwórz grupę, aby razem wyświetlić wybrane aplikacje i witryny w Usage. **Scal** używa jednej nazwy i koloru dla elementów w całym Activity. Grupa Activity porządkuje zarejestrowane użycie; jest odrębna od grupy blokowania lub Classifier. Zapisz edytor grupy Activity jawnie przyciskiem **Zapisz**.
-
-### Rejestrowanie i przechowywanie
-
-W sekcji **Rejestrowanie** włącz lub wyłącz rejestrowanie każdej kategorii lub źródła. **Przechowuj** określa, jak długo zachowywana jest historia; **Bezterminowo** zachowuje ją bez automatycznego wygaśnięcia. Ustawienia indywidualne mogą stosować szersze ustawienie. Wyłączenie rejestrowania zatrzymuje nowe wpisy; usunięcie historii usuwa zapisane pozycje.
-
-Feedy platform zbierają treści pokazywane na obsługiwanych stronach platform, otwartych lub nie. Feed z etykietą **Obsługa tagowania** może dostarczać dane Classifier, gdy rejestrowanie jest włączone. Jego przechowywanie kontroluje zebrane treści niezależnie od użycia aplikacji i witryn. Wstrzymana grupa Classifier sama nie wyłącza rejestrowania.
-
-## Ustawienia Classifier
-
-**Aktualizacje pakietów tagów** określają, kiedy zweryfikowane aktualizacje pakietu tagów wchodzą w życie: **Automatycznie**, **Zapytaj najpierw** lub **Ręcznie**. To osobne od pobierania lokalnego modelu wybranego w grupie. Pliki modelu są pobierane z Hugging Face po wybraniu **Pobierz**; podczas pobierania używaj statusu/postępu grupy i przycisku **Anuluj**.
-
-Wybierz język interfejsu w Settings. Objaśnienia pól są dostępne po kliknięciu małych przycisków Info w wybranym języku interfejsu.
+W Ustawienia wybierz język interfejsu. Objaśnienia pól są dostępne przez przyciski Info w tym języku.
 
 ## Zapisywanie i rozwiązywanie problemów
 

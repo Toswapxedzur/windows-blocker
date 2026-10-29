@@ -61,66 +61,36 @@ Dùng bộ chọn + của mục tiêu Apps để chọn ứng dụng đã cài �
 
 Ứng dụng bị chặn sẽ được yêu cầu thoát. **Yêu cầu ứng dụng bị chặn thoát lại sau mỗi (phút)** điều khiển việc thử lại. Chuyển hướng trang web, tạm dừng trang và ẩn feed do tiện ích trình duyệt thực thi; chúng không trở thành thao tác native của ứng dụng.
 
-## Bộ phân loại
+## Gắn thẻ nội dung
 
-Nhóm phân loại gắn thẻ nội dung từ nền tảng được giao, bằng cây thẻ và cài đặt mô hình riêng. Mỗi nền tảng thuộc về một nhóm. Chọn nền tảng khi tạo nhóm; không thể đổi sau đó. Lịch và bộ lọc của nhóm chặn không điều khiển việc gắn thẻ.
-
-Bật gắn thẻ trong cài đặt bộ phân loại. Dùng riêng **Tạm dừng gắn thẻ / Tiếp tục gắn thẻ** cho mỗi nhóm. Tắt ghi nhận feed nền tảng trong **Activity → Ghi nhận** cũng sẽ dừng việc gắn thẻ của feed đó.
+Mỗi nhóm gắn thẻ nội dung từ nền tảng được gán bằng cây thẻ và cài đặt mô hình riêng. Mỗi nền tảng thuộc một nhóm; chọn khi tạo vì sau đó không đổi được. Lịch và bộ lọc nhóm chặn không điều khiển tagging. Bật tagging trong Cài đặt và dùng **Tạm dừng gắn thẻ / Tiếp tục gắn thẻ** riêng từng nhóm. Tắt ghi feed nền tảng tại **Hoạt động → Ghi dữ liệu** cũng dừng tagging của feed đó.
 
 ### Thẻ và cài đặt mô hình
 
-Tạo thẻ, mô tả ý nghĩa, đặt hoặc gỡ thẻ cha trong cây thẻ. Kéo thẻ để chuyển nhánh. Mô tả rõ ràng giúp mô hình phân biệt các thẻ tương tự. Cài đặt của từng nhóm độc lập.
+Tạo thẻ, mô tả ý nghĩa, đặt hoặc bỏ thẻ cha trong cây. Kéo thẻ để di chuyển nhánh. Mô tả rõ giúp mô hình phân biệt các thẻ giống nhau. Cài đặt mỗi nhóm độc lập. **Độ tin cậy tối thiểu của thẻ** đặt mức bằng chứng cần cho từng thẻ dự đoán từ 1 đến 5; nhóm mới bắt đầu ở 4 (hỗ trợ mạnh). Không có số lượng thẻ mục tiêu; mục có thể không có thẻ. **Hướng dẫn gắn thẻ** lưu tùy chọn của nhóm. Sửa đổi thông thường tự lưu; mỗi nhóm dùng connection, model và reasoning effort đã chọn rõ ràng.
 
-- **Tốc độ ↔ Chất lượng** chọn cấp mô hình cục bộ. Mô hình lớn dùng nhiều bộ nhớ hơn; tốc độ và kết quả tùy thuộc PC và khối lượng công việc. Các nhóm dùng chung tệp tải xuống.
-- **Nghiêm ngặt ↔ Mở rộng** đặt yêu cầu độ tin cậy và số lượng thẻ mặc định.
-- **Thẻ tối thiểu / Thẻ tối đa** trong Thêm sẽ thay các số lượng mặc định đó. Nghiêm ngặt ↔ Mở rộng vẫn kiểm soát độ tin cậy của thẻ bổ sung. Để trống trường nào để dùng giá trị mặc định của trường đó.
-- **Hướng dẫn gắn thẻ** thêm chỉ dẫn tùy chọn cho nhóm này.
+### Kết nối AI
 
-Các chỉnh sửa thông thường trong bộ phân loại được lưu tự động. Cấp đã chọn phải được tải xuống trước khi gắn thẻ nội dung. Các nhóm dùng cùng cấp chia sẻ mô hình đã tải; tối đa hai cấp được giữ tải cùng lúc.
+Cài đặt có ChatGPT subscription, OpenAI API, Gemini API và Grok API. Đăng ký ChatGPT dùng đăng nhập riêng của Vault và gói đủ điều kiện. API key chịu phí và giới hạn của nhà cung cấp đã chọn. Chọn nhà cung cấp rồi nhập key ngay dưới danh sách chung; chỉnh sửa key tự lưu, xóa nội dung trường sẽ xóa key. **Tải danh sách mô hình** lấy mô hình nhưng không tự chọn; hãy chọn model trong nhóm Gắn thẻ nội dung hoặc custom-rule.
 
-Sửa thẻ của mục nội dung trong tiện ích trình duyệt. Nhấp **+ thẻ**, tìm thẻ hiện có trong bộ phân loại rồi chọn để thêm. Dùng nút xóa của thẻ hoặc chọn thẻ rồi nhấn Delete một lần để gỡ. **Chưa gắn thẻ** nghĩa là gắn thẻ đã hoàn tất nhưng không có thẻ; **Đang gắn thẻ** nghĩa là kết quả đang chờ. Các chỉnh sửa giúp cải thiện lần gắn thẻ sau.
+**Mức độ suy luận** điều chỉnh mức suy nghĩ của mô hình: Model default, Low, Medium hoặc High nếu được hỗ trợ. Lựa chọn mới bắt đầu ở Medium; lựa chọn cũ giữ nguyên. Mức cao hơn có thể tốn thời gian và token. Web search luôn bật cho tagging; mô hình quyết định lúc dùng. Chọn mô hình hỗ trợ tìm kiếm và tagging có cấu trúc. Yêu cầu lỗi/không khả dụng vẫn giữ kết quả cache hợp lệ; mục mới chưa có kết quả cho đến khi chọn **Thử lại phân loại trên đám mây**. Vault không tự đổi nhà cung cấp; mỗi connection có chu kỳ retry và giới hạn lần thử riêng. Sửa thẻ trong tiện ích trình duyệt: nhấn **+ tag**, tìm và chọn để thêm; dùng nút xóa hoặc chọn thẻ rồi nhấn Delete một lần để xóa. **Chưa gắn thẻ** nghĩa là tagging xong nhưng không có thẻ; **Đang gắn thẻ** nghĩa là kết quả đang chờ. Sửa đổi của bạn có hiệu lực cho mục đó.
 
-## Knowledge và nghiên cứu web
 
-Knowledge lưu mô tả ngắn trên PC này cho mô hình gắn thẻ cục bộ. **Nguồn nội dung** gồm nhà sáng tạo, tài khoản, kênh và cộng đồng. Mô tả nguồn đi cùng nội dung của nguồn đó. **Thuật ngữ đã biết** áp dụng khi thuật ngữ xuất hiện trong tiêu đề.
+## Hoạt động
 
-Thêm nguồn hoặc thuật ngữ cùng mô tả, hoặc để trống mô tả để yêu cầu nghiên cứu khi bật tính năng. Gợi ý nhà sáng tạo giúp tìm nguồn mà bộ phân loại đã thu thập. Danh sách có ít nhất sáu mục có ô tìm kiếm ngay phía trên: Terms và Content sources của từng nền tảng có ô riêng để tìm theo tên, mã định danh hoặc mô tả. Sửa mô tả ảnh hưởng đến lần gắn thẻ sau; xóa kiến thức nguồn không ngăn nghiên cứu tạo lại sau này.
+Hoạt động ghi cục bộ việc dùng ứng dụng đã bật, lượt truy cập trang web và **Nội dung đã xem** được hỗ trợ. Biểu đồ phản ánh dữ liệu đã ghi; khoảng trống không chứng minh PC không hoạt động. Chọn khoảng ngày. **Dòng thời gian** hiển thị theo giờ trong ngày; **Tổng** cộng thời lượng; **Khoảng thời gian** gom hoạt động mỗi khoảng thành khối dọc. **Màu sắc** là chú giải có thể nhấp; chọn nguồn để tập trung biểu đồ. Chọn ngày để xem từ ngày đó.
 
-### Cấu hình nhà cung cấp nghiên cứu
+### Nhóm Hoạt động
 
-1. Mở **Cài đặt bộ phân loại → API keys & providers**.
-2. Chọn loại nhà cung cấp và **Thêm nhà cung cấp**. Thao tác này tạo cấu hình, không cấp API key.
-3. Lấy thông tin xác thực từ nhà cung cấp đó rồi nhập vào. Với endpoint tùy chỉnh tương thích, cấu hình thêm các trường endpoint và protocol.
-4. Trong **Nghiên cứu web**, chọn nhà cung cấp có web search tích hợp. Lấy danh sách mô hình rồi chọn mô hình nghiên cứu. Dùng ô tìm kiếm của bộ chọn mô hình để thu hẹp danh sách; làm mới để lấy lại danh sách.
-5. Đọc thông báo đồng ý và bật chấp thuận. Trong mỗi nhóm, chọn **Bật**, **Tắt** hoặc **Theo cài đặt bộ phân loại**.
+Tạo nhóm để hiển thị chung ứng dụng và trang web đã chọn trong Usage. **Merge** dùng chung một tên và màu cho các thành viên trên Hoạt động. Nhóm Hoạt động sắp xếp hoạt động đã ghi và tách biệt với nhóm chặn và Gắn thẻ nội dung. Lưu trình chỉnh sửa bằng **Save**.
 
-**Thiết lập nghiên cứu web…** mở cài đặt khi thiếu cấu hình. Nhóm không thể bỏ qua yêu cầu đồng ý nghiên cứu. **Kiểm tra kết nối** xác nhận yêu cầu thử đã thành công, không xác nhận mọi mô hình đều hỗ trợ nghiên cứu. Mô hình thử của nhà cung cấp khác với mô hình nghiên cứu đã chọn.
+### Ghi và lưu giữ
 
-Keys được lưu trong thư mục support của ứng dụng trên PC, giới hạn quyền truy cập cho Windows user hiện tại. Chúng xác thực yêu cầu gửi đến provider đã cấu hình; Vault không tải lên máy chủ riêng. Research gửi các chủ đề công khai đã làm sạch đến provider được chọn, không gửi phần thân nội dung riêng tư hay summaries. Đọc consent disclosure để biết chính xác fields được gửi. Mức dùng provider tính cả kiểm tra kết nối và yêu cầu danh sách mô hình, ngoài research.
+Trong **Ghi dữ liệu**, bật/tắt ghi theo danh mục hoặc nguồn riêng. **Lưu giữ** đặt thời gian lưu lịch sử; **Mãi mãi** không tự hết hạn. Lựa chọn riêng có thể theo cài đặt rộng hơn. Tắt ghi sẽ dừng bản ghi mới; xóa lịch sử xóa mục đã ghi. Feed nền tảng thu thập nội dung hiển thị trên trang được hỗ trợ dù trang đã mở hay chưa. Feed **Hỗ trợ gắn thẻ** có thể cung cấp nội dung cho Gắn thẻ nội dung khi đang ghi. Thời hạn lưu feed tách biệt khỏi việc dùng ứng dụng và trang web. Tạm dừng nhóm tagging không tự dừng ghi.
 
-Trạng thái nghiên cứu hiển thị yêu cầu đang chờ, thời gian chờ thử lại, lỗi và lượng token sử dụng trong ngày. **Thử lại ngay các chủ đề lỗi** thử lại các lỗi đủ điều kiện; thao tác này không bỏ qua hạn mức ngày hoặc yêu cầu đồng ý.
+## Cài đặt
 
-## Activity
-
-Activity ghi cục bộ việc sử dụng ứng dụng đã bật, lượt truy cập trang web và **Nội dung đã xem** được hỗ trợ. Biểu đồ phản ánh dữ liệu đã ghi; vùng trống không chứng minh PC đã không hoạt động.
-
-Chọn khoảng ngày. **Dòng thời gian** hiển thị mức sử dụng theo thời điểm trong ngày; **Tổng** cộng thời lượng. **Khoảng thời gian** gộp mức sử dụng trong mỗi khoảng thành các khối dọc. **Màu sắc** là chú giải có thể nhấp: chọn nguồn để tập trung biểu đồ vào nguồn đó. Chọn ngày để xem hoạt động từ ngày ấy.
-
-### Nhóm Activity
-
-Tạo nhóm để hiển thị các ứng dụng và trang web đã chọn cùng nhau trong Usage. **Gộp** dùng chung tên và màu cho các thành viên trên toàn Activity. Nhóm Activity sắp xếp mức sử dụng đã ghi nhận; nhóm này tách biệt với nhóm chặn hoặc nhóm phân loại. Lưu trình chỉnh sửa nhóm Activity bằng nút **Lưu**.
-
-### Ghi nhận và lưu giữ
-
-Trong **Ghi nhận**, bật hoặc tắt việc ghi theo từng danh mục hay nguồn riêng lẻ. **Giữ lại** kiểm soát thời gian lưu lịch sử; **Vĩnh viễn** giữ mà không tự hết hạn. Lựa chọn riêng có thể theo cài đặt rộng hơn. Tắt ghi nhận ngừng lưu dữ liệu mới; xóa lịch sử sẽ xóa các mục đã ghi.
-
-Feed nền tảng thu thập nội dung hiển thị trên trang nền tảng được hỗ trợ, dù đã mở hay chưa. Feed có nhãn **Hỗ trợ gắn thẻ** có thể cung cấp dữ liệu cho bộ phân loại khi đang bật ghi nhận. Lưu giữ của feed kiểm soát nội dung đã thu thập riêng với mức sử dụng ứng dụng/trang web. Tạm dừng nhóm phân loại không tự tắt ghi nhận.
-
-## Cài đặt bộ phân loại
-
-**Cập nhật gói thẻ** chọn thời điểm gói thẻ đã xác minh có hiệu lực: **Tự động**, **Hỏi trước** hoặc **Thủ công**. Cài đặt này tách biệt với tải mô hình cục bộ đã chọn trong nhóm. Tệp mô hình được tải từ Hugging Face khi chọn **Tải xuống**; trong lúc tải, dùng tiến trình/trạng thái nhóm và nút **Hủy**.
-
-Chọn ngôn ngữ giao diện trong Settings. Có thể xem giải thích trường qua các nút Info nhỏ bằng ngôn ngữ giao diện đã chọn.
+Chọn ngôn ngữ giao diện trong Cài đặt. Nút Info cung cấp giải thích trường bằng ngôn ngữ đã chọn.
 
 ## Lưu và khắc phục sự cố
 

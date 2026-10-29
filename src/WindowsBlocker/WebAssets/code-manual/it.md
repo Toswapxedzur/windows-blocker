@@ -12,19 +12,52 @@ Source: una sola espressione di funzione `(on, v) => { ... }`. Sono supportati s
 - Disable sospende gli handlers e rimuove panels/app blocks. Enable ripristina la regola caricata e i panels/blocks conservati. Delete rimuove handlers/state/effects. Le app già chiuse non vengono riaperte; le scritture di file non vengono annullate.
 - Gli events non sono limitati agli obiettivi normali del gruppo; scegli le app nella regola. Gli actions vengono messi in coda e applicati dopo il dispatch. Le eccezioni fermano quell'handler senza ripristinare state/actions; gli handlers successivi possono ancora funzionare. Solo le azioni file hanno result events.
 
+## Timer gestiti e utilizzo a finestra mobile
+
+`v.timer(id, {direction:"down", durationMs:300000})` crea o restituisce un conto alla rovescia con nome, inizialmente in pausa. Usa `{direction:"up"}` per un timer crescente. L’oggetto offre `start()`, `pause()`, `resume()`, `reset()` e `snapshot()`. Avvio/ripresa sono idempotenti; il ripristino riporta il timer in pausa con zero tempo trascorso. I campi dello snapshot includono `ready`, `error`, `elapsedMs`, `remainingMs` (null per il timer crescente), `running` e `completed`.
+
+I timer in esecuzione avanzano in base al tempo reale trascorso mentre l’app/il browser è chiuso o la regola è disabilitata. Un conto alla rovescia completato invia `timerEnded` con `{id, direction, durationMs, generation, incarnation}` una volta per incarnazione e generazione del timer a ciascun membro quando la sua regola viene eseguita di nuovo; Run non lo ripete. La consegna dipende dagli eventi dell’host; non è una sveglia in tempo reale. Inserisci `{type:"timer", timerId:"focus", label:"Focus"}` in un pannello per visualizzarlo tramite il controllo di testo esistente.
+
+`v.rolling(id, {windowMs:3600000, limitMs:600000})` crea o restituisce un tracciatore con nome dell’utilizzo attivo. `assign({websites:["youtube.com","reddit.com"], apps:[]})` sostituisce le assegnazioni dei destinatari di questo membro. Le regole native possono invece assegnare identificatori di app della piattaforma. I domini includono i sottodomini. Un tracciatore raggruppa i propri destinatari; altri identificatori hanno quote indipendenti. `snapshot()` restituisce `ready`, `error`, `usedMs`, `remainingMs`, `available` e `nextReturnAtMs` (il prossimo millisecondo in cui scade un utilizzo registrato). `available(target?)` verifica anche l’assegnazione quando viene fornito un destinatario. `reset()` cancella la cronologia di questo oggetto.
+
+Tutto l’utilizzo idoneo osservato viene conteggiato, anche oltre la quota; il tracciatore da solo non blocca pagine/app. Gli intervalli sovrapposti delle pagine visibili contano una sola volta e le app native conteggiano l’utilizzo osservato in primo piano. Le regole disabilitate non aggiungono utilizzo; la cronologia continua a scadere ai confini esatti degli intervalli. La disponibilità torna solo quando la cronologia rimanente è inferiore al limite. I campioni periodici sono limitati a cinque secondi; le interruzioni dovute a chiusura o disabilitazione non generano attività. Gli eventi emessi dall’utente non aggiungono utilizzo.
+
+Gli stessi identificatori di oggetto nei gruppi personalizzati collegati condividono un’unica autorità locale nell’hub nativo. Il collegamento combina cronologia e assegnazioni dei tracciatori e mantiene lo stato del timer che avvia il collegamento; le configurazioni incompatibili impediscono il collegamento. Ogni membro riceve il proprio evento di completamento. La disconnessione rende indisponibili i tracciatori condivisi e rifiuta i comandi dei timer finché non torna disponibile un’autorità aggiornata. Quando il collegamento viene rimosso, ogni membro conserva l’utilizzo condiviso finale e lo stato del timer, ripristina i propri destinatari e scarta i comandi del vecchio collegamento. L’hub conserva lo snapshot finale finché il membro che ritorna non lo salva e ne conferma la ricezione; i trasferimenti in sospeso terminano prima che sia disponibile un nuovo collegamento.
+
+Gli oggetti con nome sopravvivono a Run e al riavvio nel campo riservato `v.state.$vaultTime`; non modificare direttamente questo campo. Rimuovili esplicitamente con `v.removeTime(id)`. Gli identificatori sono composti da 1–80 lettere ASCII, cifre, `_` o `-`; i nomi di proprietà riservati vengono rifiutati. Fino a 32 oggetti condividono il limite di stato della regola di 64 KiB in UTF-8. Le durate sono millisecondi interi fino a 365 giorni. La cronologia mobile è limitata a 1024 contenitori da un minuto e 2048 intervalli uniti. Gli errori di capacità della cronologia lasciano il tracciatore indisponibile fino al ripristino esplicito; le configurazioni non valide e i salvataggi troppo grandi segnalano errori senza cancellare i dati salvati.
+
+```js
+(on, v) => {
+  const timer = v.timer("focus", {durationMs: 300000});
+  v.panel("focus", {controls: [
+    {type: "timer", timerId: "focus", label: "Focus"},
+    {id: "start", type: "button", label: "Start"},
+    {id: "pause", type: "button", label: "Pause"},
+    {id: "reset", type: "button", label: "Reset"}
+  ]});
+  on("panel", ev => {
+    if (ev.data.eventName !== "click") return;
+    if (ev.data.controlId === "start") timer.start();
+    if (ev.data.controlId === "pause") timer.pause();
+    if (ev.data.controlId === "reset") timer.reset();
+  });
+  on("timerEnded", ev => v.log("Finished", ev.data.id));
+}
+```
+
 ## API
 
-- `on(type, handler)` → boolean. Registra `handler(ev)`; più handlers vengono eseguiti nell'ordine di registrazione. False indica argomenti non validi o limite handlers raggiunto. `ev = { type: string, now: number, data }`; `now` è Unix in millisecondi.
-- `v.state`: oggetto JSON modificabile e salvato dopo l'event dispatch. Inizializza i fields mancanti invece di sovrascrivere lo state. Assegnare un non-object o array lo reimposta a `{}`; aggiornamenti non serializzabili/troppo grandi non vengono salvati.
+- `on(type, handler)` → boolean. Registra `handler(ev)`; più handlers vengono eseguiti nell'ordine di registrazione. False indica argomenti non validi o limite handlers raggiunto. `ev = { type: string, now: number, origin: "host" | "user" | "rule", data }`; `now` è Unix in millisecondi. Gli eventi reali dei controlli visualizzati hanno `origin: "user"`; gli eventi `v.emit` hanno `origin: "rule"`.- `v.state`: oggetto JSON modificabile e salvato dopo l'event dispatch. Inizializza i fields mancanti invece di sovrascrivere lo state. Assegnare un non-object o array lo reimposta a `{}`; aggiornamenti non serializzabili/troppo grandi non vengono salvati.
 - `v.log(...values)`: unico produttore del Log del gruppo. Logs/Clear indipendenti per gruppo. Gli errori di caricamento appaiono nello stato Run; i diagnostici degli handlers non popolano Log.
 - `v.emit(type, data)`: mette in coda una copia JSON di `data` per gli handlers del gruppo dopo l'event corrente, con un nuovo `now`; non è chiamata sincrona.
 - `v.panel(id, spec)`: sostituisce il panel floating nominato del gruppo; `spec` null lo rimuove. Vedi Panels.
 - `v.file(op, path, payload?)` → stringa request ID. Vedi Files.
+- `v.store(request)` restituisce un ID richiesta; consulta i record del gruppo.
 - `v.block(appId, on)`: true mantiene il blocco dell'app, false rimuove quello del gruppo. I blocchi dei gruppi abilitati si combinano; la chiamata non può sbloccare l'obiettivo di un altro gruppo. Il blocco richiede una chiusura normale e riprova all'intervallo di Settings; non impedisce l'avvio del processo né garantisce che l'app accetti Quit.
 - `v.quit(appId)`: una richiesta di chiusura normale secondo la stessa policy di protezione/tentativo; non è un blocco continuo.
 - `v.open(appId)`: chiede a Windows di aprire un'app installata; non restituisce callback di successo.
 
-Le altre chiamate restituiscono `undefined`. Gli App IDs sono percorsi executable completi o application user model IDs, disponibili negli events e nel selettore app. Block/Quit ignorano Windows system processes, browser, Vault e i suoi helper, oltre agli IDs vuoti. IDs/state dei panel appartengono al gruppo, non al nome visualizzato.
+Le altre chiamate restituiscono `undefined` `com.valvesoftware.steam`. Gli App IDs sono percorsi executable completi o application user model IDs, disponibili negli events e nel selettore app. Block/Quit ignorano Windows system processes, browser, Vault e i suoi helper, oltre agli IDs vuoti. IDs/state dei panel appartengono al gruppo, non al nome visualizzato.
 
 ## Events
 
@@ -38,6 +71,9 @@ snooze: {}
 panel: { panelId: string, controlId: string, eventName: string,
          value: string, values: { [controlId: string]: string } }
 file: see Files
+record: { requestId: string, ok: boolean, op?: string, key?: string,
+          record?: Record | null, entries?: Header[], next?: string | null,
+          deleted?: number, error?: string }
 App = { appId: string, name: string }
 ```
 
@@ -91,6 +127,22 @@ file.data = { requestId: string, op: string, path: string, ok: boolean,
 
 I result fields inutilizzati sono null; il successo ha error vuoto. Gli errori includono invalid-path, unsupported-file-type, folder unavailable, missing file e file-too-large. Considera error una stringa, non un enum esaustivo fisso. Non esiste una transaction API; serializza le operazioni read-modify-write per ogni path.
 
+## Record del gruppo
+
+`v.store(request)` avvia un’operazione asincrona di record JSON dentro un handler. I record sono privati del gruppo, persistono dopo Run e riavvio, e vengono eliminati con il gruppo. I gruppi collegati hanno store distinti. La regola sceglie chiavi, valori, versioni, invalidazione cache e priorità dei feedback. Le regole Mac e browser usano la stessa API, ma ogni app/browser ha uno store separato.
+
+| Request | Result |
+|---|---|
+| `{op:"get", key}` | `record` o `null` |
+| `{op:"put", key, value, version?, ifRevision?}` | `record` salvato |
+| `{op:"delete", key, ifRevision?}` | `record: null` |
+| `{op:"list", prefix?, after?, limit?}` | `entries` ordinate e `next` |
+| `{op:"clear", prefix?}` | conteggio `deleted` |
+
+Ogni record è `{value, revision, version, updatedAt}`. revision opaco cambia con una scrittura reale; `version` è metadato scelto dal chiamante. `list` restituisce header senza valori; usa `get` per leggerne uno e `after: next` per la pagina successiva. Senza `put`/`delete`, `ifRevision`, put/delete sono incondizionati; `null` richiede chiave assente e una stringa revision una corrispondenza esatta. Un conflitto restituisce `ok:false`, `error:"store-conflict"` e il `record` attuale, evitando che una risposta automatica tardiva sovrascriva il feedback utente. `v.context.revision` è un marker opaco della configurazione che la regola può includere nella propria versione; il framework non impone politiche cache.
+
+Limiti: chiave 1–2048 caratteri, version ≤128, valore JSON ≤64KiB, profondità ≤32, 10000 chiavi per gruppo e documento completo16MiB. `list` restituisce al massimo100 header e96KiB per pagina. Massimo32 richieste per gruppo e128 avvii al secondo complessivi; overload segnala un `store-busy` per gruppo al secondo e scarta le altre richieste. Errori di storage restituiscono `ok:false`; un documento futuro o malformato viene conservato e segnala `store-unavailable`. Nessun retry o eviction automatici; usa ticks per le deadline.
+
 ## Limiti
 
 Per event per group: 256 queued actions, 200 log calls, 64 emits; l'eccesso viene scartato. Per rule: 1000 handlers, 24 panels; ogni control list ha 32 entries e ogni choice 64 options; l'eccesso viene ignorato/troncato. Le emit chains terminano dopo 16 generazioni. Serialized state limit: 65536 JavaScript string characters. Mantieni registration e handlers combinati di ogni event sotto 1 secondo; superamenti ripetuti o hard timeout fermano la regola fino a Run. Log conserva 200 entries per gruppo. Timing/replies sono best-effort, non garanzie real-time.
@@ -111,3 +163,33 @@ Steam è bloccato tranne durante una pausa di cinque minuti attivata da Snooze o
   on("tick", ev => v.block("C:\\Program Files (x86)\\Steam\\steam.exe", ev.now >= v.state.pauseUntil));
 }
 ```
+
+
+## Chiamate IA da una regola in esecuzione
+
+Ogni custom group sceglie una connessione/modello e reasoning effort in **AI calls**. Le regole Mac e browser usano la stessa API; le richieste browser richiedono Windows Vault collegato e le credenziali provider restano lì. I gruppi collegati condividono la selezione e un limite giornaliero facoltativo. Campo vuoto significa nessun limite di gruppo, ma restano i limiti account. Il limite usa il giorno UTC, persiste al riavvio e conta i tentativi inviati inclusi quelli falliti. Link combina l’uso già fatto; unlink mantiene l’uso precedente.
+
+`v.ai({ prompt, input? })` restituisce subito un request ID. Chiamala dentro un handler, non durante la registrazione della regola. `input` può essere qualsiasi valore JSON; prompt/input sono limitati a20KB ciascuno. Le risposte arrivano come eventi `ai`: `{requestId, ok, text, citations,
+error}`. Success text is at most48KB; citations are `{url,title}`. Mantieni visibili e cliccabili i link alle fonti nelle risposte della ricerca Web. Search è sempre disponibile al modello. Nessuna deadline fissa dell’app, concorrenza limitata, nessun fallback provider o retry automatico. Le risposte sono dati, non vengono eseguite come JavaScript; la regola decide quali azioni esistenti intraprendere.
+
+Per un pannello con un pulsante `ask` e un campo `note`:
+
+```javascript
+(on, v) => {
+  let pending = null;
+  on("panel", ({ data }) => {
+    if (data.controlId !== "ask" || pending) return;
+    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+  });
+  on("ai", ({ data }) => {
+    if (data.requestId !== pending) return;
+    pending = null;
+    if (!data.ok) { v.log("AI request failed:", data.error); return; }
+    v.log(data.text, data.citations);
+  });
+}
+```
+
+Le chiamate pendenti non vengono riprodotte dopo il riavvio. Run, disabilita/riabilita ed elimina scartano risposte obsolete; un browser disconnesso segnala `ai-unavailable`. Altri errori: `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`. Le chiamate fallite non sovrascrivono un risultato precedente conservato dalla regola. Il limite di stato resta64KB.
+
+Scopri opzioni senza credenziali con `rule_ai_models` su Mac o `settings-rule-ai-models` nel browser; configura `ruleAI` tramite il percorso set-group esistente. Campi: `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`) e `dailyRequestLimit` (null o1–100000). Usa una scelta restituita; non inserire chiavi o URL provider nel sorgente della regola.

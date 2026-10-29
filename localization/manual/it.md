@@ -61,66 +61,36 @@ Usa il selettore + di un obiettivo Apps per scegliere le app installate. **Blocc
 
 A un'app bloccata viene richiesto di chiudersi. **Richiedi nuovamente la chiusura dell'app bloccata ogni (minuti)** controlla i tentativi. Reindirizzamenti dei siti, pause delle pagine e occultamento dei feed sono applicati dall'estensione browser; non diventano azioni dell'app nativa.
 
-## Classifier
+## Etichettatura dei contenuti
 
-Un gruppo Classifier applica tag ai contenuti delle piattaforme assegnate usando il proprio albero di tag e le impostazioni del modello. Ogni piattaforma appartiene a un solo gruppo. Scegli le piattaforme durante la creazione; non potrai cambiarle in seguito. Programmi e filtri dei gruppi di blocco non controllano l'applicazione dei tag.
-
-Attiva l'applicazione dei tag nelle impostazioni Classifier. Usa **Sospendi tag / Riprendi tag** separatamente per ciascun gruppo. Disattivare la registrazione del feed di una piattaforma in **Activity → Registrazione** ne interrompe anche l'applicazione dei tag.
+Il gruppo assegna tag ai contenuti delle piattaforme associate con il proprio albero tag e le impostazioni del modello. Ogni piattaforma appartiene a un gruppo; sceglila alla creazione, non si può cambiare dopo. Calendari e filtri di blocco non controllano il tagging. Attivalo in Impostazioni e usa **Sospendi i tag / Riprendi i tag** separatamente per ogni gruppo. Disattivare la registrazione del feed in **Attività → Registrazione** ferma anche il suo tagging.
 
 ### Tag e impostazioni del modello
 
-Crea tag, descrivine i significati e imposta o rimuovi i relativi tag principali nell'albero. Trascina un tag per spostare il ramo. Descrizioni chiare aiutano il modello a distinguere tag simili. Le impostazioni di ogni gruppo sono indipendenti.
+Crea tag, descrivine il significato e imposta o rimuovi i genitori nell’albero; trascinare sposta il ramo. Descrizioni chiare aiutano il modello a distinguere tag simili. Le impostazioni di ogni gruppo sono indipendenti. **Confidence minima del tag** imposta il grado di prova richiesto per ogni tag previsto da 1 a 5; i nuovi gruppi iniziano a 4 (supporto forte). Non c’è un numero obiettivo; un elemento può non ricevere tag. **Istruzioni per i tag** conserva le preferenze del gruppo. Le modifiche ordinarie si salvano automaticamente; ogni gruppo usa una connessione, un modello e un reasoning effort selezionati esplicitamente.
 
-- **Velocità ↔ Qualità** seleziona un livello di modello locale. I modelli più grandi usano più memoria; velocità e risultati dipendono dal PC e dal carico di lavoro. I download sono condivisi tra gruppi.
-- **Rigoroso ↔ Ampio** imposta il livello di affidabilità richiesto e il numero predefinito di tag.
-- **Tag minimi / Tag massimi** in Altro sostituisce quei numeri predefiniti. Rigoroso ↔ Ampio continua a controllare l'affidabilità dei tag aggiuntivi. Lascia vuoto un campo per usare il relativo valore predefinito.
-- **Istruzioni per i tag** aggiunge istruzioni facoltative per questo gruppo.
+### Connessioni IA
 
-Le modifiche ordinarie di Classifier si salvano automaticamente. Il livello selezionato deve essere scaricato prima di poter applicare tag. I gruppi che usano lo stesso livello condividono il modello caricato; possono restare caricati fino a due livelli contemporaneamente.
+Impostazioni offre ChatGPT subscription, OpenAI API, Gemini API e Grok API. L’abbonamento usa l’accesso Vault e un piano idoneo. Le chiavi API seguono fatturazione e limiti del provider selezionato. Scegli il provider e inserisci la chiave sotto il menu condiviso; le modifiche si salvano automaticamente e svuotare il campo elimina la chiave. **Recupera elenco modelli** recupera i modelli, ma non ne sceglie uno: selezionalo nel gruppo Tag dei contenuti o custom-rule.
 
-Correggi i tag di un contenuto nell'estensione browser. Fai clic su **+ tag**, cerca i tag esistenti di Classifier e scegline uno da aggiungere. Usa il comando di rimozione del tag oppure selezionalo e premi Delete una volta. **Senza tag** significa che l'applicazione dei tag è terminata senza tag; **Tagging in corso** indica un risultato in attesa. Le correzioni migliorano le assegnazioni future.
+**Livello di ragionamento** regola quanto pensa il modello: Model default, Low, Medium o High se supportati. Le nuove scelte iniziano a Medium; quelle esistenti restano salvate. Un livello maggiore può aumentare tempo e token. La ricerca Web è sempre attiva per il tagging; il modello decide quando usarla. Scegli un modello che supporti ricerca e tagging strutturato. Le richieste fallite o non disponibili mantengono risultati validi in cache; i nuovi elementi restano irrisolti finché non scegli **Riprova la classificazione cloud**. Vault non cambia provider automaticamente; ogni connessione ha intervallo di retry e limite di tentativi propri. Correggi i tag nell’estensione: **+ tag**, ricerca e scelta per aggiungere; controllo di rimozione o Delete una volta per eliminare. **Senza tag** significa tagging completato senza tag; **Assegnazione tag in corso** indica risultato in attesa. La correzione è autorevole per quell’elemento.
 
-## Knowledge e ricerca web
 
-Knowledge memorizza brevi descrizioni su questo PC per il modello di tagging locale. **Fonti dei contenuti** include creator, account, canali e community. Le descrizioni della fonte accompagnano i suoi contenuti. **Termini noti** si applica quando un termine appare in un titolo.
+## Attività
 
-Aggiungi una fonte o un termine con la relativa descrizione, oppure lasciala vuota per richiedere una ricerca quando attiva. I suggerimenti per i creator aiutano a trovare una fonte già raccolta da Classifier. Gli elenchi con almeno sei voci hanno una ricerca subito sopra: Terms e le Content sources di ciascuna piattaforma hanno ricerche separate per nome, identificatore o descrizione. Modificare una descrizione influisce sui tag futuri; eliminare la conoscenza di una fonte non impedisce alla ricerca di ricrearla.
+Attività registra localmente uso delle app abilitate, visite ai siti e **Contenuti visualizzati** supportato. I grafici riflettono i dati registrati; uno spazio vuoto non prova che il PC fosse inattivo. Scegli un intervallo di date. **Sequenza temporale** mostra l’ora del giorno, **Totali** somma le durate e **Intervallo di tempo** raggruppa l’uso di ciascun intervallo in blocchi verticali. **Colori** è una legenda cliccabile; seleziona una fonte per focalizzare i grafici. Scegli un giorno per vedere l’uso da quel giorno.
 
-### Configura un provider di ricerca
+### Gruppi Attività
 
-1. Apri **Impostazioni Classifier → API keys & providers**.
-2. Scegli un tipo di provider e **Aggiungi provider**. Crea una configurazione, non emette una API key.
-3. Ottieni le credenziali dal provider e inseriscile. Per un endpoint personalizzato compatibile, configura anche endpoint e protocollo.
-4. In **Ricerca web**, scegli un provider con web search integrata. Recupera l'elenco dei modelli e seleziona un modello di ricerca. Usa la ricerca del selettore per filtrare l'elenco; aggiornalo per scaricarlo di nuovo.
-5. Leggi l'informativa sul consenso e attivalo. In ciascun gruppo scegli **Attivo**, **Disattivo** o **Segui impostazioni Classifier**.
-
-**Configura ricerca web…** apre le impostazioni se la configurazione manca. Un gruppo non può ignorare il consenso alla ricerca. **Verifica connessione** conferma che la richiesta di prova è riuscita, non che ogni modello supporti la ricerca. Il modello di prova di un provider è distinto dal modello di ricerca selezionato.
-
-Le keys sono archiviate nella cartella support dell'app su questo PC, con accesso limitato all'utente Windows attuale. Autenticano le richieste al provider configurato; Vault non le carica sul proprio server. La ricerca invia argomenti pubblici ripuliti al provider selezionato, non corpi o riepiloghi di contenuti privati. Leggi l'informativa sul consenso per conoscere i fields inviati. L'uso del provider include test di connessione e richieste di elenchi modelli oltre alla ricerca.
-
-Lo stato della ricerca mostra richieste in coda, intervalli di attesa prima dei nuovi tentativi, errori e uso giornaliero dei token. **Riprova ora i soggetti non riusciti** ritenta gli errori idonei; non ignora il limite giornaliero né il consenso.
-
-## Activity
-
-Activity registra localmente l'uso delle app attivate, le visite ai siti e i **Contenuti visualizzati** supportati. I grafici mostrano i dati registrati; un'area vuota non dimostra che il PC fosse inattivo.
-
-Scegli un intervallo di date. **Sequenza temporale** mostra l'uso nell'ora del giorno; **Totali** somma le durate. **Intervallo di tempo** riunisce l'uso di ciascun intervallo in barre verticali. **Colori** è una legenda selezionabile: scegli una fonte per mettere a fuoco i grafici. Seleziona un giorno per visualizzare l'uso da quel giorno.
-
-### Gruppi Activity
-
-Crea un gruppo per mostrare insieme in Usage le app e i siti selezionati. **Unisci** usa un unico nome e colore per i membri in tutta Activity. Un gruppo Activity organizza l'uso registrato; è distinto da un gruppo di blocco o Classifier. Salva esplicitamente l'editor del gruppo Activity con **Salva**.
+Crea un gruppo per mostrare insieme in Usage app e siti scelti. **Merge** usa un solo nome e colore per i membri in Attività. Il gruppo organizza l’uso registrato ed è distinto dai gruppi di blocco e Tag dei contenuti. Salva esplicitamente l’editor con **Save**.
 
 ### Registrazione e conservazione
 
-In **Registrazione**, attiva o disattiva la registrazione per categoria o singola fonte. **Conserva** controlla per quanto tempo vengono mantenuti i dati storici; **Per sempre** li conserva senza scadenza automatica. Le scelte individuali possono seguire l'impostazione generale. Disattivare la registrazione ferma i nuovi dati; eliminare la cronologia rimuove le voci registrate.
+In **Registrazione**, attiva o disattiva la registrazione per categoria o singola fonte. **Conserva** determina per quanto conservare la cronologia; **Per sempre** non prevede scadenza automatica. Le scelte individuali possono seguire l’impostazione più ampia. Disattivare la registrazione ferma i nuovi dati; eliminare la cronologia rimuove le voci registrate. I feed raccolgono contenuti mostrati nelle pagine supportate, aperte o meno. Un feed **Tag supportati** può fornire dati a Tag dei contenuti mentre la registrazione è attiva. La sua conservazione è separata dall’uso di app e siti. Mettere in pausa il gruppo di tagging non arresta la registrazione.
 
-I feed delle piattaforme raccolgono i contenuti mostrati nelle pagine supportate, aperte o meno. Un feed con **Tagging supportato** può fornire dati a Classifier quando la registrazione è attiva. La sua conservazione controlla i contenuti raccolti separatamente dall'uso di app e siti. Sospendere un gruppo Classifier non disattiva la registrazione.
+## Impostazioni
 
-## Impostazioni Classifier
-
-**Aggiornamenti dei pacchetti di tag** sceglie quando applicare gli aggiornamenti verificati: **Automaticamente**, **Chiedi prima** o **Manualmente**. È distinto dal download del modello locale scelto in un gruppo. I file modello vengono scaricati da Hugging Face quando scegli **Scarica**; durante il download usa stato/progresso del gruppo e **Annulla**.
-
-Scegli la lingua dell'interfaccia in Settings. Le spiegazioni dei campi sono disponibili tramite i piccoli pulsanti Info nella lingua selezionata.
+Scegli la lingua dell’interfaccia in Impostazioni. I pulsanti Info mostrano le spiegazioni dei campi nella lingua selezionata.
 
 ## Salvataggio e risoluzione dei problemi
 

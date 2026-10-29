@@ -12,19 +12,52 @@
 - Disable은 핸들러를 억제하고 패널/앱 차단을 해제합니다. Enable은 로드된 규칙과 유지된 패널/차단을 재개합니다. Delete는 핸들러/state/효과를 제거합니다. 종료된 앱을 다시 열지 않으며 파일 쓰기도 되돌리지 않습니다.
 - 이벤트는 일반 그룹 대상에 제한되지 않습니다. 규칙에서 앱을 선택하세요. 작업은 대기열에 들어간 뒤 dispatch 후 적용됩니다. 예외는 해당 핸들러를 중지하지만 state/작업은 롤백되지 않고 다음 핸들러는 실행될 수 있습니다. 결과 이벤트가 있는 것은 파일 작업뿐입니다.
 
+## 관리형 타이머와 이동 구간 사용량
+
+`v.timer(id, {direction:"down", durationMs:300000})`는 이름 있는 카운트다운을 만들거나 기존 것을 반환하며, 처음에는 일시정지 상태입니다. 카운트업 타이머에는 `{direction:"up"}`을 사용합니다. 핸들은 `start()`, `pause()`, `resume()`, `reset()`, `snapshot()`을 제공합니다. 시작/재개는 여러 번 호출해도 효과가 같으며, 초기화하면 경과 시간이 0인 일시정지 상태로 돌아갑니다. 스냅샷 필드에는 `ready`, `error`, `elapsedMs`, `remainingMs`(카운트업은 null), `running`, `completed`가 있습니다.
+
+실행 중인 타이머는 앱/브라우저가 닫히거나 규칙이 비활성화되어도 실제 시간에 따라 진행됩니다. 완료된 카운트다운은 각 구성원의 규칙이 다음에 실행될 때 타이머 인스턴스와 세대별로 한 번씩 `timerEnded`를 `{id, direction, durationMs, generation, incarnation}`과 함께 전달합니다. Run은 이를 다시 전달하지 않습니다. 전달은 호스트 이벤트에 달려 있으며 실시간 알람이 아닙니다. 패널에 `{type:"timer", timerId:"focus", label:"Focus"}`를 넣으면 기존 텍스트 컨트롤을 통해 표시할 수 있습니다.
+
+`v.rolling(id, {windowMs:3600000, limitMs:600000})`는 이름 있는 실제 사용 추적기를 만들거나 기존 것을 반환합니다. `assign({websites:["youtube.com","reddit.com"], apps:[]})`는 이 구성원의 대상 할당을 교체합니다. 네이티브 규칙은 대신 플랫폼 앱 ID를 할당할 수 있습니다. 도메인은 하위 도메인을 포함합니다. 한 추적기는 대상들의 사용량을 합산하며, 다른 ID는 독립적인 허용량을 가집니다. `snapshot()`은 `ready`, `error`, `usedMs`, `remainingMs`, `available`, `nextReturnAtMs`(기록된 사용량 중 일부가 다음에 만료되는 밀리초 시각)를 반환합니다. `available(target?)`는 대상이 주어지면 할당 여부도 확인합니다. `reset()`은 이 객체의 기록을 지웁니다.
+
+조건에 맞는 관측된 사용량은 허용량 초과분까지 모두 계산됩니다. 추적기 자체는 페이지/앱을 차단하지 않습니다. 겹치는 표시 페이지 시간 구간은 한 번만 계산하며, 네이티브 앱은 관측된 전경 사용량을 계산합니다. 비활성화된 규칙은 사용량을 추가하지 않지만 기록은 정확한 구간 경계에서 계속 만료됩니다. 남은 기록이 제한보다 적어져야 다시 사용할 수 있습니다. 하트비트 표본은 최대 5초로 제한됩니다. 종료/비활성화 동안의 공백은 활동을 만들어 내지 않습니다. 사용자가 발생시킨 이벤트는 사용량을 추가하지 않습니다.
+
+연결된 사용자 지정 그룹의 같은 객체 ID는 하나의 로컬 네이티브 허브를 권한 주체로 공유합니다. 연결하면 추적기 기록과 할당을 합치고 연결을 시작한 쪽의 타이머 상태를 유지합니다. 호환되지 않는 구성은 연결을 거부합니다. 각 구성원은 자신의 완료 이벤트를 받습니다. 접속이 끊어지면 공유 추적기를 사용할 수 없고 최신 권한 주체가 돌아올 때까지 타이머 제어가 거부됩니다. 연결을 해제하면 각 구성원은 최종 공유 사용량과 타이머 상태를 유지하고, 자신의 대상을 복원하며, 이전 연결의 명령을 버립니다. 허브는 돌아온 구성원이 최종 스냅샷을 저장하고 확인 응답할 때까지 보관합니다. 새 연결을 사용할 수 있게 되기 전에 대기 중인 인계를 완료합니다.
+
+이름 있는 객체는 예약된 `v.state.$vaultTime`에 보관되어 Run과 재시작 후에도 유지됩니다. 이 필드를 직접 수정하지 마세요. 명시적으로 제거하려면 `v.removeTime(id)`를 사용합니다. ID는 1~80자의 ASCII 영문자, 숫자, `_` 또는 `-`이며 예약된 속성 이름은 거부됩니다. 최대 32개 객체가 규칙의 64 KiB UTF-8 상태 제한을 공유합니다. 기간은 최대 365일의 정수 밀리초입니다. 이동 구간 기록은 1024개 분 단위 버킷과 2048개 병합 구간으로 제한됩니다. 기록 용량 오류가 나면 명시적으로 초기화할 때까지 추적기를 사용할 수 없습니다. 잘못된 구성과 초과 크기 저장은 오류를 보고하며 저장된 데이터를 지우지 않습니다.
+
+```js
+(on, v) => {
+  const timer = v.timer("focus", {durationMs: 300000});
+  v.panel("focus", {controls: [
+    {type: "timer", timerId: "focus", label: "Focus"},
+    {id: "start", type: "button", label: "Start"},
+    {id: "pause", type: "button", label: "Pause"},
+    {id: "reset", type: "button", label: "Reset"}
+  ]});
+  on("panel", ev => {
+    if (ev.data.eventName !== "click") return;
+    if (ev.data.controlId === "start") timer.start();
+    if (ev.data.controlId === "pause") timer.pause();
+    if (ev.data.controlId === "reset") timer.reset();
+  });
+  on("timerEnded", ev => v.log("Finished", ev.data.id));
+}
+```
+
 ## API
 
-- `on(type, handler)` → boolean. `handler(ev)`를 등록하며 여러 핸들러는 등록 순으로 실행됩니다. false는 잘못된 인수 또는 핸들러 한도를 뜻합니다. `ev = { type: string, now: number, data }`; `now`는 Unix 밀리초입니다.
-- `v.state`: 이벤트 dispatch 후 저장되는 변경 가능한 JSON 객체입니다. 기존 state를 덮어쓰기보다 없는 필드를 초기화하세요. 객체가 아닌 값/배열을 지정하면 `{}`로 초기화됩니다. 직렬화 불가/과도한 업데이트는 저장되지 않습니다.
+- `on(type, handler)` → boolean. `handler(ev)`를 등록하며 여러 핸들러는 등록 순으로 실행됩니다. false는 잘못된 인수 또는 핸들러 한도를 뜻합니다. `ev = { type: string, now: number, origin: "host" | "user" | "rule", data }`; `now`는 Unix 밀리초입니다. 실제로 렌더링된 컨트롤 이벤트는 `origin: "user"`, `v.emit` 이벤트는 `origin: "rule"`입니다.- `v.state`: 이벤트 dispatch 후 저장되는 변경 가능한 JSON 객체입니다. 기존 state를 덮어쓰기보다 없는 필드를 초기화하세요. 객체가 아닌 값/배열을 지정하면 `{}`로 초기화됩니다. 직렬화 불가/과도한 업데이트는 저장되지 않습니다.
 - `v.log(...values)`: 이 그룹 Log의 유일한 생성자입니다. Logs/Clear는 그룹별 독립적입니다. 로드 오류는 Run 상태에 표시되고 핸들러 진단은 Log에 들어가지 않습니다.
 - `v.emit(type, data)`: 현재 이벤트 이후 `data` JSON 사본을 새 `now`와 함께을 그룹 핸들러에 대기시킵니다. 동기 호출이 아닙니다.
 - `v.panel(id, spec)`: 그룹의 이름 있는 부동 패널을 바꿉니다. null `spec`은 제거합니다. Panels를 참조하세요.
 - `v.file(op, path, payload?)` → 요청 ID 문자열. Files를 참조하세요.
+- `v.store(request)`는 요청 ID를 반환합니다. 그룹 기록을 참고하세요.
 - `v.block(appId, on)`: true는 앱 차단을 유지하고 false는 이 그룹의 차단을 제거합니다. 활성 그룹 사이에서 차단은 합쳐지지만 다른 그룹 대상을 해제할 수 없습니다. 차단은 일반 종료를 요청하고 설정 간격으로 재시도합니다. 프로세스 시작을 막거나 앱이 Quit을 수락한다고 보장하지 않습니다.
 - `v.quit(appId)`: 같은 보호/재시도 정책의 일반 종료 요청 한 번이며 지속 차단은 아닙니다.
 - `v.open(appId)`: Windows에 설치된 앱을 열도록 요청합니다. 성공 callback은 없습니다.
 
-다른 호출은 `undefined`를 반환합니다. 앱 ID는 이벤트/앱 선택기에서 확인할 수 있는 실행 파일 전체 경로 또는 application user model ID입니다. Block/Quit은 Windows 시스템 프로세스, 브라우저, Vault와 도우미, 빈 ID를 무시합니다. 패널 ID/state는 표시 이름이 아니라 그룹에 속합니다.
+다른 호출은 `undefined` `com.valvesoftware.steam`를 반환합니다. 앱 ID는 이벤트/앱 선택기에서 확인할 수 있는 실행 파일 전체 경로 또는 application user model ID입니다. Block/Quit은 Windows 시스템 프로세스, 브라우저, Vault와 도우미, 빈 ID를 무시합니다. 패널 ID/state는 표시 이름이 아니라 그룹에 속합니다.
 
 ## 이벤트
 
@@ -38,6 +71,9 @@ snooze: {}
 panel: { panelId: string, controlId: string, eventName: string,
          value: string, values: { [controlId: string]: string } }
 file: see Files
+record: { requestId: string, ok: boolean, op?: string, key?: string,
+          record?: Record | null, entries?: Header[], next?: string | null,
+          deleted?: number, error?: string }
 App = { appId: string, name: string }
 ```
 
@@ -91,6 +127,22 @@ file.data = { requestId: string, op: string, path: string, ok: boolean,
 
 사용하지 않은 결과 필드는 null이며 성공 시 error는 빈 값입니다. 실패에는 invalid-path, unsupported-file-type, 폴더 사용 불가, 파일 없음, file-too-large가 포함됩니다. error는 고정된 전체 enum이 아니라 문자열입니다. 트랜잭션 API가 없으므로 경로별 read-modify-write를 직렬화하세요.
 
+## 그룹 레코드
+
+`v.store(request)`는 handler 안에서 비동기 JSON 레코드 작업을 시작합니다. 레코드는 그룹 전용이며 Run 및 재시작 후에도 유지되고 그룹을 삭제하면 제거됩니다. 연결된 그룹은 별도 store를 사용합니다. 키, 값, 버전, 캐시 무효화, 피드백 우선순위는 규칙이 결정합니다. Mac과 브라우저 규칙은 같은 API를 쓰지만 앱/브라우저별 저장소는 분리됩니다.
+
+| Request | Result |
+|---|---|
+| `{op:"get", key}` | `record` 또는 `null` |
+| `{op:"put", key, value, version?, ifRevision?}` | 저장된 `record` |
+| `{op:"delete", key, ifRevision?}` | `record: null` |
+| `{op:"list", prefix?, after?, limit?}` | 정렬된 `entries`와 `next` |
+| `{op:"clear", prefix?}` | `deleted` 개수 |
+
+레코드는 `{value, revision, version, updatedAt}`입니다. 불투명한 revision은 실제 쓰기 시 바뀌며 `version`은 호출자가 관리하는 메타데이터입니다. `list`는 값 없는 헤더를 돌려줍니다. 하나를 읽으려면 `get`, 다음 페이지는 `after: next`를 사용하세요. `put`/`delete`, `ifRevision` 생략 시 put/delete는 무조건 실행됩니다. `null`은 키가 없어야 하고 revision 문자열은 정확히 일치해야 합니다. 불일치 시 `ok:false`, `error:"store-conflict"`, 현재 `record`가 반환됩니다. 지연된 자동 응답이 사용자 피드백을 덮어쓰지 않게 합니다. `v.context.revision`은 규칙 버전에 포함할 수 있는 불투명한 설정 마커입니다. 프레임워크는 캐시 정책을 강제하지 않습니다.
+
+제한: 키 1–2048자, version ≤128, JSON 값 ≤64KiB, depth ≤32, 그룹당 10000개 키, 전체 문서16MiB. `list`는 페이지당 최대100개 헤더와96KiB를 반환합니다. 그룹당 최대32개 요청, 전체 초당128개 시작입니다. 과부하 시 그룹별 초당 하나의 `store-busy` 오류를 알리고 나머지는 버립니다. 저장 오류는 `ok:false`를 반환합니다. 미래 형식/손상 문서는 보존하고 `store-unavailable`을 알립니다. 자동 재시도나 제거는 없습니다. deadline에는 ticks를 사용하세요.
+
 ## 한도
 
 이벤트/그룹별 대기 작업 256개, log 호출 200회, emit 64회이며 초과분은 버립니다. 규칙당 handler 1000개, panel 24개, 컨트롤 목록당 32개 항목, 선택지당 64개 옵션까지입니다. 초과분은 무시/잘립니다. Emit 연결은 16세대에서 멈춥니다. 직렬화 state 한도는 JavaScript 문자열 65536자입니다. 등록과 각 이벤트의 전체 handler를 1초 미만으로 유지하세요. 반복 초과나 강제 timeout은 Run할 때까지 규칙을 멈춥니다. Log는 그룹당 200개를 보관합니다. 시간/응답은 최선 노력이며 실시간 보장은 아닙니다.
@@ -111,3 +163,33 @@ Snooze 또는 패널 버튼으로 시작되는 5분 일시 중지 중에만 Stea
   on("tick", ev => v.block("C:\\Program Files (x86)\\Steam\\steam.exe", ev.now >= v.state.pauseUntil));
 }
 ```
+
+
+## 실행 중인 규칙의 AI 호출
+
+각 custom group은 **AI calls**에서 connection/model과 reasoning effort를 선택합니다. Mac과 브라우저 규칙은 같은 API를 사용합니다. 브라우저 요청은 Windows Vault 연결이 필요하며 provider 자격 증명은 그곳에 유지됩니다. 연결된 그룹은 선택 및 선택적 일일 요청 한도를 공유합니다. 빈 값은 그룹 한도 없음이며 계정 제한은 계속 적용됩니다. 한도는 UTC 날짜 기준이고 재시작 후 유지되며 실패를 포함한 제출 시도를 셉니다. Link는 기존 사용량을 합치고 Unlink 후에도 이전 사용량을 유지합니다.
+
+`v.ai({ prompt, input? })`는 즉시 request ID를 반환합니다. 규칙 등록이 아니라 handler 안에서 호출하세요. `input`은 모든 JSON 값이며 prompt/input 각각 최대20KB입니다. 응답은 `ai` 이벤트 `{requestId, ok, text, citations,
+error}`. Success text is at most48KB; citations are `{url,title}`입니다. 웹 검색 답변을 표시할 때 출처 링크를 보이고 클릭 가능하게 유지하세요. 검색은 모델에 항상 제공됩니다. 앱의 고정 deadline은 없고 동시성은 제한됩니다. provider 대체나 자동 재시도는 없습니다. 응답은 데이터이며 JavaScript로 실행되지 않습니다. 기존 동작을 할지는 규칙이 결정합니다.
+
+`ask` 버튼과 `note` 필드가 있는 패널의 예:
+
+```javascript
+(on, v) => {
+  let pending = null;
+  on("panel", ({ data }) => {
+    if (data.controlId !== "ask" || pending) return;
+    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+  });
+  on("ai", ({ data }) => {
+    if (data.requestId !== pending) return;
+    pending = null;
+    if (!data.ok) { v.log("AI request failed:", data.error); return; }
+    v.log(data.text, data.citations);
+  });
+}
+```
+
+대기 중 호출은 재시작 후 재생되지 않습니다. Run, 비활성화/재활성화, 삭제는 오래된 응답을 버립니다. 연결이 끊긴 브라우저는 `ai-unavailable`을 보고합니다. 다른 오류: `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`. 실패 호출은 규칙이 유지하기로 한 이전 결과를 덮어쓰지 않습니다. 규칙 state 한도는64KB입니다.
+
+자격 증명 없는 선택지는 Mac의 `rule_ai_models` 또는 브라우저의 `settings-rule-ai-models`로 확인하고 기존 set-group 경로에서 `ruleAI`를 설정합니다. 필드: `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`), `dailyRequestLimit` (null 또는1–100000). 반환된 선택지를 사용하고 규칙 소스에 키나 provider URL을 넣지 마세요.

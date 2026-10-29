@@ -12,19 +12,52 @@
 - 停用会停止处理器，并移除面板和应用屏蔽。启用会恢复已加载的规则及其保留的面板和屏蔽。删除会移除处理器、状态和效果。之前退出的应用不会重新打开；文件写入不会撤销。
 - 事件不受普通组目标限制；请在规则中选择应用。操作先进入队列，再在事件分发后执行。异常会停止该处理器，但不会回滚其状态或操作；后续处理器仍可能运行。只有文件操作有结果事件。
 
+## 托管计时器与滚动使用量
+
+`v.timer(id, {direction:"down", durationMs:300000})` 创建或返回一个命名倒计时，初始状态为暂停。正计时使用 `{direction:"up"}`。返回的句柄提供 `start()`、`pause()`、`resume()`、`reset()` 和 `snapshot()`。启动和恢复操作是幂等的；重置会回到已用时间为零的暂停状态。快照字段包括 `ready`、`error`、`elapsedMs`、`remainingMs`（正计时为 null）、`running` 和 `completed`。
+
+运行中的计时器按实际时钟时间推进，即使应用或浏览器已关闭，或规则已停用。倒计时完成后，会在各成员的规则下次运行时，为每个计时器实例与代次向该成员发送一次 `timerEnded`，载荷为 `{id, direction, durationMs, generation, incarnation}`；运行规则不会重放该事件。事件送达依赖宿主事件，并非实时闹钟。在面板中放入 `{type:"timer", timerId:"focus", label:"Focus"}`，即可通过现有文本控件显示计时器。
+
+`v.rolling(id, {windowMs:3600000, limitMs:600000})` 创建或返回一个命名的实际使用量追踪器。`assign({websites:["youtube.com","reddit.com"], apps:[]})` 替换该成员的目标分配。原生规则也可改为分配平台应用 ID。域名包含其子域名。一个追踪器合计其所有目标的使用量；其他 ID 拥有独立额度。`snapshot()` 返回 `ready`、`error`、`usedMs`、`remainingMs`、`available` 和 `nextReturnAtMs`（任一已记录使用量下次过期的毫秒时间戳）。提供目标时，`available(target?)` 还会检查该目标是否已分配。`reset()` 清除该对象的历史记录。
+
+所有观测到的符合条件的使用量都会计入，包括超出额度的部分；追踪器本身不会屏蔽页面或应用。可见页面的重叠时间区间只计一次，原生应用则计入观测到的前台使用量。停用的规则不增加使用量；历史记录仍会在精确的区间边界过期。只有剩余历史记录低于限制时才恢复可用。心跳采样最多计入五秒；关闭或停用期间的空档不会凭空产生使用量。用户自行发送的事件不增加使用量。
+
+关联自定义组中的相同对象 ID 共享一个本地原生中枢权威源。关联会合并追踪器历史记录与目标分配，并保留发起方的计时器状态；不兼容的配置会拒绝关联。每个成员收到各自的完成事件。断开连接后，共享追踪器不可用，计时器控制也会被拒绝，直到获得最新权威状态。解除关联时，各成员保留最终的共享使用量和计时器状态，恢复自己的目标，并丢弃旧关联的命令。中枢会保留最终快照，直到返回的成员保存并确认收到；待处理的交接完成后才能建立新的可用关联。
+
+命名对象保存在预留的 `v.state.$vaultTime` 中，运行规则和重启后仍会保留；请勿直接编辑该字段。使用 `v.removeTime(id)` 明确移除对象。ID 长度为 1–80 个 ASCII 字母、数字、`_` 或 `-`；不允许使用预留属性名。最多 32 个对象共享规则的 64 KiB UTF-8 状态大小限制。时长为整数毫秒，最长 365 天。滚动历史记录最多包含 1024 个分钟桶和 2048 个合并区间。历史容量错误会使追踪器保持不可用，直到明确重置；无效配置和超大保存会报告错误，而不会清除已保存数据。
+
+```js
+(on, v) => {
+  const timer = v.timer("focus", {durationMs: 300000});
+  v.panel("focus", {controls: [
+    {type: "timer", timerId: "focus", label: "Focus"},
+    {id: "start", type: "button", label: "Start"},
+    {id: "pause", type: "button", label: "Pause"},
+    {id: "reset", type: "button", label: "Reset"}
+  ]});
+  on("panel", ev => {
+    if (ev.data.eventName !== "click") return;
+    if (ev.data.controlId === "start") timer.start();
+    if (ev.data.controlId === "pause") timer.pause();
+    if (ev.data.controlId === "reset") timer.reset();
+  });
+  on("timerEnded", ev => v.log("Finished", ev.data.id));
+}
+```
+
 ## API
 
-- `on(type, handler)` → 布尔值。注册 `handler(ev)`；多个处理器按注册顺序运行。返回 false 表示参数无效或处理器数量达到上限。`ev = { type: string, now: number, data }`；`now` 是 Unix 时间戳，单位为毫秒。
-- `v.state`：可修改的 JSON 对象，在事件分发后持久保存。应初始化缺失字段，而不是覆盖已有状态。赋值为非对象或数组会将其重置为 `{}`；无法序列化或超过大小限制的更新不会保存。
+- `on(type, handler)` → 布尔值。注册 `handler(ev)`；多个处理器按注册顺序运行。返回 false 表示参数无效或处理器数量达到上限。`ev = { type: string, now: number, origin: "host" | "user" | "rule", data }`；`now` 是 Unix 时间戳，单位为毫秒。 实际呈现的控件事件具有 `origin: "user"`；`v.emit` 事件具有 `origin: "rule"`。- `v.state`：可修改的 JSON 对象，在事件分发后持久保存。应初始化缺失字段，而不是覆盖已有状态。赋值为非对象或数组会将其重置为 `{}`；无法序列化或超过大小限制的更新不会保存。
 - `v.log(...values)`：该组日志的唯一来源。各组的日志和清除操作相互独立。加载错误显示在运行状态中；处理器诊断信息不会写入日志。
 - `v.emit(type, data)`：将 `data` 的 JSON 副本排入队列，在当前事件之后交给该组的处理器，并生成新的 `now`；不是同步调用。
 - `v.panel(id, spec)`：替换该组指定名称的浮动面板；`spec` 为 null 时移除面板。详见“面板”。
 - `v.file(op, path, payload?)` → 请求 ID 字符串。详见“文件”。
+- `v.store(request)` 返回请求 ID；请参阅组记录。
 - `v.block(appId, on)`：true 维持应用屏蔽，false 移除该组的屏蔽。所有已启用组的屏蔽共同生效；此调用不能解除另一个组的目标屏蔽。屏蔽会请求正常退出，并按设置中的间隔重试；它不会阻止进程启动，也不保证应用接受退出请求。
 - `v.quit(appId)`：一次正常退出请求，遵循相同的保护和重试策略；不持续屏蔽。
 - `v.open(appId)`：请求 Windows 打开已安装的应用；没有成功回调。
 
-其他调用返回 `undefined`。应用 ID 是事件和应用选择器中提供的完整可执行文件路径或应用用户模型 ID。Block/Quit 忽略 Windows 系统进程、浏览器、Vault 及其辅助程序，以及空 ID。面板 ID 和状态属于一个组，与其显示名称无关。
+其他调用返回 `undefined` `com.valvesoftware.steam`。应用 ID 是事件和应用选择器中提供的完整可执行文件路径或应用用户模型 ID。Block/Quit 忽略 Windows 系统进程、浏览器、Vault 及其辅助程序，以及空 ID。面板 ID 和状态属于一个组，与其显示名称无关。
 
 ## 事件
 
@@ -38,6 +71,9 @@ snooze: {}
 panel: { panelId: string, controlId: string, eventName: string,
          value: string, values: { [controlId: string]: string } }
 file: see Files
+record: { requestId: string, ok: boolean, op?: string, key?: string,
+          record?: Record | null, entries?: Header[], next?: string | null,
+          deleted?: number, error?: string }
 App = { appId: string, name: string }
 ```
 
@@ -91,6 +127,22 @@ file.data = { requestId: string, op: string, path: string, ok: boolean,
 
 未使用的结果字段为 null；成功时 error 为空。失败包括 invalid-path、unsupported-file-type、文件夹不可用、文件不存在及 file-too-large。将 error 视为字符串，不要当作固定且完整的枚举。没有事务 API；请对每个路径的读取、修改、写入操作进行串行处理。
 
+## 组记录
+
+`v.store(request)` 会在 handler 中启动异步 JSON 记录操作。记录属于该组，在 Run 和重启后保留，并随组删除。链接组的 store 相互独立。规则决定 key、value、version、缓存失效和反馈优先级。Mac 与浏览器规则使用同一 API，但每个 app/browser 的 store 独立。
+
+| Request | Result |
+|---|---|
+| `{op:"get", key}` | `record` 或 `null` |
+| `{op:"put", key, value, version?, ifRevision?}` | 已保存的 `record` |
+| `{op:"delete", key, ifRevision?}` | `record: null` |
+| `{op:"list", prefix?, after?, limit?}` | 排序后的 `entries` 和 `next` |
+| `{op:"clear", prefix?}` | `deleted` 数量 |
+
+每条记录为 `{value, revision, version, updatedAt}`。不透明的 revision 在实际写入时更改；`version` 是调用方管理的元数据。`list` 返回不含 value 的 header；用 `get` 读取一条记录，用 `after: next` 获取下一页。省略 `put`/`delete`, `ifRevision` 时 put/delete 无条件执行；`null` 要求 key 不存在，revision 字符串要求完全匹配。不匹配时返回 `ok:false`、`error:"store-conflict"` 和当前 `record`，防止延迟的自动回复覆盖用户反馈。`v.context.revision` 是不透明的规则配置标记，规则可将其纳入自己的 version；框架不规定缓存策略。
+
+限制：key 为1–2048字符，version ≤128，JSON value ≤64KiB，深度≤32，每组10000个 key，整份记录文档16MiB。`list` 每页最多100个 header、96KiB。每组最多32个请求，总计每秒128个启动；过载时每组每秒报告一个 `store-busy`，其余请求丢弃。存储错误返回 `ok:false`；未来版本或格式错误文档会保留并报告 `store-unavailable`。没有自动重试或清理。用 ticks 设置期限。
+
 ## 限制
 
 每组每事件最多排队 256 个操作、200 次日志调用、64 次发送事件；超出部分会被丢弃。每条规则最多 1000 个处理器、24 个面板；每个控件列表最多 32 项，每个选择控件最多 64 个选项；超出部分会被忽略或截断。事件发送链在 16 代后停止。序列化状态最多 65536 个 JavaScript 字符串字符。注册和每个事件的全部处理器合计应在 1 秒内完成；反复超时或硬超时会停止规则，直至再次运行。日志为每个组保留 200 条。计时和回复尽力执行，不保证实时性。
@@ -111,3 +163,33 @@ file.data = { requestId: string, op: string, path: string, ok: boolean,
   on("tick", ev => v.block("C:\\Program Files (x86)\\Steam\\steam.exe", ev.now >= v.state.pauseUntil));
 }
 ```
+
+
+## 运行中规则的 AI 调用
+
+每个 custom group 在 **AI calls** 中选择一个 connection/model 和 reasoning effort。Mac 与浏览器规则使用同一 API；浏览器请求需要连接 Windows Vault，提供商凭据保存在那里。链接组共享选择和可选的每日请求上限。留空表示组级不限额，账户限制仍适用。上限按 UTC 日计算，重启后保留，并统计已提交的尝试（包括失败）。Link 合并现有用量；unlink 保留之前的用量。
+
+`v.ai({ prompt, input? })` 立即返回 request ID。请在 handler 中调用，不要在注册规则时调用。`input` 可以是任意 JSON 值；prompt/input 各限20KB。回复通过 `ai` 事件到达：`{requestId, ok, text, citations,
+error}`. Success text is at most48KB; citations are `{url,title}`。展示网页搜索答案时保留可见、可点击的来源链接。模型始终可以使用搜索。没有固定的 app 截止时间，并发数受限；不会回退到其他提供商或自动重试。回复是数据，不会作为 JavaScript 执行；规则决定采取哪些现有操作。
+
+包含 `ask` 按钮和 `note` 字段的面板示例：
+
+```javascript
+(on, v) => {
+  let pending = null;
+  on("panel", ({ data }) => {
+    if (data.controlId !== "ask" || pending) return;
+    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+  });
+  on("ai", ({ data }) => {
+    if (data.requestId !== pending) return;
+    pending = null;
+    if (!data.ok) { v.log("AI request failed:", data.error); return; }
+    v.log(data.text, data.citations);
+  });
+}
+```
+
+未完成的调用不会在重启后重放。Run、禁用/重新启用和删除会丢弃过时回复；断开的浏览器会报告 `ai-unavailable`。其他错误包括 `ai-not-configured`、`ai-invalid-input`、`ai-busy`、`ai-daily-limit`、`ai-request-failed` 和 `ai-usage-storage-unavailable`。失败调用不会覆盖规则选择保留的旧结果。规则 state 仍受64KB限制。
+
+可在 Mac 使用 `rule_ai_models`，或在浏览器使用 `settings-rule-ai-models` 查找无需凭据的选项；通过现有 set-group 路径配置 `ruleAI`。字段为 `providerModel`、`accountID`、`reasoningEffort`（`default`、`low`、`medium`、`high`）和 `dailyRequestLimit`（null 或1–100000）。使用返回的选项；不要把 key 或 provider URL 写进规则源码。

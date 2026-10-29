@@ -61,66 +61,34 @@ Installed app বাছতে Apps target-এর + picker ব্যবহার 
 
 Blocked app-কে quit করার অনুরোধ করা হয়। **প্রতি (মিনিট) পরে blocked app-কে আবার quit বলতে হবে** retry নিয়ন্ত্রণ করে। Website redirect, page pause ও feed hiding browser extension প্রয়োগ করে; এগুলো native app action নয়।
 
-## শ্রেণিবিন্যাস
+## কনটেন্ট ট্যাগিং
 
-শ্রেণিবিন্যাস group নিজস্ব tag tree ও model settings দিয়ে নির্ধারিত platform-এর content tag করে। প্রতিটি platform একটি group-এর অন্তর্ভুক্ত। Group তৈরির সময় platform বেছে নিন; পরে বদলানো যায় না। Blocking group-এর schedule ও filter tagging নিয়ন্ত্রণ করে না।
+কনটেন্ট ট্যাগিং নির্ধারিত platform-এর content-এ নিজস্ব tag tree ও model settings দিয়ে tag দেয়। প্রতিটি platform একটি group-এর; তৈরি করার সময় বেছে নিন, পরে বদলানো যায় না। Blocking schedule/filter tagging নিয়ন্ত্রণ করে না। সেটিংস-এ tagging চালু করুন; প্রতিটি group-এর **ট্যাগ দেওয়া বিরতি দিন / ট্যাগ দেওয়া আবার শুরু করুন** আলাদা। **কার্যকলাপ → রেকর্ডিং**-এ platform feed recording বন্ধ করলে tagging-ও থামে।
 
-শ্রেণিবিন্যাস settings-এ tagging চালু করুন। প্রতিটি group-এর **Tagging বিরতি দিন / Tagging আবার শুরু করুন** আলাদাভাবে ব্যবহার করুন। **কার্যকলাপ → Recording**-এ platform feed recording বন্ধ করলেও tagging থামে।
+### ট্যাগ ও মডেল সেটিং
 
-### Tag ও model settings
+Tag তৈরি, অর্থ বর্ণনা, parent যোগ/সরানো tree-তে করুন; drag করলে branch চলে। পরিষ্কার description অনুরূপ tag পৃথক করতে model-কে সাহায্য করে। প্রতিটি group-এর setting আলাদা। **tag-এর ন্যূনতম confidence** প্রতিটি predicted tag-এর evidence grade ১–৫; নতুন group ৪ (strong support) থেকে শুরু। নির্দিষ্ট tag count নেই; item-এ tag নাও থাকতে পারে। **ট্যাগিং নির্দেশনা** group-এর পছন্দ ধরে রাখে। সাধারণ edit auto-save হয়; group স্পষ্টভাবে নির্বাচিত connection, model ও reasoning effort ব্যবহার করে।
 
-Tag তৈরি করে অর্থ লিখুন, tag tree-তে parent নির্ধারণ বা সরান। Tag টেনে branch সরান। পরিষ্কার description model-কে কাছাকাছি tag আলাদা করতে সাহায্য করে। প্রতিটি group-এর setting আলাদা।
+### AI সংযোগ
 
-- **গতি ↔ গুণমান** local model tier বেছে নেয়। বড় model বেশি memory ব্যবহার করে; গতি ও ফল PC ও কাজের ওপর নির্ভর করে। Group-গুলোর মধ্যে download ভাগাভাগি হয়।
-- **কঠোর ↔ বিস্তৃত** confidence requirement ও default tag count নির্ধারণ করে।
-- More-এর **সর্বনিম্ন tag / সর্বোচ্চ tag** default count বদলায়। অতিরিক্ত tag-এর confidence **কঠোর ↔ বিস্তৃত** নিয়ন্ত্রণ করে। Default চাইলে ক্ষেত্র ফাঁকা রাখুন।
-- **Tagging instruction** এই group-এর ঐচ্ছিক নির্দেশ যোগ করে।
+**AI সংযোগ**-এ ChatGPT subscription, OpenAI API, Gemini API, Grok API আছে। Subscription Vault-এর sign-in/যোগ্য plan ব্যবহার করে; API key নির্বাচিত provider-এর billing ও limits মেনে চলে। Provider বেছে dropdown-এর নিচে key দিন; পরিবর্তন auto-save হয়, খালি করলে মুছে যায়। **মডেলের তালিকা আনুন**-এর পর গ্রুপে model বেছে নিন; fetch নিজে model নির্বাচন করে না। **যুক্তির মাত্রা** default/Low/Medium/High; নতুন পছন্দ Medium, আগের পছন্দ সংরক্ষিত। বেশি effort সময় ও token বাড়াতে পারে। Web search tagging-এ সর্বদা সক্রিয়; model ঠিক করে কখন ব্যবহার করবে। ব্যর্থ অনুরোধে বৈধ cached result থাকে; নতুন item unresolved থাকে যতক্ষণ না **cloud classification আবার চেষ্টা করুন** বেছে নেন। Provider স্বয়ংক্রিয়ভাবে বদলায় না। প্রতিটি connection-এর নিজস্ব retry interval এবং attempt limit আছে। Browser extension-এ **+ tag** দিয়ে যোগ করুন; remove control বা tag নির্বাচন করে Delete একবার দিয়ে সরান। **ট্যাগবিহীন** সম্পন্ন কিন্তু tag নেই; **ট্যাগ করা হচ্ছে** ফল pending। আপনার সংশোধন ওই item-এর জন্য কার্যকর থাকে।
 
-সাধারণ শ্রেণিবিন্যাস সম্পাদনা স্বয়ংক্রিয়ভাবে সংরক্ষিত হয়। Content tag করার আগে নির্বাচিত tier download করতে হবে। একই tier-ব্যবহারকারী group একই loaded model ভাগ করে; একসঙ্গে সর্বোচ্চ দুই tier loaded থাকতে পারে।
-
-Browser extension-এ content item-এর tag সংশোধন করুন। **+ tag** ক্লিক করে শ্রেণিবিন্যাসের বিদ্যমান tag খুঁজে যোগ করার জন্য বেছে নিন। Tag-এর remove control ব্যবহার করুন বা সেটি নির্বাচন করে একবার Delete চাপুন। **ট্যাগবিহীন** মানে tagging শেষ, tag নেই; **ট্যাগ হচ্ছে** মানে ফল অপেক্ষমাণ। সংশোধন ভবিষ্যৎ tagging-এ সহায়তা করে।
-
-## জ্ঞান ও web research
-
-জ্ঞান PC-এ local tagging model-এর জন্য সংক্ষিপ্ত description সংরক্ষণ করে। **Content source**-এ creator, account, channel ও community থাকে। Source description তাদের content-এর সঙ্গে ব্যবহৃত হয়। শিরোনামে term থাকলে **পরিচিত term** প্রযোজ্য।
-
-একটি source বা term এবং description যোগ করুন; অথবা research চালু থাকলে research চাইতে description ফাঁকা রাখুন। Creator suggestion শ্রেণিবিন্যাসের সংগৃহীত source খুঁজতে সাহায্য করে। ছয় বা বেশি entry-র list-এ ঠিক ওপরেই search থাকে: Terms ও প্রতিটি platform-এর Content source-এর নাম, ID বা description-এর জন্য আলাদা search। Description edit করলে ভবিষ্যৎ tagging বদলায়; source knowledge delete করলেও পরে research তা আবার তৈরি করতে পারে।
-
-### Research provider সেটআপ
-
-1. **শ্রেণিবিন্যাস settings → API key ও provider** খুলুন।
-2. Provider type ও **Add provider** বেছে নিন। এতে configuration তৈরি হয়, API key ইস্যু হয় না।
-3. Provider থেকে credential নিয়ে লিখুন। সামঞ্জস্যপূর্ণ custom endpoint হলে endpoint ও protocol field-ও configure করুন।
-4. **Web research**-এ built-in web search-সহ provider বেছে নিন। Model list fetch করে research model নির্বাচন করুন। Model chooser-এর search দিয়ে তালিকা ছোট করুন; refresh করলে আবার fetch হবে।
-5. Consent notice পড়ে consent চালু করুন। প্রতিটি group-এ **On**, **Off**, অথবা **শ্রেণিবিন্যাস settings অনুসরণ করুন** বেছে নিন।
-
-Configuration না থাকলে **Web research সেটআপ…** settings-এ নিয়ে যায়। Group research consent এড়াতে পারে না। **Test connection** test request সফল হয়েছে নিশ্চিত করে; সব model research সমর্থন করে তা নয়। Provider-এর test model নির্বাচিত research model থেকে আলাদা।
-
-Key এই PC-এর app support folder-এ থাকে; কেবল বর্তমান Windows user access পায়। এগুলো configured provider-এ request authenticate করে; Vault নিজ server-এ upload করে না। Research sanitized public subject নির্বাচিত provider-এ পাঠায়, private content body বা summary নয়। কোন field পাঠানো হয় জানতে consent notice পড়ুন। Provider usage-এ connection test ও model-list request-ও রয়েছে।
-
-Research status-এ queued request, retry cooldown, failure ও আজকের token usage দেখায়। **এখন ব্যর্থ subject আবার চেষ্টা করুন** যোগ্য failure retry করে; দৈনিক limit বা consent এড়ায় না।
 
 ## কার্যকলাপ
 
-কার্যকলাপ চালু app use, website visit ও supported **দেখা content** স্থানীয়ভাবে রেকর্ড করে। Chart রেকর্ড করা তথ্য দেখায়; ফাঁকা অংশ PC নিষ্ক্রিয় ছিল তা প্রমাণ করে না।
+কার্যকলাপ সক্রিয় app ব্যবহার, website visit এবং সমর্থিত **দেখা কনটেন্ট** স্থানীয়ভাবে রেকর্ড করে। Chart রেকর্ড করা data দেখায়; ফাঁকা অংশ PC idle ছিল প্রমাণ করে না। Date range বেছে নিন। **টাইমলাইন** দিনের সময় অনুযায়ী ব্যবহার দেখায়; **মোট** duration যোগ করে; **সময়ের ব্যবধান** প্রতিটি interval-এর ব্যবহার vertical block-এ একত্র করে। **রং** clickable legend; source বেছে chart-কে সেটিতে ফোকাস করুন। দিন বেছে সেই দিন থেকে ব্যবহার দেখুন।
 
-Date range বেছে নিন। **Timeline** ব্যবহারের দিনের সময় দেখায়; **Totals** duration যোগ করে। **Time interval** প্রতি interval-এর ব্যবহার vertical block-এ একত্র করে। **Colors** clickable legend: source বেছে chart-এ সেটিতে focus করুন। কোনো দিন বেছে সেই দিন থেকে ব্যবহার দেখুন।
+### কার্যকলাপ groups
 
-### কার্যকলাপ group
+Usage-এ নির্বাচিত app ও website একসঙ্গে দেখাতে group তৈরি করুন। **Merge** কার্যকলাপ জুড়ে সদস্যদের এক নাম ও রঙ দেয়। কার্যকলাপ group রেকর্ড করা ব্যবহার সাজায়; ব্লকিং গ্রুপ ও কনটেন্ট ট্যাগিং থেকে আলাদা। Editor-এ **Save** চাপুন।
 
-Usage-এ নির্বাচিত app ও website একসঙ্গে দেখাতে group তৈরি করুন। **Merge** কার্যকলাপ জুড়ে সদস্যদের একই নাম ও রঙ দেয়। কার্যকলাপ group রেকর্ড করা use সাজায়; blocking বা শ্রেণিবিন্যাস group থেকে আলাদা। কার্যকলাপ group editor-এ **Save** দিয়ে স্পষ্টভাবে সংরক্ষণ করুন।
+### রেকর্ডিং ও সংরক্ষণকাল
 
-### Recording ও retention
+**রেকর্ডিং**-এ category বা individual source-এর recording চালু/বন্ধ করুন। **রাখুন** history কতদিন থাকবে তা নির্ধারণ করে; **চিরকাল**-এ স্বয়ংক্রিয় মেয়াদ নেই। Individual পছন্দ বৃহত্তর setting অনুসরণ করতে পারে। রেকর্ডিং বন্ধ করলে নতুন record থামে; history delete করলে রেকর্ডকৃত entry মুছে যায়। Platform feed supported page-এ প্রদর্শিত content সংগ্রহ করে, page খোলা না হলেও। **ট্যাগিং সমর্থিত** feed recording চালু থাকলে কনটেন্ট ট্যাগিং-এ তথ্য দিতে পারে। এর retention app ও website ব্যবহারের থেকে আলাদা। Tagging group pause করলেই recording বন্ধ হয় না।
 
-**Recording**-এ প্রতিটি category বা source-এর recording চালু/বন্ধ করুন। **Keep** কতদিন history থাকবে তা ঠিক করে; **Forever** স্বয়ংক্রিয় মেয়াদ ছাড়া রাখে। আলাদা পছন্দ বৃহত্তর setting অনুসরণ করতে পারে। Recording বন্ধ করলে নতুন রেকর্ড থামে; history মুছলে রেকর্ড করা entry মুছে যায়।
+## সেটিংস
 
-Platform feed supported page-এ দেখানো content সংগ্রহ করে, খোলা না হলেও। **Tagging supported** feed recording চালু থাকলে শ্রেণিবিন্যাসে তথ্য দিতে পারে। এর retention app ও website use থেকে আলাদাভাবে সংগৃহীত content নিয়ন্ত্রণ করে। শ্রেণিবিন্যাস group pause করলে recording নিজে বন্ধ হয় না।
-
-## শ্রেণিবিন্যাস settings
-
-**Tag-package update** যাচাইকৃত tag package কখন প্রযোজ্য হবে বেছে নেয়: **Automatic**, **Ask first**, বা **Manual**। Group-এ নির্বাচিত local model download থেকে এটি আলাদা। **Download** বাছলে Hugging Face থেকে model file আসে; download চলাকালে group-এর progress/status ও **Cancel** ব্যবহার করুন।
-
-Settings-এ interface language বেছে নিন। নির্বাচিত interface language-এ ছোট Info বোতামে field explanation পাওয়া যায়।
+সেটিংস-এ interface language বেছে নিন। নির্বাচিত ভাষায় field explanation ছোট Info button-এ পাওয়া যায়।
 
 ## সংরক্ষণ ও সমস্যা সমাধান
 

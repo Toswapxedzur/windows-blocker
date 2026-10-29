@@ -12,19 +12,52 @@
 - Disableはハンドラーを停止し、パネル/アプリブロックを解除します。Enableは読み込み済みルールと保持したパネル/ブロックを再開します。Deleteはハンドラー/state/効果を削除します。終了済みアプリは再起動されず、ファイル書き込みも元に戻りません。
 - イベントは通常のグループ対象に限定されません。ルール内でアプリを選んでください。操作はキューに入りdispatch後に適用されます。例外でそのハンドラーは止まりますがstate/操作はロールバックされず、後続は動く場合があります。結果イベントがあるのはファイル操作だけです。
 
+## 管理タイマーとローリング使用量
+
+`v.timer(id, {direction:"down", durationMs:300000})` は名前付きのカウントダウンを作成するか、既存のものを返します。初期状態は一時停止です。カウントアップには `{direction:"up"}` を使います。ハンドルには `start()`、`pause()`、`resume()`、`reset()`、`snapshot()` があります。開始と再開は何度呼んでも同じ効果になり、リセットすると経過時間ゼロの一時停止状態に戻ります。スナップショットには `ready`、`error`、`elapsedMs`、`remainingMs`（カウントアップではnull）、`running`、`completed` が含まれます。
+
+実行中のタイマーは、アプリやブラウザーを閉じた間やルールを無効にした間も実時間に従って進みます。完了したカウントダウンは、各メンバーのルールが次に動くときに、タイマーのインカーネーションと世代ごとに一度だけ、`timerEnded` を `{id, direction, durationMs, generation, incarnation}` とともに配信します。Runでは再配信されません。配信はホストのイベントに依存し、リアルタイムのアラームではありません。パネルに `{type:"timer", timerId:"focus", label:"Focus"}` を入れると、既存のテキストコントロールを通じて表示できます。
+
+`v.rolling(id, {windowMs:3600000, limitMs:600000})` は名前付きの実使用トラッカーを作成するか、既存のものを返します。`assign({websites:["youtube.com","reddit.com"], apps:[]})` はこのメンバーの対象割り当てを置き換えます。ネイティブルールでは代わりにプラットフォームのアプリIDを割り当てられます。ドメインはサブドメインを含みます。一つのトラッカーは対象の使用量を合算し、別のIDには独立した利用枠があります。`snapshot()` は `ready`、`error`、`usedMs`、`remainingMs`、`available`、`nextReturnAtMs`（記録済み使用量のいずれかが次に期限切れになる時刻、ミリ秒単位）を返します。`available(target?)` は対象が指定されると割り当ても確認します。`reset()` はこのオブジェクトの履歴を消去します。
+
+条件を満たす観測済み使用量は、利用枠を超えた分もすべて計上されます。トラッカー自体はページやアプリをブロックしません。重複する可視ページの時間区間は一度だけ数え、ネイティブアプリでは観測された前面使用時間を数えます。無効なルールは使用量を加算しませんが、履歴は区間の境界で正確に期限切れになります。残る履歴が上限を下回って初めて利用可能に戻ります。ハートビートのサンプルは最大5秒に制限され、終了中や無効中の空白から活動が作られることはありません。ユーザーが送出したイベントは使用量を加算しません。
+
+リンクしたカスタムグループ内の同じオブジェクトIDは、一つのローカルネイティブハブを権威として共有します。リンク時にはトラッカーの履歴と割り当てを統合し、開始側のタイマー状態を保持します。互換性のない設定ではリンクを拒否します。各メンバーは自身の完了イベントを受け取ります。切断中は共有トラッカーが利用不能になり、最新の権威が戻るまでタイマー操作を拒否します。リンク解除時には、各メンバーが最終の共有使用量とタイマー状態を保持し、自分の対象を復元して、古いリンクのコマンドを破棄します。ハブは、戻ってきたメンバーが最終スナップショットを保存して確認応答するまで保持します。保留中の引き継ぎが完了してから新しいリンクが利用可能になります。
+
+名前付きオブジェクトは予約済みの `v.state.$vaultTime` に保存され、Runと再起動をまたいで保持されます。このフィールドを直接編集しないでください。削除には明示的に `v.removeTime(id)` を使います。IDは1～80文字のASCII英字、数字、`_`、`-` で、予約済みのプロパティ名は拒否されます。最大32個のオブジェクトがルールの64 KiB UTF-8状態上限を共有します。期間は最大365日の整数ミリ秒です。ローリング履歴は1024個の分単位バケットと2048個の結合済み区間が上限です。履歴容量エラーが起きると、明示的にリセットするまでトラッカーは利用不能になります。無効な設定や過大な保存はエラーを報告し、保存済みデータを消去しません。
+
+```js
+(on, v) => {
+  const timer = v.timer("focus", {durationMs: 300000});
+  v.panel("focus", {controls: [
+    {type: "timer", timerId: "focus", label: "Focus"},
+    {id: "start", type: "button", label: "Start"},
+    {id: "pause", type: "button", label: "Pause"},
+    {id: "reset", type: "button", label: "Reset"}
+  ]});
+  on("panel", ev => {
+    if (ev.data.eventName !== "click") return;
+    if (ev.data.controlId === "start") timer.start();
+    if (ev.data.controlId === "pause") timer.pause();
+    if (ev.data.controlId === "reset") timer.reset();
+  });
+  on("timerEnded", ev => v.log("Finished", ev.data.id));
+}
+```
+
 ## API
 
-- `on(type, handler)` → boolean。`handler(ev)`を登録します。複数ハンドラーは登録順に動きます。falseは引数不正か上限を示します。`ev = { type: string, now: number, data }`、`now`はUnixミリ秒です。
-- `v.state`: イベントdispatch後に保存する変更可能なJSONオブジェクトです。欠けたフィールドを初期化し、既存stateを上書きしません。非オブジェクト/配列を代入すると`{}`に戻ります。シリアライズ不可/過大な更新は保存されません。
+- `on(type, handler)` → boolean。`handler(ev)`を登録します。複数ハンドラーは登録順に動きます。falseは引数不正か上限を示します。`ev = { type: string, now: number, origin: "host" | "user" | "rule", data }`、`now`はUnixミリ秒です。 実際に表示されたコントロールイベントは `origin: "user"`、`v.emit` のイベントは `origin: "rule"` です。- `v.state`: イベントdispatch後に保存する変更可能なJSONオブジェクトです。欠けたフィールドを初期化し、既存stateを上書きしません。非オブジェクト/配列を代入すると`{}`に戻ります。シリアライズ不可/過大な更新は保存されません。
 - `v.log(...values)`: このグループのLogを生成する唯一の方法です。Logs/Clearはグループごとに独立します。読み込みエラーはRun状態に表示され、ハンドラー診断はLogに入りません。
 - `v.emit(type, data)`: 現在のイベント後に`data`のJSONコピーを送り、新しい`now`とともにをグループのハンドラーへキューします。同期呼び出しではありません。
 - `v.panel(id, spec)`: グループの名前付きフローティングパネルを置き換えます。null `spec`で削除します。Panelsを参照してください。
 - `v.file(op, path, payload?)` → リクエストID文字列。Filesを参照してください。
+- `v.store(request)` はリクエスト ID を返します。グループ記録を参照してください。
 - `v.block(appId, on)`: trueでアプリブロックを維持し、falseでこのグループのブロックを解除します。有効なグループ間で合成され、他グループ対象は解除できません。ブロックは通常終了を要求して設定間隔で再試行します。プロセス起動を防いだり、アプリがQuitを受け入れる保証はありません。
 - `v.quit(appId)`: 同じ保護/再試行方針に従う通常終了要求一回。継続ブロックではありません。
 - `v.open(appId)`: Windowsにインストール済みアプリの起動を要求します。成功コールバックはありません。
 
-その他の呼び出しは`undefined`を返します。アプリIDはイベントとアプリピッカーで取得できる実行ファイルの完全パスまたはapplication user model IDです。Block/QuitはWindowsシステムプロセス、ブラウザー、Vaultとヘルパー、空のIDを無視します。パネルID/stateは表示名ではなくグループに属します。
+その他の呼び出しは`undefined` `com.valvesoftware.steam`を返します。アプリIDはイベントとアプリピッカーで取得できる実行ファイルの完全パスまたはapplication user model IDです。Block/QuitはWindowsシステムプロセス、ブラウザー、Vaultとヘルパー、空のIDを無視します。パネルID/stateは表示名ではなくグループに属します。
 
 ## イベント
 
@@ -38,6 +71,9 @@ snooze: {}
 panel: { panelId: string, controlId: string, eventName: string,
          value: string, values: { [controlId: string]: string } }
 file: see Files
+record: { requestId: string, ok: boolean, op?: string, key?: string,
+          record?: Record | null, entries?: Header[], next?: string | null,
+          deleted?: number, error?: string }
 App = { appId: string, name: string }
 ```
 
@@ -91,6 +127,22 @@ file.data = { requestId: string, op: string, path: string, ok: boolean,
 
 未使用の結果フィールドはnull、成功時errorは空です。失敗にはinvalid-path、unsupported-file-type、フォルダー利用不可、ファイルなし、file-too-largeがあります。errorは固定の網羅的enumではなく文字列として扱います。トランザクションAPIはありません。pathごとにread-modify-writeを直列化してください。
 
+## グループレコード
+
+`v.store(request)` はハンドラー内で非同期の JSON レコード操作を開始します。レコードはグループ専用で、Run や再起動後も保持され、グループ削除時に削除されます。リンク済みグループのストアは別々です。キー、値、バージョン、キャッシュ無効化、フィードバックの優先順位はルールが決めます。Mac とブラウザーのルールは同じ API を使いますが、アプリ/ブラウザーごとにストアは別です。
+
+| Request | Result |
+|---|---|
+| `{op:"get", key}` | `record` または `null` |
+| `{op:"put", key, value, version?, ifRevision?}` | 保存された `record` |
+| `{op:"delete", key, ifRevision?}` | `record: null` |
+| `{op:"list", prefix?, after?, limit?}` | ソート済み `entries` と `next` |
+| `{op:"clear", prefix?}` | `deleted` 件数 |
+
+レコードは `{value, revision, version, updatedAt}` です。不透明な revision は実際の書き込みで変わります。`version` は呼び出し側のメタデータです。`list` は値を含まないヘッダーを返します。1件の読み出しには `get`、次ページには `after: next` を使います。`put`/`delete`, `ifRevision` 省略時の put/delete は無条件です。`null` はキーが存在しないこと、revision 文字列は完全一致を条件にします。不一致は `ok:false`、`error:"store-conflict"`、現在の `record` を返します。遅延した自動応答がユーザーのフィードバックを上書きするのを防げます。`v.context.revision` はルール設定の不透明なマーカーで、ルール独自のバージョンに含められます。フレームワークはキャッシュ方針を定めません。
+
+上限: キー1～2048文字、version ≤128、JSON値 ≤64KiB、深さ≤32、グループあたり10000キー、レコード文書全体16MiB。`list` は1ページあたり最大100ヘッダー、96KiB。グループあたり32要求、全体で毎秒128開始まで。過負荷時はグループごとに毎秒1回 `store-busy` を返し、残りを破棄します。ストレージエラーは `ok:false`。将来形式または不正な文書は保持して `store-unavailable` を報告します。自動再試行/削除はありません。期限には ticks を使います。
+
 ## 上限
 
 イベント/グループごとにキュー操作256件、log呼び出し200回、emit 64回。超過分は破棄されます。ルールごとにhandler 1000個、panel 24個、コントロールリスト32項目、選択肢64個。超過分は無視/切り詰められます。Emit連鎖は16世代で停止します。シリアライズstate上限はJavaScript文字列65536文字。登録と各イベントの合計handlerを1秒未満に保ちます。繰り返し超過または強制タイムアウトでRunまでルールを停止します。Logはグループごとに200件保持します。タイミング/応答はベストエフォートで、リアルタイム保証ではありません。
@@ -111,3 +163,33 @@ Snoozeまたはパネルボタンで起動する5分間の一時停止中を除�
   on("tick", ev => v.block("C:\\Program Files (x86)\\Steam\\steam.exe", ev.now >= v.state.pauseUntil));
 }
 ```
+
+
+## 実行中ルールからの AI 呼び出し
+
+各 custom group は **AI calls** で接続/モデルと reasoning effort を選択します。Mac とブラウザーのルールは同じ API を使います。ブラウザー要求には Windows Vault 接続が必要で、プロバイダー認証情報はそこに保持されます。リンク済みグループは選択と任意の日次上限を共有します。空欄はグループ上限なしですが、アカウント制限は適用されます。上限は UTC 日で計算し、再起動後も維持、失敗を含む送信試行を数えます。Link は既存使用量を合算し、Unlink 後も過去分は保持されます。
+
+`v.ai({ prompt, input? })` は即時に request ID を返します。ルール登録時でなくハンドラー内で呼びます。`input` は任意の JSON 値で、prompt/input はそれぞれ20KBまでです。応答は `ai` イベント `{requestId, ok, text, citations,
+error}`. Success text is at most48KB; citations are `{url,title}`。Web 検索の回答を表示する際はソースリンクを見えるクリック可能な状態に保ちます。検索は常にモデルから利用可能です。アプリの固定期限はなく、並行処理は制限されます。プロバイダーフォールバックや自動再試行はありません。応答はデータであり JavaScript として実行されません。既存アクションを取るかはルールが決めます。
+
+`ask` ボタンと `note` フィールドを持つパネルの例:
+
+```javascript
+(on, v) => {
+  let pending = null;
+  on("panel", ({ data }) => {
+    if (data.controlId !== "ask" || pending) return;
+    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+  });
+  on("ai", ({ data }) => {
+    if (data.requestId !== pending) return;
+    pending = null;
+    if (!data.ok) { v.log("AI request failed:", data.error); return; }
+    v.log(data.text, data.citations);
+  });
+}
+```
+
+未完了呼び出しは再起動後に再送されません。Run、無効化/再有効化、削除は古い応答を破棄します。未接続ブラウザーは `ai-unavailable` を返します。その他のエラー: `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`。失敗した呼び出しはルールが保持した前の結果を上書きしません。state 上限は64KBのままです。
+
+認証情報なしの候補は Mac の `rule_ai_models`、ブラウザーの `settings-rule-ai-models` で取得し、既存の set-group 経路から `ruleAI` を設定します。フィールドは `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`), `dailyRequestLimit` (null または1～100000) です。返された候補を使い、キーやプロバイダー URL をルールソースに書かないでください。

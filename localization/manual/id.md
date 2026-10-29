@@ -61,66 +61,36 @@ Gunakan pemilih + pada target Apps untuk memilih aplikasi terpasang. **Blokir se
 
 Aplikasi yang diblokir diminta untuk berhenti. **Minta aplikasi yang diblokir berhenti lagi setiap (menit)** mengatur percobaan ulang. Pengalihan situs, jeda halaman, dan penyembunyian feed diterapkan ekstensi browser; semuanya bukan aksi aplikasi native.
 
-## Klasifikasi
+## Penandaan konten
 
-Grup Klasifikasi memberi tag pada konten dari platform yang ditetapkan dengan pohon tag dan setelan modelnya sendiri. Setiap platform hanya menjadi anggota satu grup. Pilih platform saat membuat grup; sesudahnya tidak dapat diubah. Jadwal dan filter grup pemblokiran tidak mengendalikan tagging.
+Grup Penandaan konten memberi tag pada konten platform yang ditetapkan memakai pohon tag dan pengaturan modelnya sendiri. Tiap platform milik satu grup; pilih saat membuat grup, tidak dapat diubah setelahnya. Jadwal dan filter blokir Grup tidak mengendalikan tagging. Aktifkan tagging di Pengaturan. Gunakan **Jeda penandaan / Lanjutkan penandaan** secara terpisah untuk tiap grup. Mematikan recording feed platform di **Aktivitas → Perekaman** juga menghentikan tagging-nya.
 
-Aktifkan tagging di setelan Klasifikasi. Gunakan **Jeda tagging / Lanjutkan tagging** terpisah untuk tiap grup. Mematikan rekaman feed platform di **Aktivitas → Rekaman** juga menghentikan tagging-nya.
+### Tag dan pengaturan model
 
-### Tag dan setelan model
+Buat tag, jelaskan artinya, dan tetapkan atau hapus parent di pohon. Seret tag untuk memindahkan cabang. Deskripsi jelas membantu model membedakan tag serupa. Pengaturan tiap grup independen. **Confidence tag minimum** menetapkan tingkat bukti untuk setiap tag prediksi, 1–5. Grup baru mulai di 4 (dukungan kuat). Tidak ada jumlah tag sasaran; item dapat tidak mendapat tag. **Instruksi penandaan** menyimpan preferensi grup. Edit Penandaan konten biasa tersimpan otomatis. Setiap grup memakai koneksi, model, dan reasoning effort yang dipilih secara eksplisit.
 
-Buat tag, jelaskan maknanya, lalu atur atau hapus induknya di pohon tag. Seret tag untuk memindahkan cabangnya. Deskripsi yang jelas membantu model membedakan tag serupa. Setiap grup memiliki setelan sendiri.
+### Koneksi AI
 
-- **Kecepatan ↔ Kualitas** memilih tingkat model lokal. Model besar memakai lebih banyak memori; kecepatan dan hasil bergantung pada PC dan beban kerja. Unduhan digunakan bersama antarkelompok.
-- **Ketat ↔ Luas** mengatur persyaratan keyakinan dan jumlah tag default.
-- **Tag minimum / Tag maksimum** di Lainnya mengganti jumlah default tersebut. Ketat ↔ Luas tetap mengatur keyakinan untuk tag tambahan. Kosongkan salah satu kolom untuk memakai nilai defaultnya.
-- **Instruksi tagging** menambahkan petunjuk opsional untuk grup ini.
+Pengaturan memiliki ChatGPT subscription, OpenAI API, Gemini API, dan Grok API. Langganan memakai login Vault dan paket yang memenuhi syarat. Key API mengikuti penagihan dan batas penggunaan provider terpilih. Pilih provider dan masukkan key tepat di bawah dropdown bersama. Perubahan key tersimpan otomatis; mengosongkan field menghapus key. Pilih **Ambil daftar model**, lalu pilih model di grup Penandaan konten atau custom-rule. Mengambil daftar model tidak otomatis memilihnya.
 
-Perubahan Klasifikasi rutin tersimpan otomatis. Tingkat yang dipilih harus diunduh sebelum dapat memberi tag. Grup yang memakai tingkat sama berbagi model yang dimuat; maksimal dua tingkat tetap dimuat sekaligus.
+**Upaya penalaran** mengatur seberapa banyak model berpikir: Model default, Low, Medium, atau High jika didukung. Pilihan baru mulai di Medium; pilihan lama tetap tersimpan. Effort lebih tinggi dapat menambah waktu dan token. Web search selalu aktif untuk tagging; model menentukan kapan menggunakannya. Pilih model yang mendukung search dan structured tagging. Permintaan yang gagal/tidak tersedia mempertahankan hasil cache yang valid; item baru tetap belum terselesaikan sampai memilih **Coba ulang klasifikasi cloud**. Vault tidak mengganti provider otomatis. Tiap koneksi memiliki interval retry dan batas percobaan sendiri. Koreksi tag di ekstensi browser: klik **+ tag**, cari dan pilih tag; gunakan kontrol hapus atau pilih tag lalu tekan Delete sekali untuk menghapus. **Tanpa tag** berarti tagging selesai tanpa tag; **Sedang memberi tag** berarti hasil masih menunggu. Koreksi Anda menjadi acuan item tersebut.
 
-Koreksi tag item konten di ekstensi browser. Klik **+ tag**, cari tag Klasifikasi yang ada, lalu pilih satu untuk ditambahkan. Gunakan kontrol hapus tag atau pilih tag dan tekan Delete sekali untuk menghapusnya. **Tanpa tag** berarti tagging selesai tanpa tag; **Sedang diberi tag** berarti hasil masih menunggu. Koreksi membantu tagging berikutnya.
-
-## Pengetahuan dan riset web
-
-Pengetahuan menyimpan deskripsi singkat di PC untuk model tagging lokal. **Sumber konten** mencakup kreator, akun, channel, dan komunitas. Deskripsi sumber menyertai kontennya. **Istilah dikenal** berlaku saat istilah muncul di judul.
-
-Tambahkan sumber atau istilah beserta deskripsinya, atau kosongkan deskripsi untuk meminta riset jika diaktifkan. Saran kreator membantu menemukan sumber yang sudah dikumpulkan Klasifikasi. Daftar dengan enam entri atau lebih memiliki pencarian tepat di atasnya: Istilah dan Sumber konten tiap platform memiliki pencarian terpisah untuk nama, ID, atau deskripsi. Mengedit deskripsi memengaruhi tagging berikutnya; menghapus pengetahuan sumber tidak mencegah riset membuatnya kembali nanti.
-
-### Atur penyedia riset
-
-1. Buka **Setelan Klasifikasi → Kunci API & penyedia**.
-2. Pilih jenis penyedia dan **Tambah penyedia**. Ini membuat konfigurasi, bukan menerbitkan kunci API.
-3. Dapatkan kredensial dari penyedia tersebut dan masukkan. Untuk endpoint kustom yang kompatibel, atur juga field endpoint dan protokolnya.
-4. Di **Riset web**, pilih penyedia dengan pencarian web bawaan. Ambil daftar modelnya dan pilih model riset. Gunakan pencarian pada pemilih model untuk mempersempit daftar; segarkan untuk mengambil ulang.
-5. Baca pemberitahuan persetujuan dan aktifkan persetujuan. Pilih **Aktif**, **Nonaktif**, atau **Ikuti setelan Klasifikasi** untuk tiap grup.
-
-**Atur riset web…** membuka setelan jika konfigurasi belum ada. Grup tidak dapat melewati persetujuan riset. **Uji koneksi** memastikan permintaan uji berhasil, bukan bahwa semua model mendukung riset. Model uji penyedia berbeda dari model riset yang dipilih.
-
-Kunci disimpan di folder dukungan aplikasi pada PC ini, dengan akses terbatas ke pengguna Windows saat ini. Kunci mengautentikasi permintaan ke penyedia terkonfigurasi; Vault tidak mengunggahnya ke server sendiri. Riset mengirim subjek publik yang disanitasi ke penyedia terpilih, bukan isi atau ringkasan konten privat. Baca pemberitahuan persetujuan untuk field yang tepat. Penggunaan penyedia mencakup uji koneksi dan permintaan daftar model selain riset.
-
-Status riset menampilkan permintaan antrean, jeda percobaan ulang, kegagalan, dan penggunaan token hari ini. **Coba ulang subjek gagal sekarang** mengulangi kegagalan yang memenuhi syarat; tidak melewati batas harian atau persetujuan.
 
 ## Aktivitas
 
-Aktivitas merekam penggunaan aplikasi yang diaktifkan, kunjungan situs, dan **Konten dilihat** yang didukung secara lokal. Grafik menunjukkan data rekaman; area kosong tidak membuktikan PC sedang tidak aktif.
-
-Pilih rentang tanggal. **Linimasa** menampilkan penggunaan pada waktu terjadinya; **Total** menjumlahkan durasi. **Interval waktu** menggabungkan penggunaan dalam tiap interval menjadi blok vertikal. **Warna** adalah legenda yang dapat diklik: pilih sumber untuk memfokuskan grafik. Pilih hari untuk melihat penggunaan sejak hari itu.
+Aktivitas merekam lokal penggunaan app aktif, kunjungan situs, dan **Konten yang dilihat** yang didukung. Grafik mencerminkan data yang direkam; area kosong tidak membuktikan PC sedang idle. Pilih rentang tanggal. **Linimasa** menunjukkan penggunaan menurut jam; **Total** menjumlah durasi; **Interval waktu** menggabungkan penggunaan tiap interval menjadi blok vertikal. **Warna** adalah legenda yang dapat diklik untuk memfokuskan grafik pada sumber. Pilih hari untuk melihat penggunaan sejak hari itu.
 
 ### Grup Aktivitas
 
-Buat grup agar aplikasi dan situs terpilih muncul bersama di Penggunaan. **Gabungkan** memakai satu nama dan warna bagi anggotanya di seluruh Aktivitas. Grup Aktivitas mengatur penggunaan tercatat; terpisah dari grup pemblokiran atau Klasifikasi. Simpan editor grup Aktivitas secara eksplisit dengan **Simpan**.
+Buat grup untuk menampilkan app dan situs pilihannya bersama di Usage. **Merge** memakai satu nama dan warna untuk anggota di seluruh Aktivitas. Aktivitas group mengatur penggunaan terekam dan terpisah dari blokir Grup maupun Penandaan konten. Simpan editor Aktivitas group secara eksplisit dengan **Save**.
 
-### Rekaman dan retensi
+### Perekaman dan retensi
 
-Di **Rekaman**, nyalakan atau matikan rekaman untuk tiap kategori atau sumber. **Simpan selama** mengatur berapa lama riwayat dipertahankan; **Selamanya** menyimpannya tanpa kedaluwarsa otomatis. Pilihan per item dapat mengikuti setelan yang lebih luas. Mematikan rekaman menghentikan rekaman baru; menghapus riwayat menghapus entri yang sudah direkam.
+Di **Perekaman**, hidupkan atau matikan perekaman per kategori atau sumber. **Simpan** mengatur lama riwayat disimpan; **Selamanya** menyimpannya tanpa kedaluwarsa otomatis. Pilihan individual dapat mengikuti pengaturan luas. Mematikan perekaman menghentikan rekaman baru; menghapus riwayat menghapus entri. Feed platform mengumpulkan konten yang ditampilkan pada halaman platform yang didukung, dibuka atau tidak. Feed dengan **Penandaan didukung** dapat memasok Penandaan konten saat recording aktif. Retensinya terpisah dari penggunaan app dan situs. Pause pada grup Penandaan konten tidak otomatis mematikan recording.
 
-Feed platform mengumpulkan konten yang ditampilkan di halaman platform yang didukung, baik dibuka maupun tidak. Feed berlabel **Tagging didukung** dapat memasok Klasifikasi saat rekaman aktif. Retensinya mengatur konten yang dikumpulkan secara terpisah dari penggunaan aplikasi dan situs. Grup Klasifikasi yang dijeda tidak otomatis mematikan rekaman.
+## Pengaturan
 
-## Setelan Klasifikasi
-
-**Pembaruan paket tag** memilih kapan pembaruan paket tag terverifikasi berlaku: **Otomatis**, **Tanya dahulu**, atau **Manual**. Ini terpisah dari pengunduhan model lokal yang dipilih dalam grup. File model diunduh dari Hugging Face saat Anda memilih **Unduh**; gunakan progres/status grup dan kontrol **Batal** selama pengunduhan.
-
-Pilih bahasa antarmuka di Setelan. Penjelasan kolom tersedia lewat tombol Info kecil dalam bahasa antarmuka terpilih.
+Pilih bahasa antarmuka di Pengaturan. Penjelasan field tersedia melalui tombol Info dalam bahasa terpilih.
 
 ## Penyimpanan dan pemecahan masalah
 

@@ -61,66 +61,36 @@ Windows Vault में तीन पेज हैं: native apps ब्लॉ�
 
 Blocked app से बंद होने का अनुरोध किया जाता है। **हर (मिनट) बाद blocked app को फिर बंद करने को कहें** retries नियंत्रित करता है। Website redirects, page pauses और feed hiding browser extension लागू करता है; ये native app actions नहीं बनते।
 
-## वर्गीकारक
+## सामग्री टैगिंग
 
-वर्गीकारक group अपने दिए platforms की सामग्री को अपने tag tree और model settings से टैग करता है। हर platform एक group का होता है। Group बनाते समय platforms चुनें; बाद में नहीं बदल सकते। Blocking group के schedules और filters tagging नियंत्रित नहीं करते।
+Group अपनी platforms की सामग्री को अपने tag tree और model settings से tag करता है। हर platform एक group में होता है; creation के समय चुनें, बाद में बदल नहीं सकते। Blocking schedules/filters tagging नियंत्रित नहीं करते। सेटिंग्स में tagging enable करें और हर group का **टैगिंग रोकें / टैगिंग फिर शुरू करें** अलग करें। **गतिविधि → रिकॉर्डिंग** में platform feed recording बंद करने से tagging भी बंद होता है।
 
-वर्गीकारक settings में tagging सक्षम करें। हर group के लिए अलग से **टैगिंग रोकें / टैगिंग फिर शुरू करें** उपयोग करें। **गतिविधि → रिकॉर्डिंग** में platform feed recording बंद करने से उसकी tagging भी रुकती है।
+### टैग और मॉडल सेटिंग
 
-### Tags और model settings
+Tags बनाएं, अर्थ बताएं, tree में parent जोड़ें या हटाएं; drag करने से branch जाती है। स्पष्ट विवरण model को मिलते-जुलते tags अलग करने में मदद करता है। हर group की settings स्वतंत्र हैं। **न्यूनतम tag confidence** हर अनुमानित tag के evidence grade को 1–5 रखता है; नए groups 4 (strong support) से शुरू होते हैं। कोई लक्ष्य tag count नहीं; item को कोई tag न मिले यह संभव है। **टैगिंग निर्देश** group की प्राथमिकताएं रखता है। सामान्य edits auto-save होते हैं। हर group एक स्पष्ट रूप से चुना connection, model और reasoning effort उपयोग करता है।
 
-Tags बनाएँ, उनके अर्थ बताएँ, और tag tree में parent सेट या हटाएँ। Branch ले जाने के लिए tag खींचें। स्पष्ट विवरण model को समान tags में भेद करने में मदद करता है। हर group की settings स्वतंत्र हैं।
+### AI कनेक्शन
 
-- **गति ↔ गुणवत्ता** स्थानीय model tier चुनता है। बड़े models अधिक memory लेते हैं; गति और परिणाम PC तथा workload पर निर्भर हैं। Downloads groups में साझा होते हैं।
-- **सख्त ↔ व्यापक** confidence requirements और default tag count सेट करता है।
-- More में **न्यूनतम tags / अधिकतम tags** उन defaults को बदलते हैं। अतिरिक्त tags का confidence फिर भी सख्त ↔ व्यापक नियंत्रित करता है। Default के लिए कोई field खाली छोड़ें।
-- **टैगिंग निर्देश** इस group के लिए वैकल्पिक निर्देश जोड़ते हैं।
+सेटिंग्स में ChatGPT subscription, OpenAI API, Gemini API और Grok API हैं। यह सदस्यता Vault के sign-in और पात्र plan का उपयोग करता है। API keys चुने provider की billing और limits के अधीन हैं। Provider चुनकर साझा dropdown के ठीक नीचे key डालें। Key edit auto-save होती है; field खाली करने से key हटती है। **मॉडल सूची लाएँ** चुनें, फिर कंटेंट टैगिंग या custom-rule group में model चुनें; models fetch करने से model चुना नहीं जाता।
 
-वर्गीकारक के सामान्य edits अपने आप सहेजे जाते हैं। सामग्री टैग करने से पहले चुना tier डाउनलोड होना चाहिए। एक tier वाले groups loaded model साझा करते हैं; एक साथ अधिकतम दो tiers loaded रहते हैं।
+**तर्क प्रयास** model की सोच की मात्रा है: जहां उपलब्ध हो Model default, Low, Medium या High। नई selections Medium से शुरू होती हैं; पुरानी saved रहती हैं। अधिक effort में समय और tokens बढ़ सकते हैं। Tagging के लिए web search हमेशा enabled है; model तय करता है कब खोजे। Search और structured tagging समर्थित model चुनें। विफल/अनुपलब्ध requests में valid cached results रखे जाते हैं; नए items तब तक unresolved रहते हैं जब तक **Cloud classification फिर आज़माएँ** न चुनें। Vault provider अपने-आप नहीं बदलता; हर connection का retry interval और attempt limit अलग है। Browser extension में **+ tag** दबाकर खोजें और tag जोड़ें। हटाने वाले control या चुने tag पर Delete एक बार दबाकर हटाएं। **बिना टैग** का अर्थ tagging पूरी, कोई tag नहीं; **टैग हो रहा है** का अर्थ परिणाम लंबित है। आपकी correction उस item के लिए authoritative रहती है।
 
-Browser extension में सामग्री वस्तु के tags सुधारें। **+ tag** क्लिक कर वर्गीकारक के मौजूदा tags खोजें और जोड़ने के लिए चुनें। हटाने का नियंत्रण उपयोग करें या tag चुनकर एक बार Delete दबाएँ। **टैग नहीं लगा** का अर्थ tagging पूरी पर कोई tag नहीं; **टैगिंग जारी** का अर्थ परिणाम लंबित है। सुधार आगे की tagging में मदद करते हैं।
-
-## ज्ञान और web research
-
-ज्ञान PC पर स्थानीय tagging model के लिए छोटे विवरण रखता है। **सामग्री स्रोत** में creators, accounts, channels और communities आते हैं। स्रोत के विवरण उसकी सामग्री के साथ उपयोग होते हैं। शीर्षक में term आने पर **ज्ञात terms** लागू होते हैं।
-
-Source या term और उसका विवरण जोड़ें; research चालू हो तो विवरण खाली छोड़कर शोध माँगें। Creator सुझाव वर्गीकारक द्वारा एकत्र स्रोत खोजने में मदद करते हैं। छह या अधिक प्रविष्टियों वाली सूची में ठीक ऊपर खोज होती है: Terms और हर platform के Content sources में नाम, पहचानकर्ता या विवरण की अलग खोज है। विवरण संपादन भविष्य की tagging बदलता है; source knowledge मिटाने से बाद में शोध द्वारा उसका फिर बनना नहीं रुकता।
-
-### शोध प्रदाता कॉन्फ़िगर करें
-
-1. **वर्गीकारक सेटिंग → API कुंजियाँ और प्रदाता** खोलें।
-2. प्रदाता प्रकार और **प्रदाता जोड़ें** चुनें। इससे configuration बनती है, API key जारी नहीं होती।
-3. प्रदाता से credentials लेकर दर्ज करें। संगत custom endpoint के लिए endpoint और protocol fields भी सेट करें।
-4. **Web research** में built-in web search वाला प्रदाता चुनें। उसकी model सूची लाकर research model चुनें। सूची सीमित करने के लिए model chooser की खोज उपयोग करें; फिर से लाने के लिए refresh करें।
-5. Consent सूचना पढ़कर सहमति सक्षम करें। हर group में **चालू**, **बंद**, या **वर्गीकारक सेटिंग का पालन करें** चुनें।
-
-कॉन्फ़िगरेशन न होने पर **Web research सेट करें…** आपको settings पर ले जाता है। Group research consent नहीं टाल सकता। **कनेक्शन जाँचें** test request की सफलता बताता है, हर model की research सहायता नहीं। प्रदाता का test model चुने हुए research model से अलग है।
-
-Keys इस PC पर app के support folder में रखी जाती हैं, पहुँच वर्तमान Windows user तक सीमित है। वे configured provider को requests authenticate करती हैं; Vault उन्हें अपने server पर upload नहीं करता। Research चुने provider को sanitized public subjects भेजता है, private content body या summaries नहीं। भेजे गए exact fields के लिए consent notice पढ़ें। Provider usage में connection tests और model-list requests भी शामिल हैं।
-
-शोध स्थिति queued requests, retry cooldowns, failures और दिन के token usage दिखाती है। **असफल विषयों को अभी फिर आज़माएँ** पात्र failures retry करता है; दैनिक सीमा या consent नहीं टालता।
 
 ## गतिविधि
 
-गतिविधि सक्षम app use, website visits और समर्थित **देखी गई सामग्री** स्थानीय रूप से दर्ज करती है। Charts दर्ज data दिखाते हैं; खाली जगह यह साबित नहीं करती कि PC निष्क्रिय था।
+गतिविधि enabled app use, website visits और समर्थित **देखा गया कंटेंट** स्थानीय रूप से रिकॉर्ड करता है। Charts recorded data दिखाते हैं; खाली जगह PC के idle होने का प्रमाण नहीं। Date range चुनें। **समयरेखा** दिन के समय के अनुसार उपयोग दिखाता है; **कुल** duration जोड़ता है; **समय अंतराल** प्रत्येक interval में उपयोग को vertical blocks में जोड़ता है। **रंग** clickable legend है; source चुनकर chart focus करें। दिन चुनकर उस दिन से आगे का उपयोग देखें।
 
-Date range चुनें। **समयरेखा** दिन के समय के साथ उपयोग दिखाती है; **कुल** अवधि जोड़ता है। **समय अंतराल** हर interval का उपयोग vertical blocks में जोड़ता है। **रंग** clickable legend है: source चुनकर charts को उस पर केंद्रित करें। किसी दिन से आगे का उपयोग देखने के लिए दिन चुनें।
+### गतिविधि groups
 
-### गतिविधि समूह
-
-Usage में चुने apps और websites साथ दिखाने के लिए group बनाएँ। **मिलाएँ** पूरी गतिविधि में सदस्यों का एक नाम और रंग रखता है। गतिविधि group दर्ज उपयोग व्यवस्थित करता है; यह blocking या वर्गीकारक group से अलग है। गतिविधि group editor को **सहेजें** से स्पष्ट रूप से सहेजें।
+Usage में चुने apps और websites साथ दिखाने के लिए group बनाएं। **Merge** गतिविधि भर उसके सदस्यों के लिए एक नाम और रंग रखता है। गतिविधि group recorded use व्यवस्थित करता है; blocking और tagging groups से अलग है। Editor को स्पष्ट रूप से **Save** करें।
 
 ### रिकॉर्डिंग और प्रतिधारण
 
-**रिकॉर्डिंग** में हर category या source की recording चालू/बंद करें। **रखें** history रखने की अवधि तय करता है; **हमेशा** बिना स्वचालित expiry रखता है। व्यक्तिगत विकल्प व्यापक setting का अनुसरण कर सकते हैं। Recording बंद करने से नई recording रुकती है; history हटाने से दर्ज प्रविष्टियाँ मिटती हैं।
+**रिकॉर्डिंग** में हर category या individual source का recording चालू/बंद करें। **रखें** history retention अवधि तय करता है; **हमेशा** auto-expiry रोकता है। Individual selections बड़ी setting का पालन कर सकती हैं। रिकॉर्डिंग बंद करने से नई recording रुकती है; history delete करने से recorded entries हटती हैं। Platform feeds supported pages पर दिखी सामग्री एकत्र करते हैं, चाहे page खोला हो या नहीं। **टैगिंग समर्थित** feed recording चालू होने पर कंटेंट टैगिंग को सामग्री दे सकता है। इसका retention app और website usage से अलग है। Tagging group pause करने से recording अपने-आप बंद नहीं होती।
 
-Platform feeds समर्थित platform pages पर दिखी सामग्री एकत्र करते हैं, चाहे page खोला हो या नहीं। **टैगिंग समर्थित** feed recording चालू होने पर वर्गीकारक को सामग्री दे सकता है। इसका retention एकत्र सामग्री को app/website उपयोग से अलग नियंत्रित करता है। रुका वर्गीकारक group अपने आप recording बंद नहीं करता।
+## सेटिंग
 
-## वर्गीकारक सेटिंग
-
-**टैग-पैकेज अपडेट** चुनता है कि सत्यापित tag-package updates कब लागू हों: **स्वचालित**, **पहले पूछें**, या **मैन्युअल**। यह group में चुने स्थानीय model डाउनलोड से अलग है। **डाउनलोड** चुनने पर Hugging Face से model files आते हैं; डाउनलोड के दौरान group का progress/status और **रद्द करें** उपयोग करें।
-
-Settings में interface language चुनें। चुनी interface language में छोटे Info बटनों से field explanations मिलते हैं।
+सेटिंग्स में interface language चुनें। चुनी भाषा में field explanations छोटे Info buttons पर मिलती हैं।
 
 ## सहेजना और समस्या निवारण
 

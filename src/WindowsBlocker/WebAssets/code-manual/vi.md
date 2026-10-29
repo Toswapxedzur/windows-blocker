@@ -12,19 +12,52 @@ Source: một biểu thức hàm `(on, v) => { ... }`. Chỉ hỗ trợ JavaScri
 - Disable ngăn handlers và gỡ panels/app blocks. Enable khôi phục rule đã tải cùng panels/blocks còn giữ. Delete gỡ handlers/state/effects. Ứng dụng đã quit không được mở lại; file writes không được hoàn tác.
 - Events không bị giới hạn theo targets thường của nhóm; hãy chọn ứng dụng trong quy tắc. Actions được xếp hàng rồi áp dụng sau dispatch. Exception dừng handler nhưng không hoàn tác state/actions của nó; handlers sau có thể vẫn chạy. Chỉ file actions có result events.
 
+## Bộ hẹn giờ được quản lý và mức sử dụng trong cửa sổ trượt
+
+`v.timer(id, {direction:"down", durationMs:300000})` tạo hoặc trả về bộ đếm ngược có tên, ban đầu ở trạng thái tạm dừng. Dùng `{direction:"up"}` cho bộ đếm xuôi. Handle có `start()`, `pause()`, `resume()`, `reset()` và `snapshot()`. Gọi bắt đầu/tiếp tục nhiều lần vẫn cho cùng hiệu quả; đặt lại đưa về trạng thái tạm dừng với thời gian đã trôi qua bằng 0. Các trường snapshot gồm `ready`, `error`, `elapsedMs`, `remainingMs` (null với bộ đếm xuôi), `running` và `completed`.
+
+Bộ hẹn giờ đang chạy tiếp tục tiến theo thời gian thực khi ứng dụng/trình duyệt đóng hoặc quy tắc bị tắt. Bộ đếm ngược hoàn tất gửi `timerEnded` kèm `{id, direction, durationMs, generation, incarnation}` một lần cho mỗi hiện thân và thế hệ bộ hẹn giờ, tới từng thành viên khi quy tắc của thành viên đó chạy tiếp; Run không gửi lại sự kiện này. Việc gửi phụ thuộc vào sự kiện của host; đây không phải báo thức thời gian thực. Đặt `{type:"timer", timerId:"focus", label:"Focus"}` trong panel để hiển thị qua điều khiển văn bản hiện có.
+
+`v.rolling(id, {windowMs:3600000, limitMs:600000})` tạo hoặc trả về bộ theo dõi thời gian sử dụng thực tế có tên. `assign({websites:["youtube.com","reddit.com"], apps:[]})` thay thế các mục tiêu được gán cho thành viên này. Quy tắc native có thể gán ID ứng dụng của nền tảng thay thế. Tên miền bao gồm tên miền phụ. Một bộ theo dõi cộng gộp mức sử dụng của các mục tiêu; ID khác có hạn mức độc lập. `snapshot()` trả về `ready`, `error`, `usedMs`, `remainingMs`, `available` và `nextReturnAtMs` (thời điểm mili giây tiếp theo mà bất kỳ phần sử dụng đã ghi nào hết hạn). `available(target?)` cũng kiểm tra việc gán khi có mục tiêu. `reset()` xóa lịch sử của đối tượng này.
+
+Mọi mức sử dụng đủ điều kiện quan sát được đều được tính, kể cả phần vượt hạn mức; bản thân bộ theo dõi không chặn trang/ứng dụng. Các khoảng trang hiển thị chồng lấn chỉ được tính một lần, còn ứng dụng native tính thời gian sử dụng ở tiền cảnh quan sát được. Quy tắc bị tắt không cộng thêm sử dụng; lịch sử vẫn hết hạn đúng tại ranh giới khoảng thời gian. Chỉ có thể sử dụng lại khi lịch sử còn lại thấp hơn giới hạn. Mẫu heartbeat bị giới hạn tối đa năm giây; khoảng trống do tắt ứng dụng/quy tắc không tự tạo hoạt động. Sự kiện do người dùng phát không cộng thêm sử dụng.
+
+Các ID đối tượng giống nhau trong nhóm tùy chỉnh được liên kết cùng dùng một hub native cục bộ làm nguồn thẩm quyền. Liên kết hợp nhất lịch sử và mục tiêu được gán của bộ theo dõi, đồng thời giữ trạng thái bộ hẹn giờ của bên khởi tạo; cấu hình không tương thích sẽ từ chối liên kết. Mỗi thành viên nhận sự kiện hoàn tất riêng. Mất kết nối làm bộ theo dõi dùng chung không khả dụng và từ chối điều khiển bộ hẹn giờ cho đến khi có lại nguồn thẩm quyền mới nhất. Khi hủy liên kết, mỗi thành viên giữ mức sử dụng chung và trạng thái bộ hẹn giờ cuối cùng, khôi phục mục tiêu riêng và bỏ lệnh từ liên kết cũ. Hub giữ snapshot cuối cùng cho đến khi thành viên quay lại lưu và xác nhận; việc bàn giao đang chờ phải hoàn tất trước khi có thể dùng liên kết mới.
+
+Đối tượng có tên tồn tại qua Run và khởi động lại trong `v.state.$vaultTime` được dành riêng; không sửa trực tiếp trường này. Xóa rõ ràng bằng `v.removeTime(id)`. ID gồm 1–80 chữ cái ASCII, chữ số, `_` hoặc `-`; tên thuộc tính dành riêng bị từ chối. Tối đa 32 đối tượng dùng chung giới hạn state UTF-8 64 KiB của quy tắc. Thời lượng là số nguyên mili giây, tối đa 365 ngày. Lịch sử trượt bị giới hạn ở 1024 bucket phút và 2048 khoảng đã hợp nhất. Lỗi dung lượng lịch sử khiến bộ theo dõi không khả dụng cho đến khi được đặt lại rõ ràng; cấu hình không hợp lệ và lần lưu quá lớn báo lỗi mà không xóa dữ liệu đã lưu.
+
+```js
+(on, v) => {
+  const timer = v.timer("focus", {durationMs: 300000});
+  v.panel("focus", {controls: [
+    {type: "timer", timerId: "focus", label: "Focus"},
+    {id: "start", type: "button", label: "Start"},
+    {id: "pause", type: "button", label: "Pause"},
+    {id: "reset", type: "button", label: "Reset"}
+  ]});
+  on("panel", ev => {
+    if (ev.data.eventName !== "click") return;
+    if (ev.data.controlId === "start") timer.start();
+    if (ev.data.controlId === "pause") timer.pause();
+    if (ev.data.controlId === "reset") timer.reset();
+  });
+  on("timerEnded", ev => v.log("Finished", ev.data.id));
+}
+```
+
 ## API
 
-- `on(type, handler)` → boolean. Đăng ký `handler(ev)`; nhiều handlers chạy theo thứ tự đăng ký. False nghĩa là arguments không hợp lệ hoặc đạt giới hạn handlers. `ev = { type: string, now: number, data }`; `now` là Unix milliseconds.
-- `v.state`: JSON object có thể thay đổi, lưu sau event dispatch. Khởi tạo fields còn thiếu thay vì ghi đè state hiện có. Gán non-object hoặc array sẽ reset thành `{}`; cập nhật không serialize được/quá lớn sẽ không lưu.
+- `on(type, handler)` → boolean. Đăng ký `handler(ev)`; nhiều handlers chạy theo thứ tự đăng ký. False nghĩa là arguments không hợp lệ hoặc đạt giới hạn handlers. `ev = { type: string, now: number, origin: "host" | "user" | "rule", data }`; `now` là Unix milliseconds. Sự kiện điều khiển được hiển thị thực tế có `origin: "user"`; sự kiện `v.emit` có `origin: "rule"`.- `v.state`: JSON object có thể thay đổi, lưu sau event dispatch. Khởi tạo fields còn thiếu thay vì ghi đè state hiện có. Gán non-object hoặc array sẽ reset thành `{}`; cập nhật không serialize được/quá lớn sẽ không lưu.
 - `v.log(...values)`: nguồn duy nhất ghi Log của nhóm này. Logs/Clear độc lập từng nhóm. Load errors hiện trong Run status; handler diagnostics không ghi Log.
 - `v.emit(type, data)`: xếp hàng bản sao JSON của `data` cho handlers nhóm này sau event hiện tại, cùng `now` mới; không phải lời gọi đồng bộ.
 - `v.panel(id, spec)`: thay floating panel có tên của nhóm này; `spec` null sẽ xóa. Xem Panels.
 - `v.file(op, path, payload?)` → request ID string. Xem Files.
+- `v.store(request)` trả về ID yêu cầu; xem bản ghi nhóm.
 - `v.block(appId, on)`: true duy trì chặn ứng dụng, false gỡ chặn của nhóm này. Chặn từ các nhóm đang bật được kết hợp; lời gọi này không thể bỏ chặn mục tiêu của nhóm khác. Blocking gửi yêu cầu quit thông thường và thử lại theo interval trong Settings; không ngăn process khởi chạy hay bảo đảm app chấp nhận Quit.
 - `v.quit(appId)`: gửi một yêu cầu quit thông thường, cùng chính sách bảo vệ/thử lại; không chặn liên tục.
 - `v.open(appId)`: yêu cầu Windows mở ứng dụng đã cài; không có callback thành công.
 
-Các lời gọi khác trả `undefined`. App IDs là đường dẫn executable đầy đủ hoặc application user model IDs, có trong events và app picker. Block/Quit bỏ qua Windows system processes, browsers, Vault và helpers của Vault, cùng IDs trống. Panel IDs/state thuộc về nhóm, không phải tên hiển thị.
+Các lời gọi khác trả `undefined` `com.valvesoftware.steam`. App IDs là đường dẫn executable đầy đủ hoặc application user model IDs, có trong events và app picker. Block/Quit bỏ qua Windows system processes, browsers, Vault và helpers của Vault, cùng IDs trống. Panel IDs/state thuộc về nhóm, không phải tên hiển thị.
 
 ## Events
 
@@ -38,6 +71,9 @@ snooze: {}
 panel: { panelId: string, controlId: string, eventName: string,
          value: string, values: { [controlId: string]: string } }
 file: see Files
+record: { requestId: string, ok: boolean, op?: string, key?: string,
+          record?: Record | null, entries?: Header[], next?: string | null,
+          deleted?: number, error?: string }
 App = { appId: string, name: string }
 ```
 
@@ -91,6 +127,22 @@ file.data = { requestId: string, op: string, path: string, ok: boolean,
 
 result fields không dùng là null; thành công có error rỗng. Lỗi gồm invalid-path, unsupported-file-type, folder unavailable, missing file và file-too-large. Xem error là string, không phải enum cố định đầy đủ. Không có transaction API; tuần tự hóa thao tác read-modify-write theo từng path.
 
+## Bản ghi nhóm
+
+`v.store(request)` bắt đầu thao tác bản ghi JSON bất đồng bộ trong handler. Bản ghi riêng tư theo nhóm, tồn tại qua Run và khởi động lại, rồi bị xóa cùng nhóm. Nhóm liên kết có store riêng. Quy tắc chọn key, value, version, cache invalidation và mức ưu tiên phản hồi. Quy tắc Mac và trình duyệt dùng cùng API nhưng mỗi app/trình duyệt có store riêng.
+
+| Request | Result |
+|---|---|
+| `{op:"get", key}` | `record` hoặc `null` |
+| `{op:"put", key, value, version?, ifRevision?}` | `record` đã lưu |
+| `{op:"delete", key, ifRevision?}` | `record: null` |
+| `{op:"list", prefix?, after?, limit?}` | `entries` đã sắp xếp và `next` |
+| `{op:"clear", prefix?}` | số `deleted` |
+
+Mỗi record là `{value, revision, version, updatedAt}`. revision opaque đổi khi ghi thực sự; `version` là metadata của bên gọi. `list` trả header không kèm value; dùng `get` để đọc, `after: next` để lấy trang tiếp. Bỏ `put`/`delete`, `ifRevision` nghĩa là put/delete vô điều kiện; `null` yêu cầu key chưa tồn tại, chuỗi revision yêu cầu trùng khớp chính xác. Sai lệch trả `ok:false`, `error:"store-conflict"` và `record` hiện tại để phản hồi tự động đến muộn không ghi đè ý kiến người dùng. `v.context.revision` là dấu cấu hình opaque mà quy tắc có thể đưa vào version; framework không áp đặt chính sách cache.
+
+Giới hạn: key 1–2048 ký tự, version ≤128, JSON value ≤64KiB, depth ≤32, 10000 key mỗi nhóm, toàn bộ tài liệu16MiB. `list` trả tối đa100 header và96KiB mỗi trang. Tối đa32 request mỗi nhóm và128 request khởi chạy mỗi giây tổng cộng; quá tải báo một `store-busy` mỗi nhóm mỗi giây và bỏ các yêu cầu dư. Lỗi lưu trữ trả `ok:false`; tài liệu phiên bản tương lai hoặc lỗi định dạng được giữ lại và báo `store-unavailable`. Không tự retry/evict. Dùng ticks đặt deadline.
+
 ## Giới hạn
 
 Mỗi event trên mỗi group: 256 queued actions, 200 log calls, 64 emits; phần vượt bị bỏ. Mỗi rule: 1000 handlers, 24 panels; mỗi control list có 32 entries, mỗi choice 64 options; phần vượt bị bỏ qua/cắt. Emit chains dừng sau 16 generations. Serialized state limit: 65536 JavaScript string characters. Giữ registration và handlers kết hợp mỗi event dưới 1 second; vượt lặp lại hoặc hard timeout sẽ dừng rule đến khi Run. Log lưu 200 entries mỗi nhóm. Timing/replies là best-effort, không đảm bảo real-time.
@@ -111,3 +163,33 @@ Steam bị chặn trừ khoảng tạm dừng năm phút được kích hoạt b
   on("tick", ev => v.block("C:\\Program Files (x86)\\Steam\\steam.exe", ev.now >= v.state.pauseUntil));
 }
 ```
+
+
+## Lời gọi AI từ quy tắc đang chạy
+
+Mỗi custom group chọn một connection/model và reasoning effort trong **AI calls**. Quy tắc Mac và trình duyệt dùng cùng API; request trình duyệt cần Windows Vault kết nối, thông tin nhà cung cấp được giữ tại đó. Nhóm liên kết chia sẻ lựa chọn và daily cap tùy chọn. Để trống nghĩa là không giới hạn ở nhóm; giới hạn tài khoản vẫn áp dụng. Cap theo ngày UTC, tồn tại qua khởi động lại và đếm mọi lần gửi kể cả lỗi. Link cộng usage hiện có; unlink giữ usage trước đó.
+
+`v.ai({ prompt, input? })` trả request ID ngay. Gọi bên trong handler, không gọi lúc đăng ký quy tắc. `input` nhận mọi giá trị JSON; prompt/input tối đa20KB mỗi phần. Phản hồi đến trong event `ai`: `{requestId, ok, text, citations,
+error}`. Success text is at most48KB; citations are `{url,title}`. Giữ liên kết nguồn hiển thị và có thể nhấp khi trình bày câu trả lời từ web search. Search luôn sẵn có cho mô hình. Không có deadline cố định của app; concurrency có giới hạn; không fallback nhà cung cấp hoặc tự retry. Phản hồi là dữ liệu, không thực thi như JavaScript; quy tắc quyết định có dùng hành động hiện có nào.
+
+Ví dụ bảng có nút `ask` và trường `note`:
+
+```javascript
+(on, v) => {
+  let pending = null;
+  on("panel", ({ data }) => {
+    if (data.controlId !== "ask" || pending) return;
+    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+  });
+  on("ai", ({ data }) => {
+    if (data.requestId !== pending) return;
+    pending = null;
+    if (!data.ok) { v.log("AI request failed:", data.error); return; }
+    v.log(data.text, data.citations);
+  });
+}
+```
+
+Lời gọi đang chờ không chạy lại sau khởi động. Run, tắt/bật lại và xóa sẽ loại phản hồi cũ; trình duyệt mất kết nối báo `ai-unavailable`. Lỗi khác: `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`. Lời gọi lỗi không thay kết quả trước mà quy tắc muốn giữ. State của quy tắc vẫn giới hạn64KB.
+
+Tìm lựa chọn không cần credential bằng `rule_ai_models` trên Mac hoặc `settings-rule-ai-models` trong trình duyệt; cấu hình `ruleAI` qua đường set-group hiện có. Các trường: `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`) và `dailyRequestLimit` (null hoặc1–100000). Dùng lựa chọn được trả về; không đặt key hoặc URL nhà cung cấp trong mã nguồn quy tắc.

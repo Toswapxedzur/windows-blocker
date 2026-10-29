@@ -61,66 +61,36 @@ Use o seletor + de um alvo Apps para escolher aplicativos instalados. **Bloquear
 
 Um aplicativo bloqueado recebe um pedido para encerrar. **Pedir que o aplicativo bloqueado encerre novamente a cada (minutos)** controla as tentativas. Redirecionamentos de sites, pausas de páginas e ocultação de feeds são aplicados pela extensão do navegador; não se tornam ações de aplicativos native.
 
-## Classifier
+## Marcação de conteúdo
 
-Um grupo Classifier marca conteúdo das plataformas atribuídas, usando sua própria árvore de tags e configurações do modelo. Cada plataforma pertence a um grupo. Escolha as plataformas ao criar o grupo; não poderão ser alteradas depois. Cronogramas e filtros de grupos de bloqueio não controlam a marcação.
-
-Ative a marcação nas configurações do Classifier. Use **Pausar marcação / Retomar marcação** separadamente para cada grupo. Desativar o registro do feed da plataforma em **Activity → Registro** também interrompe a marcação desse feed.
+Cada Marcação de conteúdo marca conteúdo das plataformas atribuídas com sua própria árvore de tags e configurações de modelo. Cada plataforma pertence a um grupo; escolha ao criar, pois não poderá mudar depois. Agendas e filtros de bloqueio não controlam tagging. Ative tagging em Configurações e use **Pausar classificação / Retomar classificação** separadamente por grupo. Desligar a gravação de um feed em **Atividade → Gravação** também interrompe seu tagging.
 
 ### Tags e configurações do modelo
 
-Crie tags, descreva seus significados e defina ou remova seus pais na árvore de tags. Arraste uma tag para mover seu ramo. Descrições claras ajudam o modelo a distinguir tags semelhantes. As configurações de cada grupo são independentes.
+Crie tags, descreva seus significados e defina/remova pais na árvore. Arrastar move o ramo. Descrições claras ajudam o modelo a distinguir tags parecidas. As configurações são independentes por grupo. **Confiança mínima da tag** define o grau de evidência exigido, de 1 a 5; grupos novos começam em 4 (suporte forte). Não há quantidade-alvo; um item pode ficar sem tags. **Instruções de marcação** guarda preferências do grupo. Edições comuns salvam automaticamente; cada grupo usa conexão, modelo e reasoning effort escolhidos explicitamente.
 
-- **Velocidade ↔ Qualidade** seleciona um nível de modelo local. Modelos maiores usam mais memória; velocidade e resultados dependem do PC e da carga de trabalho. Os downloads são compartilhados entre grupos.
-- **Rigoroso ↔ Abrangente** define os requisitos de confiança e as quantidades padrão de tags.
-- **Tags mínimas / Tags máximas** em Mais substituem essas quantidades padrão. Rigoroso ↔ Abrangente ainda controla a confiança das tags adicionais. Deixe um campo vazio para usar seu padrão.
-- **Instruções de marcação** adiciona instruções opcionais para este grupo.
+### Conexões de IA
 
-Edições comuns do Classifier são salvas automaticamente. O nível selecionado precisa ser baixado antes de marcar conteúdo. Grupos no mesmo nível compartilham um modelo carregado; até dois níveis podem permanecer carregados ao mesmo tempo.
+Configurações oferece ChatGPT subscription, OpenAI API, Gemini API e Grok API. A assinatura usa o login do Vault e um plano elegível. Chaves API seguem a cobrança e os limites do provedor escolhido. Selecione o provedor e digite a chave logo abaixo do menu compartilhado; alterações salvam automaticamente e limpar o campo apaga a chave. **Buscar lista de modelos** busca modelos, mas não escolhe um; selecione-o no grupo Marcação de conteúdo ou custom-rule.
 
-Corrija as tags de um item de conteúdo na extensão do navegador. Clique em **+ tag**, pesquise as tags existentes do Classifier e escolha uma para adicionar. Use o controle de remoção da tag ou selecione-a e pressione Delete uma vez para removê-la. **Sem tag** significa que a marcação terminou sem tags; **Marcando** significa que o resultado está pendente. As correções ajudam futuras marcações.
+**Nível de raciocínio** controla quanto o modelo pensa: padrão do modelo, Low, Medium ou High quando compatível. Novas escolhas começam em Medium; as existentes permanecem salvas. Mais esforço pode aumentar tempo e tokens. A busca na Web está sempre ativa para tagging; o modelo decide quando usá-la. Escolha modelo compatível com busca e tagging estruturado. Pedidos falhos/indisponíveis preservam resultados válidos em cache; itens novos ficam sem resolução até escolher **Tentar classificação na nuvem novamente**. O Vault não troca de provedor automaticamente; cada conexão tem intervalo e limite de tentativas próprios. Corrija tags na extensão com **+ tag**; use remover ou selecione e pressione Delete uma vez. **Sem tag** significa concluído sem tags; **Classificando…** significa resultado pendente. Sua correção é a referência daquele item.
 
-## Knowledge e pesquisa na web
 
-Knowledge armazena descrições curtas neste PC para o modelo local de marcação. **Fontes de conteúdo** incluem criadores, contas, canais e comunidades. Descrições da fonte acompanham seu conteúdo. **Termos conhecidos** se aplicam quando um termo aparece no título.
+## Atividade
 
-Adicione uma fonte ou termo com descrição, ou deixe a descrição vazia para solicitar pesquisa quando habilitada. Sugestões de criadores ajudam a encontrar uma fonte já coletada pelo Classifier. Listas com seis ou mais entradas têm busca logo acima: Terms e Content sources de cada plataforma têm buscas separadas por nome, identificador ou descrição. Editar uma descrição afeta futuras marcações; excluir o conhecimento da fonte não impede que a pesquisa o recrie depois.
+Atividade registra localmente uso de apps habilitados, visitas a sites e **Conteúdo visualizado** compatível. Os gráficos mostram dados registrados; espaço vazio não prova que o PC estava ocioso. Escolha um intervalo. **Linha do tempo** mostra horários do dia, **Totais** soma duração e **Intervalo de tempo** agrupa uso em blocos verticais por intervalo. **Cores** é legenda clicável para focar uma fonte. Escolha um dia para ver uso a partir dele.
 
-### Configurar provedor de pesquisa
+### Grupos Atividade
 
-1. Abra **Configurações do Classifier → API keys & providers**.
-2. Escolha um tipo de provedor e **Adicionar provedor**. Isso cria uma configuração, não emite uma API key.
-3. Obtenha as credenciais do provedor e insira-as. Para um endpoint personalizado compatível, configure também os campos endpoint e protocol.
-4. Em **Pesquisa na web**, escolha um provedor com web search integrada. Busque a lista de modelos e selecione um modelo de pesquisa. Use a busca do seletor para filtrar; atualize a lista para buscá-la novamente.
-5. Leia a divulgação de consentimento e habilite o consentimento. Em cada grupo, escolha **Ativado**, **Desativado** ou **Seguir configurações do Classifier**.
+Crie um grupo para exibir apps e sites selecionados juntos em Usage. **Merge** usa um nome e cor únicos para os membros em Atividade. Um grupo Atividade organiza uso registrado e é separado de grupos de bloqueio e tagging. Salve o editor explicitamente com **Save**.
 
-**Configurar pesquisa na web…** abre as configurações quando falta configuração. Um grupo não pode ignorar o consentimento de pesquisa. **Testar conexão** confirma que a solicitação de teste funcionou, não que todos os modelos aceitem pesquisa. O modelo de teste do provedor é separado do modelo de pesquisa selecionado.
+### Gravação e retenção
 
-Keys são armazenadas na pasta support do app neste PC, com acesso restrito ao usuário Windows atual. Elas autenticam solicitações ao provider configurado; o Vault não as envia ao próprio servidor. A pesquisa envia assuntos públicos higienizados ao provider selecionado, não corpos de conteúdo privado nem resumos. Leia a divulgação de consentimento para saber exatamente quais fields são enviados. O uso do provider inclui testes de conexão e solicitações de lista de modelos além da pesquisa.
+Em **Gravação**, ligue/desligue a gravação por categoria ou fonte. **Manter** define quanto tempo o histórico fica guardado; **Sempre** não expira automaticamente. Escolhas individuais podem seguir a configuração mais ampla. Desligar a gravação impede novos registros; apagar o histórico remove entradas gravadas. Feeds de plataforma coletam conteúdo exibido em páginas compatíveis, abertas ou não. Um feed **Marcação compatível** pode alimentar Marcação de conteúdo enquanto gravado. A retenção é separada do uso de apps e sites. Pausar um grupo de tagging não desliga a gravação.
 
-O status da pesquisa mostra solicitações em fila, períodos de espera para tentar novamente, falhas e uso diário de tokens. **Tentar novamente agora assuntos com falha** tenta de novo as falhas elegíveis; não ignora a cota diária nem o consentimento.
+## Configurações
 
-## Activity
-
-Activity registra localmente o uso de aplicativos habilitados, visitas a sites e **Conteúdo visualizado** compatível. Os gráficos refletem os dados registrados; uma área vazia não prova que o PC esteve ocioso.
-
-Escolha um intervalo de datas. **Linha do tempo** mostra o uso no horário do dia; **Totais** soma a duração. **Intervalo de tempo** agrupa o uso de cada intervalo em blocos verticais. **Cores** é uma legenda clicável: selecione uma fonte para destacar seus dados nos gráficos. Selecione um dia para ver o uso desde esse dia.
-
-### Grupos Activity
-
-Crie um grupo para mostrar juntos em Usage os aplicativos e sites selecionados. **Mesclar** usa um único nome e cor para os membros em todo o Activity. Um grupo Activity organiza o uso registrado; é separado de um grupo de bloqueio ou Classifier. Salve explicitamente o editor do grupo Activity com **Salvar**.
-
-### Registro e retenção
-
-Em **Registro**, ative ou desative o registro por categoria ou por fonte individual. **Manter** controla por quanto tempo o histórico é retido; **Para sempre** mantém sem expiração automática. Opções individuais podem seguir a configuração geral. Desativar o registro interrompe novos registros; excluir o histórico remove os dados registrados.
-
-Feeds de plataforma coletam conteúdo exibido em páginas compatíveis, abertas ou não. Um feed com **Marcação compatível** pode fornecer dados ao Classifier enquanto o registro estiver ligado. A retenção desse feed controla o conteúdo coletado separadamente do uso de aplicativos e sites. Pausar um grupo Classifier não desativa o registro.
-
-## Configurações do Classifier
-
-**Atualizações de pacotes de tags** escolhe quando atualizações verificadas de pacotes entram em vigor: **Automático**, **Perguntar antes** ou **Manual**. É separado do download do modelo local escolhido no grupo. Arquivos de modelo vêm do Hugging Face quando você seleciona **Baixar**; durante o download, use o progresso/status do grupo e os controles **Cancelar**.
-
-Escolha o idioma da interface em Settings. Explicações dos campos estão disponíveis nos pequenos botões Info no idioma selecionado.
+Escolha o idioma da interface em Configurações. Explicações dos campos aparecem nos botões Info no idioma selecionado.
 
 ## Salvamento e solução de problemas
 

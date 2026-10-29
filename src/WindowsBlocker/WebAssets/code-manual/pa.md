@@ -12,19 +12,52 @@
 - Disable handlers ਨੂੰ ਰੋਕਦਾ ਅਤੇ panels/app blocks ਹਟਾਉਂਦਾ ਹੈ। Enable loaded rule ਅਤੇ ਇਸ ਦੇ ਬਚੇ panels/blocks ਮੁੜ ਚਲਾਉਂਦਾ ਹੈ। Delete ਇਸ ਦੇ handlers/state/effects ਹਟਾਉਂਦਾ ਹੈ। ਪਹਿਲਾਂ quit ਕੀਤੀਆਂ apps ਮੁੜ ਨਹੀਂ ਖੁੱਲ੍ਹਦੀਆਂ; file writes ਵਾਪਸ ਨਹੀਂ ਹੁੰਦੀਆਂ।
 - Events ਆਮ group targets ਤੱਕ ਸੀਮਿਤ ਨਹੀਂ; apps ਨਿਯਮ ਵਿੱਚ ਚੁਣੋ। ਕਾਰਵਾਈਆਂ queue ਹੁੰਦੀਆਂ ਹਨ ਅਤੇ dispatch ਮਗਰੋਂ ਲਾਗੂ ਹੁੰਦੀਆਂ ਹਨ। Exceptions ਉਸ handler ਨੂੰ ਰੋਕਦੀਆਂ ਹਨ ਪਰ ਇਸ ਦੀ state/actions ਵਾਪਸ ਨਹੀਂ ਕਰਦੀਆਂ; ਅਗਲੇ handlers ਫਿਰ ਵੀ ਚੱਲ ਸਕਦੇ ਹਨ। ਸਿਰਫ਼ file actions ਦੇ result events ਹੁੰਦੇ ਹਨ।
 
+## ਪ੍ਰਬੰਧਿਤ ਟਾਈਮਰ ਅਤੇ ਚੱਲਦੀ ਸਮਾਂ-ਵਿੰਡੋ ਦੀ ਵਰਤੋਂ
+
+`v.timer(id, {direction:"down", durationMs:300000})` ਨਾਮ ਵਾਲਾ countdown ਬਣਾਉਂਦਾ ਹੈ ਜਾਂ ਮੌਜੂਦਾ ਵਾਪਸ ਕਰਦਾ ਹੈ, ਜੋ ਸ਼ੁਰੂ ਵਿੱਚ paused ਹੁੰਦਾ ਹੈ। Count-up timer ਲਈ `{direction:"up"}` ਵਰਤੋ। Handle ਵਿੱਚ `start()`, `pause()`, `resume()`, `reset()` ਅਤੇ `snapshot()` ਹਨ। Start/resume ਦੁਹਰਾਉਣ ਨਾਲ ਵਾਧੂ ਅਸਰ ਨਹੀਂ ਹੁੰਦਾ; reset ਬੀਤਿਆ ਸਮਾਂ ਸਿਫ਼ਰ ਕਰਕੇ paused ਹਾਲਤ ਵਿੱਚ ਲਿਆਉਂਦਾ ਹੈ। Snapshot fields ਵਿੱਚ `ready`, `error`, `elapsedMs`, `remainingMs` (count-up ਲਈ null), `running` ਅਤੇ `completed` ਹਨ।
+
+ਚੱਲ ਰਹੇ timer app/browser ਬੰਦ ਹੋਣ ਜਾਂ rule disabled ਹੋਣ ਵੇਲੇ ਵੀ ਘੜੀ ਦੇ ਅਸਲ ਸਮੇਂ ਮੁਤਾਬਕ ਅੱਗੇ ਵਧਦੇ ਹਨ। ਪੂਰਾ ਹੋਇਆ countdown ਹਰ timer incarnation ਅਤੇ generation ਲਈ ਹਰ member ਦਾ rule ਅਗਲੀ ਵਾਰ ਚੱਲਣ ਉੱਤੇ ਇੱਕ ਵਾਰ `timerEnded` ਨਾਲ `{id, direction, durationMs, generation, incarnation}` ਦਿੰਦਾ ਹੈ; Run ਇਹ ਦੁਬਾਰਾ ਨਹੀਂ ਦਿੰਦਾ। Delivery host events ਉੱਤੇ ਨਿਰਭਰ ਹੈ; ਇਹ real-time alarm ਨਹੀਂ। ਮੌਜੂਦਾ text control ਰਾਹੀਂ ਦਿਖਾਉਣ ਲਈ panel ਵਿੱਚ `{type:"timer", timerId:"focus", label:"Focus"}` ਰੱਖੋ।
+
+`v.rolling(id, {windowMs:3600000, limitMs:600000})` ਨਾਮ ਵਾਲਾ ਸਰਗਰਮ ਵਰਤੋਂ tracker ਬਣਾਉਂਦਾ ਹੈ ਜਾਂ ਮੌਜੂਦਾ ਵਾਪਸ ਕਰਦਾ ਹੈ। `assign({websites:["youtube.com","reddit.com"], apps:[]})` ਇਸ member ਦੀਆਂ target assignments ਬਦਲਦਾ ਹੈ। Native rules ਇਸ ਦੀ ਥਾਂ platform app IDs ਦੇ ਸਕਦੇ ਹਨ। Domains ਵਿੱਚ subdomains ਵੀ ਸ਼ਾਮਲ ਹਨ। ਇੱਕ tracker ਆਪਣੇ targets ਦੀ ਵਰਤੋਂ ਇਕੱਠੀ ਗਿਣਦਾ ਹੈ; ਹੋਰ IDs ਦੀਆਂ allowances ਸੁਤੰਤਰ ਹਨ। `snapshot()` ਤੋਂ `ready`, `error`, `usedMs`, `remainingMs`, `available` ਅਤੇ `nextReturnAtMs` ਮਿਲਦੇ ਹਨ (ਅਗਲਾ millisecond ਜਦੋਂ ਕੋਈ ਦਰਜ ਵਰਤੋਂ expire ਹੁੰਦੀ ਹੈ)। Target ਦੇਣ ਉੱਤੇ `available(target?)` assignment ਵੀ ਜਾਂਚਦਾ ਹੈ। `reset()` ਇਸ object ਦੀ history ਸਾਫ਼ ਕਰਦਾ ਹੈ।
+
+Allowance ਤੋਂ ਵੱਧ ਵਰਤੋਂ ਸਮੇਤ ਸਾਰੀ ਵੇਖੀ ਗਈ ਯੋਗ ਵਰਤੋਂ ਗਿਣੀ ਜਾਂਦੀ ਹੈ; tracker ਆਪਣੇ ਆਪ page/app block ਨਹੀਂ ਕਰਦਾ। ਦਿਸਦੇ pages ਦੇ overlapping intervals ਇੱਕ ਵਾਰ ਗਿਣੇ ਜਾਂਦੇ ਹਨ ਅਤੇ native apps ਵਿੱਚ ਵੇਖੀ foreground ਵਰਤੋਂ ਗਿਣੀ ਜਾਂਦੀ ਹੈ। Disabled rules ਵਰਤੋਂ ਨਹੀਂ ਜੋੜਦੇ; history ਫਿਰ ਵੀ interval ਦੀਆਂ ਸਹੀ ਹੱਦਾਂ ਉੱਤੇ expire ਹੁੰਦੀ ਹੈ। Availability ਉਦੋਂ ਹੀ ਮੁੜਦੀ ਹੈ ਜਦੋਂ ਬਾਕੀ history ਦੀ ਵਰਤੋਂ limit ਤੋਂ ਘੱਟ ਹੋਵੇ। Heartbeat samples ਵੱਧ ਤੋਂ ਵੱਧ ਪੰਜ ਸਕਿੰਟ ਦੇ ਹਨ; shutdown/disabled gaps ਕਲਪਿਤ activity ਨਹੀਂ ਬਣਾਉਂਦੇ। ਵਰਤੋਂਕਾਰ ਦੇ emit ਕੀਤੇ events ਵਰਤੋਂ ਨਹੀਂ ਜੋੜਦੇ।
+
+Linked custom groups ਵਿੱਚ ਇੱਕੋ object IDs ਇੱਕ ਸਥਾਨਕ native hub ਦੇ ਅਧਿਕਾਰ ਹੇਠ ਸਾਂਝੇ ਹੁੰਦੇ ਹਨ। Linking tracker history ਅਤੇ assignments ਮਿਲਾਉਂਦੀ ਹੈ ਅਤੇ linking ਸ਼ੁਰੂ ਕਰਨ ਵਾਲੇ timer ਦੀ state ਰੱਖਦੀ ਹੈ; ਅਣਮਿਲਦੀਆਂ configurations linking ਰੱਦ ਕਰਦੀਆਂ ਹਨ। ਹਰ member ਨੂੰ ਆਪਣਾ completion event ਮਿਲਦਾ ਹੈ। Disconnect ਹੋਣ ਉੱਤੇ fresh authoritative ਜਾਣਕਾਰੀ ਵਾਪਸ ਆਉਣ ਤੱਕ shared trackers unavailable ਹੁੰਦੇ ਹਨ ਅਤੇ timer controls ਰੱਦ ਹੁੰਦੇ ਹਨ। Unlink ਉੱਤੇ ਹਰ member ਅੰਤਿਮ shared usage ਅਤੇ timer state ਰੱਖਦਾ ਹੈ, ਆਪਣੇ targets ਮੁੜ ਪ੍ਰਾਪਤ ਕਰਦਾ ਹੈ ਅਤੇ ਪੁਰਾਣੇ link ਦੇ commands ਛੱਡ ਦਿੰਦਾ ਹੈ। ਵਾਪਸ ਆਇਆ member ਅੰਤਿਮ snapshot save ਕਰਕੇ acknowledgement ਦੇਣ ਤੱਕ hub ਇਸ ਨੂੰ ਰੱਖਦਾ ਹੈ; ਨਵਾਂ link ਉਪਲਬਧ ਹੋਣ ਤੋਂ ਪਹਿਲਾਂ pending handovers ਪੂਰੇ ਹੁੰਦੇ ਹਨ।
+
+ਨਾਮ ਵਾਲੇ objects Run ਅਤੇ restart ਤੋਂ ਬਾਅਦ ਵੀ ਰਾਖਵੇਂ `v.state.$vaultTime` ਵਿੱਚ ਰਹਿੰਦੇ ਹਨ; ਇਸ field ਨੂੰ ਸਿੱਧਾ edit ਨਾ ਕਰੋ। ਸਪਸ਼ਟ ਤੌਰ ਉੱਤੇ ਹਟਾਉਣ ਲਈ `v.removeTime(id)` ਵਰਤੋ। IDs ਵਿੱਚ 1–80 ASCII ਅੱਖਰ, ਅੰਕ, `_` ਜਾਂ `-` ਹੋ ਸਕਦੇ ਹਨ; ਰਾਖਵੇਂ property names ਰੱਦ ਹੁੰਦੇ ਹਨ। ਵੱਧ ਤੋਂ ਵੱਧ 32 objects rule ਦੀ 64KiB UTF-8 state limit ਸਾਂਝੀ ਕਰਦੇ ਹਨ। Duration ਪੂਰਨ ਅੰਕ milliseconds ਵਿੱਚ ਹੈ, ਵੱਧ ਤੋਂ ਵੱਧ 365 ਦਿਨ। Rolling history ਵਿੱਚ ਵੱਧ ਤੋਂ ਵੱਧ 1024 minute buckets ਅਤੇ 2048 merged intervals ਹਨ। History capacity errors tracker ਨੂੰ ਸਪਸ਼ਟ reset ਤੱਕ unavailable ਰੱਖਦੇ ਹਨ; invalid configurations ਅਤੇ oversized saves ਗਲਤੀਆਂ ਦੱਸਦੇ ਹਨ ਪਰ saved data ਨਹੀਂ ਮਿਟਾਉਂਦੇ।
+
+```js
+(on, v) => {
+  const timer = v.timer("focus", {durationMs: 300000});
+  v.panel("focus", {controls: [
+    {type: "timer", timerId: "focus", label: "Focus"},
+    {id: "start", type: "button", label: "Start"},
+    {id: "pause", type: "button", label: "Pause"},
+    {id: "reset", type: "button", label: "Reset"}
+  ]});
+  on("panel", ev => {
+    if (ev.data.eventName !== "click") return;
+    if (ev.data.controlId === "start") timer.start();
+    if (ev.data.controlId === "pause") timer.pause();
+    if (ev.data.controlId === "reset") timer.reset();
+  });
+  on("timerEnded", ev => v.log("Finished", ev.data.id));
+}
+```
+
 ## API
 
-- `on(type, handler)` → boolean। `handler(ev)` register ਕਰਦਾ ਹੈ; ਕਈ handlers registration ਕ੍ਰਮ ਵਿੱਚ ਚੱਲਦੇ ਹਨ। False ਦਾ ਅਰਥ ਗਲਤ arguments ਜਾਂ handler limit ਪੂਰੀ ਹੋਈ। `ev = { type: string, now: number, data }`; `now` Unix milliseconds ਹੈ।
-- `v.state`: ਬਦਲਣਯੋਗ JSON object, ਜੋ event dispatch ਮਗਰੋਂ ਸੰਭਾਲਿਆ ਜਾਂਦਾ ਹੈ। ਮੌਜੂਦਾ state ਮਿਟਾਉਣ ਦੀ ਥਾਂ ਗੁੰਮ fields ਸ਼ੁਰੂ ਕਰੋ। Non-object ਜਾਂ array ਦੇਣ ਨਾਲ ਇਹ `{}` ਬਣ ਜਾਂਦੀ ਹੈ; serialize ਨਾ ਹੋ ਸਕਣ ਵਾਲੇ ਜਾਂ ਬਹੁਤ ਵੱਡੇ updates ਸੰਭਾਲੇ ਨਹੀਂ ਜਾਂਦੇ।
+- `on(type, handler)` → boolean। `handler(ev)` register ਕਰਦਾ ਹੈ; ਕਈ handlers registration ਕ੍ਰਮ ਵਿੱਚ ਚੱਲਦੇ ਹਨ। False ਦਾ ਅਰਥ ਗਲਤ arguments ਜਾਂ handler limit ਪੂਰੀ ਹੋਈ। `ev = { type: string, now: number, origin: "host" | "user" | "rule", data }`; `now` Unix milliseconds ਹੈ। ਅਸਲ ਵਿੱਚ ਦਿਖਾਏ control event ਵਿੱਚ `origin: "user"`, ਅਤੇ `v.emit` event ਵਿੱਚ `origin: "rule"` ਹੁੰਦਾ ਹੈ।- `v.state`: ਬਦਲਣਯੋਗ JSON object, ਜੋ event dispatch ਮਗਰੋਂ ਸੰਭਾਲਿਆ ਜਾਂਦਾ ਹੈ। ਮੌਜੂਦਾ state ਮਿਟਾਉਣ ਦੀ ਥਾਂ ਗੁੰਮ fields ਸ਼ੁਰੂ ਕਰੋ। Non-object ਜਾਂ array ਦੇਣ ਨਾਲ ਇਹ `{}` ਬਣ ਜਾਂਦੀ ਹੈ; serialize ਨਾ ਹੋ ਸਕਣ ਵਾਲੇ ਜਾਂ ਬਹੁਤ ਵੱਡੇ updates ਸੰਭਾਲੇ ਨਹੀਂ ਜਾਂਦੇ।
 - `v.log(...values)`: ਇਸ group ਦੇ Log ਵਿੱਚ ਲਿਖਣ ਦਾ ਇਕੱਲਾ ਤਰੀਕਾ। Logs/Clear ਹਰ group ਲਈ ਵੱਖਰੇ ਹਨ। Load errors Run status ਵਿੱਚ ਦਿਖਦੇ ਹਨ; handler diagnostics Log ਵਿੱਚ ਨਹੀਂ ਜਾਂਦੇ।
 - `v.emit(type, data)`: `data` ਦੀ JSON copy ਮੌਜੂਦਾ event ਮਗਰੋਂ ਇਸ group ਦੇ handlers ਲਈ queue ਕਰਦਾ ਹੈ, ਨਵੇਂ `now` ਨਾਲ; ਇਹ synchronous call ਨਹੀਂ।
 - `v.panel(id, spec)`: ਇਸ group ਦਾ ਨਾਮਿਤ floating panel ਬਦਲਦਾ ਹੈ; null `spec` ਇਸਨੂੰ ਹਟਾਉਂਦਾ ਹੈ। Panels ਵੇਖੋ।
 - `v.file(op, path, payload?)` → request ID string। Files ਵੇਖੋ।
+- `v.store(request)` ਬੇਨਤੀ ID ਵਾਪਸ ਕਰਦਾ ਹੈ; ਸਮੂਹ ਰਿਕਾਰਡ ਵੇਖੋ।
 - `v.block(appId, on)`: true app block ਕਾਇਮ ਰੱਖਦਾ ਹੈ; false ਇਸ group ਦਾ block ਹਟਾਉਂਦਾ ਹੈ। ਸਮਰੱਥ groups ਦੇ blocks ਇਕੱਠੇ ਲਾਗੂ ਹੁੰਦੇ ਹਨ; ਇਹ call ਹੋਰ group ਦਾ target unblock ਨਹੀਂ ਕਰ ਸਕਦੀ। Blocking ਆਮ quit ਮੰਗਦੀ ਹੈ ਅਤੇ Settings ਦੇ interval 'ਤੇ ਮੁੜ ਕੋਸ਼ਿਸ਼ ਕਰਦੀ ਹੈ; ਇਹ process launch ਨਹੀਂ ਰੋਕਦੀ ਅਤੇ app ਵੱਲੋਂ Quit ਮੰਨਣ ਦੀ ਗਾਰੰਟੀ ਨਹੀਂ।
 - `v.quit(appId)`: ਇੱਕ ਆਮ quit ਬੇਨਤੀ, ਉਸੇ protection/retry ਨੀਤੀ ਹੇਠ; ਲਗਾਤਾਰ block ਨਹੀਂ।
 - `v.open(appId)`: Windows ਨੂੰ installed app ਖੋਲ੍ਹਣ ਲਈ ਕਹਿੰਦਾ ਹੈ; ਸਫਲਤਾ callback ਨਹੀਂ।
 
-ਹੋਰ calls `undefined` ਵਾਪਸ ਕਰਦੀਆਂ ਹਨ। App IDs ਪੂਰੇ executable paths ਜਾਂ application user model IDs ਹਨ ਅਤੇ events ਤੇ app picker ਵਿੱਚ ਮਿਲਦੇ ਹਨ। Block/Quit Windows system processes, browsers, Vault ਅਤੇ ਇਸ ਦੇ helpers, ਅਤੇ ਖਾਲੀ IDs ਨੂੰ ਅਣਡਿੱਠਾ ਕਰਦੇ ਹਨ। Panel IDs/state ਇੱਕ group ਨਾਲ ਜੁੜੇ ਹਨ, ਇਸ ਦੇ display name ਨਾਲ ਨਹੀਂ।
+ਹੋਰ calls `undefined` `com.valvesoftware.steam` ਵਾਪਸ ਕਰਦੀਆਂ ਹਨ। App IDs ਪੂਰੇ executable paths ਜਾਂ application user model IDs ਹਨ ਅਤੇ events ਤੇ app picker ਵਿੱਚ ਮਿਲਦੇ ਹਨ। Block/Quit Windows system processes, browsers, Vault ਅਤੇ ਇਸ ਦੇ helpers, ਅਤੇ ਖਾਲੀ IDs ਨੂੰ ਅਣਡਿੱਠਾ ਕਰਦੇ ਹਨ। Panel IDs/state ਇੱਕ group ਨਾਲ ਜੁੜੇ ਹਨ, ਇਸ ਦੇ display name ਨਾਲ ਨਹੀਂ।
 
 ## Events
 
@@ -38,6 +71,9 @@ snooze: {}
 panel: { panelId: string, controlId: string, eventName: string,
          value: string, values: { [controlId: string]: string } }
 file: see Files
+record: { requestId: string, ok: boolean, op?: string, key?: string,
+          record?: Record | null, entries?: Header[], next?: string | null,
+          deleted?: number, error?: string }
 App = { appId: string, name: string }
 ```
 
@@ -91,6 +127,22 @@ file.data = { requestId: string, op: string, path: string, ok: boolean,
 
 ਨਾ ਵਰਤੇ result fields null ਹੁੰਦੇ ਹਨ; ਸਫਲਤਾ ਵਿੱਚ error ਖਾਲੀ ਹੁੰਦਾ ਹੈ। ਅਸਫਲਤਾਵਾਂ ਵਿੱਚ invalid-path, unsupported-file-type, folder unavailable, missing file ਅਤੇ file-too-large ਸ਼ਾਮਲ ਹਨ। Error ਨੂੰ string ਸਮਝੋ, ਪੂਰੀ ਤਰ੍ਹਾਂ ਨਿਰਧਾਰਤ enum ਨਹੀਂ। Transaction API ਨਹੀਂ; ਹਰ path ਲਈ read-modify-write ਕਾਰਵਾਈਆਂ ਲੜੀਵਾਰ ਕਰੋ।
 
+## ਗਰੁੱਪ ਰਿਕਾਰਡ
+
+`v.store(request)` handler ਵਿੱਚ asynchronous JSON record operation ਸ਼ੁਰੂ ਕਰਦਾ ਹੈ। ਰਿਕਾਰਡ ਗਰੁੱਪ-ਨਿੱਜੀ ਹਨ, Run ਅਤੇ restart ਮਗਰੋਂ ਰਹਿੰਦੇ ਹਨ ਅਤੇ ਗਰੁੱਪ ਮਿਟਾਉਣ ਨਾਲ ਹਟਦੇ ਹਨ। Linked groups ਦੇ stores ਵੱਖਰੇ ਹਨ। Keys, values, versions, cache invalidation ਅਤੇ feedback precedence rule ਚੁਣਦਾ ਹੈ। Mac ਅਤੇ browser rules ਇੱਕੋ API ਵਰਤਦੇ ਹਨ, ਪਰ ਹਰ app/browser ਦਾ store ਵੱਖਰਾ ਹੈ।
+
+| Request | Result |
+|---|---|
+| `{op:"get", key}` | `record` ਜਾਂ `null` |
+| `{op:"put", key, value, version?, ifRevision?}` | ਸੰਭਾਲਿਆ `record` |
+| `{op:"delete", key, ifRevision?}` | `record: null` |
+| `{op:"list", prefix?, after?, limit?}` | ਕ੍ਰਮਬੱਧ `entries` ਅਤੇ `next` |
+| `{op:"clear", prefix?}` | `deleted` ਗਿਣਤੀ |
+
+ਰਿਕਾਰਡ `{value, revision, version, updatedAt}` ਹੁੰਦਾ ਹੈ। Opaque revision ਅਸਲ write ਉੱਤੇ ਬਦਲਦਾ ਹੈ; `version` caller metadata ਹੈ। `list` values ਬਿਨਾਂ headers ਦਿੰਦਾ ਹੈ; ਇੱਕ ਪੜ੍ਹਨ ਲਈ `get`, ਅਗਲੇ page ਲਈ `after: next` ਵਰਤੋ। `put`/`delete`, `ifRevision` ਬਿਨਾਂ put/delete unconditional ਹਨ; `null` ਲਈ key ਗੈਰ-ਮੌਜੂਦ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ, revision string ਲਈ exact match। ਟਕਰਾਅ `ok:false`, `error:"store-conflict"` ਅਤੇ ਮੌਜੂਦਾ `record` ਦਿੰਦਾ ਹੈ; ਇਸ ਨਾਲ ਦੇਰ ਨਾਲ ਆਇਆ automatic reply user feedback ਨਹੀਂ ਮਿਟਾਉਂਦਾ। `v.context.revision` opaque configuration marker ਹੈ ਜਿਸਨੂੰ rule ਆਪਣੇ version ਵਿੱਚ ਜੋੜ ਸਕਦਾ ਹੈ। Framework cache policy ਨਹੀਂ ਥੋਪਦਾ।
+
+ਸੀਮਾਵਾਂ: key 1–2048 ਅੱਖਰ, version ≤128, JSON value ≤64KiB, depth ≤32, ਹਰ group ਵਿੱਚ10000 keys, ਪੂਰਾ document16MiB। `list` ਪ੍ਰਤੀ page ਵੱਧ ਤੋਂ ਵੱਧ100 headers ਅਤੇ96KiB ਦਿੰਦਾ ਹੈ। ਹਰ group ਵਾਸਤੇ32 requests ਅਤੇ ਕੁੱਲ128 starts/second। Overload ਵਿੱਚ ਹਰ group ਲਈ ਹਰ second ਇੱਕ `store-busy` error ਆਉਂਦਾ ਹੈ ਅਤੇ ਬਾਕੀ drop ਹੁੰਦੇ ਹਨ। Storage error `ok:false` ਦਿੰਦਾ ਹੈ; future/malformed document ਸੰਭਾਲ ਕੇ `store-unavailable` ਦਿੰਦਾ ਹੈ। Auto retry/eviction ਨਹੀਂ। Deadline ਲਈ ticks ਵਰਤੋ।
+
 ## ਹੱਦਾਂ
 
 ਹਰ event ਅਤੇ group ਲਈ: 256 queued actions, 200 log calls, 64 emits; ਵਾਧੂ ਛੱਡੇ ਜਾਂਦੇ ਹਨ। ਹਰ rule ਲਈ: 1000 handlers, 24 panels; ਹਰ control list ਵਿੱਚ 32 entries ਅਤੇ ਹਰ choice ਵਿੱਚ 64 options; ਵਾਧੂ ਅਣਡਿੱਠੇ/truncate ਹੁੰਦੇ ਹਨ। Emit chains 16 generations ਮਗਰੋਂ ਰੁਕਦੀਆਂ ਹਨ। Serialized state limit: 65536 JavaScript string characters। Registration ਅਤੇ ਹਰ event ਦੇ ਸਾਰੇ handlers 1 second ਤੋਂ ਘੱਟ ਰੱਖੋ; ਵਾਰ-ਵਾਰ ਹੱਦ ਲੰਘਣ ਜਾਂ hard timeout ਨਾਲ rule Run ਤੱਕ ਰੁਕ ਜਾਂਦਾ ਹੈ। Log ਹਰ group ਲਈ 200 entries ਰੱਖਦਾ ਹੈ। Timing/replies best-effort ਹਨ, real-time ਗਾਰੰਟੀ ਨਹੀਂ।
@@ -111,3 +163,33 @@ Steam blocked ਰਹਿੰਦਾ ਹੈ, ਸਿਵਾਏ ਪੰਜ ਮਿੰਟ�
   on("tick", ev => v.block("C:\\Program Files (x86)\\Steam\\steam.exe", ev.now >= v.state.pauseUntil));
 }
 ```
+
+
+## ਚੱਲਦੇ ਨਿਯਮ ਤੋਂ AI calls
+
+ਹਰ custom group **AI calls** ਵਿੱਚ ਇੱਕ connection/model ਅਤੇ reasoning effort ਚੁਣਦਾ ਹੈ। Mac ਅਤੇ browser rules ਇੱਕੋ API ਵਰਤਦੇ ਹਨ; browser request ਲਈ Windows Vault connected ਹੋਣਾ ਲਾਜ਼ਮੀ ਹੈ ਅਤੇ provider credentials ਉੱਥੇ ਹੀ ਰਹਿੰਦੇ ਹਨ। Linked groups ਚੋਣ ਅਤੇ optional daily cap ਸਾਂਝੇ ਕਰਦੇ ਹਨ। ਖਾਲੀ ਦਾ ਅਰਥ group cap ਨਹੀਂ, account limits ਫਿਰ ਵੀ ਲਾਗੂ ਹਨ। Cap UTC ਦਿਨ ਅਨੁਸਾਰ, restart ਮਗਰੋਂ ਕਾਇਮ ਅਤੇ failed ਸਮੇਤ submitted attempts ਗਿਣਦਾ ਹੈ। Link ਪੁਰਾਣੀ usage ਜੋੜਦਾ ਹੈ; unlink ਪੁਰਾਣੀ usage ਰੱਖਦਾ ਹੈ।
+
+`v.ai({ prompt, input? })` ਤੁਰੰਤ request ID ਵਾਪਸ ਕਰਦਾ ਹੈ। Handler ਵਿੱਚ call ਕਰੋ, rule registration ਵੇਲੇ ਨਹੀਂ। `input` ਕੋਈ ਵੀ JSON value ਹੋ ਸਕਦੀ ਹੈ; prompt/input ਹਰ ਇੱਕ20KB ਤੱਕ। Replies `ai` event ਵਿੱਚ `{requestId, ok, text, citations,
+error}`. Success text is at most48KB; citations are `{url,title}`। Web-search ਜਵਾਬ ਦਿਖਾਉਣ ਵੇਲੇ source links ਦਿੱਖਣਯੋਗ ਅਤੇ clickable ਰੱਖੋ। Search model ਲਈ ਹਮੇਸ਼ਾ ਉਪਲਬਧ ਹੈ। ਨਿਰਧਾਰਤ app deadline ਨਹੀਂ, concurrency ਸੀਮਤ ਹੈ, provider fallback/automatic retry ਨਹੀਂ। Reply data ਹੈ, JavaScript ਵਜੋਂ execute ਨਹੀਂ; ਮੌਜੂਦਾ actions ਕਦੋਂ ਲੈਣੇ ਹਨ rule ਤੈਅ ਕਰਦਾ ਹੈ।
+
+`ask` ਬਟਨ ਅਤੇ `note` field ਵਾਲੇ panel ਲਈ:
+
+```javascript
+(on, v) => {
+  let pending = null;
+  on("panel", ({ data }) => {
+    if (data.controlId !== "ask" || pending) return;
+    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+  });
+  on("ai", ({ data }) => {
+    if (data.requestId !== pending) return;
+    pending = null;
+    if (!data.ok) { v.log("AI request failed:", data.error); return; }
+    v.log(data.text, data.citations);
+  });
+}
+```
+
+Outstanding calls restart ਮਗਰੋਂ ਮੁੜ ਨਹੀਂ ਚਲਦੀਆਂ। Run, disable/re-enable ਅਤੇ delete ਪੁਰਾਣੇ replies discard ਕਰਦੇ ਹਨ; disconnected browser `ai-unavailable` ਦਿੰਦਾ ਹੈ। ਹੋਰ errors: `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`। Failed call rule ਵੱਲੋਂ ਰੱਖਿਆ ਪਿਛਲਾ result ਨਹੀਂ ਬਦਲਦੀ। Rule state ਦੀ ਹੱਦ64KB ਹੈ।
+
+Credential-free choices Mac `rule_ai_models` ਜਾਂ browser `settings-rule-ai-models` ਨਾਲ ਲੱਭੋ; ਮੌਜੂਦਾ set-group ਰਾਹੀਂ `ruleAI` configure ਕਰੋ। Fields: `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`), `dailyRequestLimit` (null ਜਾਂ1–100000)। ਵਾਪਸ ਮਿਲੀ choice ਵਰਤੋ; rule source ਵਿੱਚ key ਜਾਂ provider URL ਨਾ ਰੱਖੋ।
