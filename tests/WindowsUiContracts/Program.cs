@@ -58,14 +58,14 @@ try
     Check(new FileInfo(Storage.HubSecretPath).GetAccessControl().AreAccessRulesProtected,"Normal user creates a protected hub secret ACL");
     await Rpc("initialize",new(){["protocolVersion"]="2025-06-18"});
     var tools=(await Rpc("tools/list"))?["tools"] as JsonArray;
-    Check(tools?.Count==38,"38 canonical MCP tools discovered");
+    Check(tools?.Count==40 && tools.Any(tool => tool?["name"]?.GetValue<string>()=="rule_ai_models") && tools.Any(tool => tool?["name"]?.GetValue<string>()=="extension_rule_ai_models"),"40 canonical MCP tools include rule AI choices");
     JsonNode? settled=null;var settleDeadline=DateTimeOffset.UtcNow.AddSeconds(5);
     do {settled=ReadStore();if(settled?["groupSnoozes"]?["budget-used"]?["activeMsApplied"]?.GetValue<bool>()==true)break;await Task.Delay(100);}while(DateTimeOffset.UtcNow<settleDeadline);
     Check(settled?["groupSnoozeTotalsMs"]?["time-finished"]?.GetValue<int>()==2017,"Finished time snooze contributes its actual two seconds once");
     Check(settled?["groupSnoozes"]?["budget-used"]?["activeMsApplied"]?.GetValue<bool>()==true && settled?["groupSnoozeTotalsMs"]?["budget-used"]?.GetValue<int>()==45000,"Exhausted budget snooze settles without counting elapsed clock time");
     Check(settled?["groupSnoozes"]?["budget-unspent"]?["activeMsApplied"]?.GetValue<bool>()==false && settled?["groupSnoozeTotalsMs"]?["budget-unspent"]?.GetValue<int>()==1000,"Idle budget snooze preserves unspent room and usage-based total");
     Check((await Proxy("initialize"))?["serverInfo"]?["name"]?.GetValue<string>()=="Windows Vault","Bundled native MCP helper initializes against the running GUI endpoint");
-    Check(((await Proxy("tools/list"))?["tools"] as JsonArray)?.Count==38,"Bundled native MCP helper lists the GUI's 38 canonical tools");
+    Check(((await Proxy("tools/list"))?["tools"] as JsonArray)?.Count==40,"Bundled native MCP helper lists the GUI's 40 canonical tools");
     using(var app=Process.GetProcessById(int.Parse(args[3])))
     {
         var menu=AutomationElement.FromHandle(app.MainWindowHandle).FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.AutomationIdProperty,"McpConnectionsMenu"));
@@ -142,7 +142,7 @@ try
             var targetBounds=AutomationElement.FromHandle(hwnd).Current.BoundingRectangle;
             var focusDeadline=DateTimeOffset.UtcNow.AddSeconds(5);
             do {NativeInteraction.Click(targetBounds.Left+targetBounds.Width/2,targetBounds.Top+targetBounds.Height/2);await Task.Delay(250);}while(NativeInteraction.GetForegroundWindow()!=hwnd && DateTimeOffset.UtcNow<focusDeadline);
-            Check(hwnd!=IntPtr.Zero && NativeInteraction.GetForegroundWindow()==hwnd,"Harmless test editor is the frontmost app before quick-add");
+            Check(hwnd!=IntPtr.Zero && NativeInteraction.GetForegroundWindow()==hwnd,$"Harmless test editor is the frontmost app before quick-add (target={hwnd}, foreground={NativeInteraction.GetForegroundWindow()}, targetBounds={targetBounds}, quickBounds={quickWindow!.Current.BoundingRectangle})");
             var quickButton=quickWindow!.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Button));
             var bounds=quickButton.Current.BoundingRectangle;NativeInteraction.Click(bounds.Left+bounds.Width/2,bounds.Top+bounds.Height/2);
             var addedDeadline=DateTimeOffset.UtcNow.AddSeconds(5);bool didAdd;
@@ -152,6 +152,8 @@ try
         finally {if(!target.HasExited)target.Kill(true);}
     }
     await Tool("lock_group",new(){["id"]=quickId,["waitHours"]=0,["pin"]="654321"});await Task.Delay(150);
+    var quickHideDeadline=DateTimeOffset.UtcNow.AddSeconds(5);
+    while(NativeWindow(appPid,"VaultQuickAdd")?.Current.IsOffscreen==false && DateTimeOffset.UtcNow<quickHideDeadline) await Task.Delay(100);
     Check(NativeWindow(appPid,"VaultQuickAdd")?.Current.IsOffscreen!=false,"Locking the selected target hides the native quick-add");
     var panelGroups=new List<string>();
     foreach(var label in new[]{"First","Second"})
@@ -180,7 +182,7 @@ try
         NativeInteraction.BringToFront(new IntPtr(editor.Current.NativeWindowHandle));
         NativeInteraction.SetForegroundWindow(new IntPtr(editor.Current.NativeWindowHandle));
         ((InvokePattern)choose!.GetCurrentPattern(InvokePattern.Pattern)).Invoke();
-        var picker=await WaitElement(()=>{var hwnd=NativeInteraction.NamedWindow(appPid,"Choose the folder custom rules may use");return hwnd==IntPtr.Zero ? null : AutomationElement.FromHandle(hwnd);},20);
+        var picker=await WaitElement(()=>{var hwnd=NativeInteraction.NamedWindow(appPid,"Choose folder");return hwnd==IntPtr.Zero ? null : AutomationElement.FromHandle(hwnd);},20);
         if(picker==null)foreach(var hwnd in NativeInteraction.Windows(appPid)){var window=AutomationElement.FromHandle(hwnd);Console.WriteLine("Native window: "+window.Current.Name+" / "+window.Current.AutomationId);}
         Check(picker!=null,"Choose folder opens the normal native folder dialog");
         var folder=Path.Combine(args[0],"chosen-rule-folder");Directory.CreateDirectory(folder);File.WriteAllBytes(Path.Combine(folder,"invalid-utf8.txt"),new byte[]{0xff,0xfe});File.WriteAllText(Path.Combine(folder,"hidden.txt"),"hidden");File.SetAttributes(Path.Combine(folder,"hidden.txt"),FileAttributes.Hidden);
@@ -196,7 +198,7 @@ try
         using var cloud=new CloudFolderFixture(Path.Combine(folder,"cloud"));cloudPlaceholderVerified=(cloud.ReparseTag & 0xffff0fff)==0x9000001a;
         if(cloudPlaceholderVerified)Check(true,"Normal user creates an owned actual cloud placeholder");
         else Console.WriteLine("LIMIT Cloud Files API accepted this owned fixture but exposed no cloud reparse tag; live placeholder coverage is unavailable on this rig.");
-        var folderField=await WaitElement(()=>{var hwnd=NativeInteraction.NamedWindow(appPid,"Choose the folder custom rules may use");return hwnd==IntPtr.Zero ? null : AutomationElement.FromHandle(hwnd).FindFirst(TreeScope.Descendants,new AndCondition(new PropertyCondition(AutomationElement.AutomationIdProperty,"1152"),new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Edit)));},20);
+        var folderField=await WaitElement(()=>{var hwnd=NativeInteraction.NamedWindow(appPid,"Choose folder");return hwnd==IntPtr.Zero ? null : AutomationElement.FromHandle(hwnd).FindFirst(TreeScope.Descendants,new AndCondition(new PropertyCondition(AutomationElement.AutomationIdProperty,"1152"),new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Edit)));},20);
         if(folderField==null)foreach(AutomationElement element in picker!.FindAll(TreeScope.Descendants,Condition.TrueCondition))Console.WriteLine("Picker: "+element.Current.Name+" / "+element.Current.AutomationId+" / "+element.Current.ControlType.ProgrammaticName);
         Check(folderField!=null,"Native folder dialog exposes its path field");
         ((ValuePattern)folderField!.GetCurrentPattern(ValuePattern.Pattern)).SetValue(selectedAlias);
@@ -207,7 +209,7 @@ try
         {
             try
             {
-                var pickerHandle=NativeInteraction.NamedWindow(appPid,"Choose the folder custom rules may use");
+                var pickerHandle=NativeInteraction.NamedWindow(appPid,"Choose folder");
                 if(pickerHandle!=IntPtr.Zero)
                 {
                     var activePicker=AutomationElement.FromHandle(pickerHandle);

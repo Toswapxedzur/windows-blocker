@@ -1,6 +1,7 @@
 param([string]$Dotnet='C:\dotnet\dotnet.exe')
 $ErrorActionPreference='Stop'
 $repo=(Resolve-Path "$PSScriptRoot\..\..").Path
+$dotnetRoot=Split-Path (Resolve-Path $Dotnet).Path -Parent
 foreach($port in @(18787,18788)){if(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue){throw "Native UI fixture requires free development port $port; stop the owning test app normally first"}}
 & $Dotnet build "$repo\tests\WindowsUiContracts\WindowsUiContracts.csproj" -c Release
 if($LASTEXITCODE -ne 0){throw 'UI contract runner build failed'}
@@ -23,7 +24,7 @@ $seed=@{blockedGroups=$groups;usageTimersMs=@{'budget-used'=120000;'budget-unspe
 Remove-Item $result -ErrorAction SilentlyContinue
 $bootstrap="$repo\start-ui-contracts.ps1"
 @"
-`$env:DOTNET_ROOT='C:\dotnet'
+`$env:DOTNET_ROOT='$dotnetRoot'
 `$env:VAULT_ENVIRONMENT='development'
 `$env:VAULT_STORAGE_ROOT='$profile'
 `$env:VAULT_MCP_CLIENT_ROOT='$profile\mcp-clients'
