@@ -41,7 +41,7 @@ public sealed class VaultMcpServer : IDisposable
             var reply = new JsonObject { ["jsonrpc"] = "2.0", ["id"] = message["id"]?.DeepClone() }; var parameters = message["params"] as JsonObject ?? new();
             switch (message["method"]?.GetValue<string>())
             {
-                case "initialize": reply["result"] = new JsonObject { ["protocolVersion"] = parameters["protocolVersion"]?.DeepClone() ?? JsonValue.Create("2025-06-18"), ["capabilities"] = new JsonObject { ["tools"] = new JsonObject { ["listChanged"] = false } }, ["serverInfo"] = new JsonObject { ["name"] = "Windows Vault",["version"] = "0.0.3" } }; break;
+                case "initialize": reply["result"] = new JsonObject { ["protocolVersion"] = parameters["protocolVersion"]?.DeepClone() ?? JsonValue.Create("2025-06-18"), ["capabilities"] = new JsonObject { ["tools"] = new JsonObject { ["listChanged"] = false } }, ["serverInfo"] = new JsonObject { ["name"] = "Windows Vault",["version"] = "0.3.0" } }; break;
                 case "ping": reply["result"] = new JsonObject(); break;
                 case "tools/list": reply["result"] = new JsonObject { ["tools"] = Tools != null ? await Tools() : new JsonArray() }; break;
                 case "tools/call":

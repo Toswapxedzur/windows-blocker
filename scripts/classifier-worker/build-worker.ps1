@@ -2,6 +2,7 @@ param(
     [Parameter(Mandatory=$true)][string]$ClassifierSource,
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\..\dist\ClassifierWorker'),
     [string]$DependencyDirectory = (Join-Path $PSScriptRoot '..\..\.native-dependencies'),
+    [string]$SwiftExecutable = '',
     [ValidateSet('debug','release')][string]$Configuration = 'release',
     [string]$ClassifierRevision = '',
     [switch]$RunTests
@@ -21,14 +22,24 @@ $visualStudio = & $vswhere -latest -products '*' -requires Microsoft.VisualStudi
 if (!$visualStudio) { throw 'The x64 Visual Studio C++ toolchain is unavailable.' }
 $environment = & cmd.exe /d /s /c "`"$visualStudio\VC\Auxiliary\Build\vcvars64.bat`" >nul && set"
 foreach ($line in $environment) { if ($line -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1],$matches[2],'Process') } }
-$swift = (Get-Command swift.exe -ErrorAction Stop).Source
+$swift = if ($SwiftExecutable) { (Resolve-Path $SwiftExecutable).Path } else { (Get-Command swift.exe -ErrorAction Stop).Source }
+$env:Path = (Split-Path $swift -Parent) + ';' + $env:Path
 $version = (& $swift --version | Out-String)
 if ($version -notmatch 'Swift version 6\.4(?:\.0)? \(swift-6\.4(?:\.0)?-RELEASE\)') { throw "Use pinned Swift $SwiftVersion; observed: $version" }
 Push-Location $ClassifierSource
 try {
-    & $swift build --product VaultClassifierWorker -c $Configuration --jobs 2
-    if ($LASTEXITCODE) { throw 'The shared Classifier worker build failed.' }
-    $binaryDirectory = (& $swift build -c $Configuration --show-bin-path | Select-Object -Last 1).Trim()
+    # The current Windows Swift compiler needs its allocator redirect disabled
+    # during compilation. Restore it before running the finished worker.
+    $priorAllocator = $env:MIMALLOC_DISABLE_REDIRECT
+    try {
+        $env:MIMALLOC_DISABLE_REDIRECT = '1'
+        & $swift build --build-system native --product VaultClassifierWorker -c $Configuration --jobs 2
+        if ($LASTEXITCODE) { throw 'The shared Classifier worker build failed.' }
+        $binaryDirectory = (& $swift build --build-system native -c $Configuration --show-bin-path | Select-Object -Last 1).Trim()
+    } finally {
+        if ($null -eq $priorAllocator) { Remove-Item Env:MIMALLOC_DISABLE_REDIRECT -ErrorAction SilentlyContinue }
+        else { $env:MIMALLOC_DISABLE_REDIRECT = $priorAllocator }
+    }
     $worker = Join-Path $binaryDirectory 'VaultClassifierWorker.exe'
     if (!(Test-Path $worker)) { throw 'The worker executable was not produced.' }
     Copy-Item -Force $worker $OutputDirectory
@@ -80,7 +91,7 @@ if ($RunTests) {
     Push-Location $ClassifierSource
     try {
         $env:Path = $OutputDirectory + ';' + $testPath
-        & $swift test -c $Configuration --jobs 2
+        & $swift test --build-system native -c $Configuration --jobs 2
         if ($LASTEXITCODE) { throw 'The shared Windows Classifier test suite failed.' }
     } finally {
         $env:Path = $testPath

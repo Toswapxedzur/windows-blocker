@@ -109,8 +109,9 @@ try {
     Assert-Worker (@($names) -contains $tagName) 'Portable taxonomy is incomplete.'
     $models = Request-Worker 'ruleAIModels' @{}
     Assert-Worker ($null -ne $models.models) 'Rule AI model projection is unavailable.'
-    $badRuleAI = Request-Worker 'ruleAIGenerate' @{configuration=@{providerModel='api:missing:model';accountID='';reasoningEffort='medium'};payload='{"prompt":"fixture"}'} $false
-    Assert-Worker ($badRuleAI -match 'invalid-rule-ai-request|ai-not-configured') 'Unconfigured rule AI was not refused.'
+    $fixturePrompt = @{prompt='fixture'} | ConvertTo-Json -Compress
+    $badRuleAI = Request-Worker 'ruleAIGenerate' @{configuration=@{providerModel='api:missing:model';accountID='';reasoningEffort='medium'};payload=$fixturePrompt} $false
+    Assert-Worker ($badRuleAI -eq 'ai-invalid-input') ('Unconfigured rule AI was not refused: ' + $badRuleAI)
     $null = Request-Worker 'action' @{action='restoreClassifierType'; data=@{}} $false
     $null = Request-Worker 'resource' @{url='file:///C:/Windows/win.ini'} $false
     $null = Request-Worker 'activity' @{kind='setSettings'; category='app-usage'; enabled=$true}
