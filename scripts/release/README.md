@@ -23,12 +23,12 @@ adds a Start menu shortcut. If Microsoft WebView2 is missing, it downloads and
 verifies Microsoft's signed Evergreen bootstrapper before installing the
 runtime. It needs an internet connection only for that missing dependency.
 Use `-Environment development` for the separate development profile. Close the
-app and connected browser/MCP clients before updating its installation. User data and downloaded
-models stay outside the application directory.
+app and connected browser/MCP clients before updating its installation. User data
+stays outside the application directory.
 
 Windows 10 22H2 and Windows 11 are the intended x64 targets. Runtime acceptance
 on each OS is required before claiming release support; a cross-build alone is
-insufficient. Windows ARM64 and GPU acceleration have no acceptance claim.
+insufficient. Windows ARM64 has no acceptance claim.
 
 Configuration locations/formats follow the native Mac client catalog with
 Windows paths. Default MCP registration runs only after its authenticated
