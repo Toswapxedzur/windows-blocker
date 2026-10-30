@@ -13,3 +13,4 @@ All suites run on mini1, with native .NET/WebView2 suites in its Windows VM.
 - `ExternalLinkContracts/` — real WebView click/target-blank handling and programmatic-navigation denial using the production URI handler and an owned browser callback.
 - `McpConnectorContracts/` — nondestructive client registration and authenticated bundled stdio framing.
 - `WorkerClientContracts/`, `WorkerFixture/` — backend process replacement, crash/restart and request attribution.
+- `WindowsUpdateContracts/` — signed feed verification, tamper and expiry rejection, and release identity checks.

@@ -19,6 +19,7 @@ using WindowsBlocker.Enforcement;
 using WindowsBlocker.Rules;
 using WindowsBlocker.SelfPreservation;
 using WindowsBlocker.WebUI;
+using WindowsBlocker.Updates;
 
 namespace WindowsBlocker;
 
@@ -37,6 +38,8 @@ public partial class MainWindow : Window
     private readonly RuleEngine _ruleEngine;
     private readonly RuleAIService _ruleAI;
     private readonly SelfPreservationGuard _guard = new();
+    private readonly WindowsUpdateService _updates = new();
+    private readonly DispatcherTimer _updateTimer = new() { Interval = TimeSpan.FromHours(24) };
     private WinEventMonitor? _monitor;
     private DispatcherTimer? _timer;
     private TimerOverlayWindow? _overlay;
@@ -59,6 +62,13 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         McpConnectionsMenu.Header = NativeLanguage.Text("windows.connections.menu", "AI connections…");
+        SettingsMenu.Header = NativeLanguage.Text("windows.updates.settings", "Settings");
+        AutoUpdateMenu.Header = NativeLanguage.Text("windows.updates.auto", "Auto install updates");
+        CheckUpdateMenu.Header = NativeLanguage.Text("windows.updates.check", "Check for updates…");
+        AutoUpdateMenu.IsChecked = _updates.AutoInstall;
+        AutoUpdateMenu.IsEnabled = _updates.Available;
+        CheckUpdateMenu.IsEnabled = _updates.Available;
+        _updateTimer.Tick += async (_, _) => await CheckAutomaticUpdate();
         NativeMenu.FlowDirection = NativeLanguage.Language == "ar" ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         _engine = new EnforcementEngine(_store, _registry, _hub);
         _ruleEngine = new RuleEngine(_store);
@@ -79,6 +89,57 @@ public partial class MainWindow : Window
 
     private void OpenMcpConnections(object sender,RoutedEventArgs e) => new McpConnectionsWindow(this).ShowDialog();
 
+    private void ToggleAutoUpdates(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            _updates.SetAutoInstall(AutoUpdateMenu.IsChecked);
+            if (_updates.AutoInstall) { _updateTimer.Start(); _ = CheckAutomaticUpdate(); }
+            else _updateTimer.Stop();
+        }
+        catch (Exception error)
+        {
+            AutoUpdateMenu.IsChecked = _updates.AutoInstall;
+            MessageBox.Show(this, error.Message, "Windows Vault updates", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async Task CheckAutomaticUpdate()
+    {
+        try
+        {
+            await _updates.CheckAndStageAsync();
+            if (!_updates.AutoInstall) _updates.DiscardPending();
+        }
+        catch (Exception error)
+        {
+            var log = Path.Combine(Storage.RootDirectory, "Updates", "last-check-error.txt");
+            try { File.WriteAllText(log, error.Message); } catch (IOException) { }
+        }
+    }
+
+    private async void CheckForUpdates(object sender, RoutedEventArgs e)
+    {
+        CheckUpdateMenu.IsEnabled = false;
+        try
+        {
+            var status = await _updates.CheckAndStageAsync();
+            if (_updates.HasPending)
+            {
+                var install = MessageBox.Show(this, status + "\n\nQuit Windows Vault and install now?", "Windows Vault updates",
+                    MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (install == MessageBoxResult.Yes) Close();
+                else if (!_updates.AutoInstall) _updates.DiscardPending();
+            }
+            else MessageBox.Show(this, status, "Windows Vault updates", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception error)
+        {
+            MessageBox.Show(this, error.Message, "Windows Vault updates", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally { CheckUpdateMenu.IsEnabled = _updates.Available; }
+    }
+
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         _selfHwnd = new WindowInteropHelper(this).Handle;
@@ -96,6 +157,7 @@ public partial class MainWindow : Window
         {
             _hub.Start();
         }
+        if (_updates.AutoInstall) { _updateTimer.Start(); _ = CheckAutomaticUpdate(); }
     }
 
     private async System.Threading.Tasks.Task InitWebViewAsync()
@@ -921,6 +983,7 @@ public partial class MainWindow : Window
         _mcp.Dispose();
         _classifier.Dispose();
         _timer?.Stop();
+        _updateTimer.Stop();
         _monitor?.Dispose();
         _hub.Stop();
         // Close every auxiliary top-level window too, or the app would keep
@@ -933,5 +996,10 @@ public partial class MainWindow : Window
         _toast = null;
         _panel?.Teardown();
         _panel = null;
+        try { _updates.LaunchPendingAfterQuit(Process.GetCurrentProcess().Id); }
+        catch (Exception error)
+        {
+            File.WriteAllText(Path.Combine(Storage.RootDirectory, "Updates", "last-install-error.txt"), error.Message);
+        }
     }
 }
