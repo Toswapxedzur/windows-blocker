@@ -32,6 +32,7 @@ public sealed class WindowsUpdateService
     private string? _pendingPath;
     private string? _pendingHash;
     private long _pendingBytes;
+    private bool _manualInstallApproved;
 
     public bool AutoInstall { get; private set; }
     public bool Available => _allowDevelopment || !Storage.Development;
@@ -75,16 +76,18 @@ public sealed class WindowsUpdateService
 
     public void DiscardPending() => ClearPending();
 
-    public async Task<string> CheckAndStageAsync(CancellationToken cancellation = default)
+    public async Task<string> CheckAndStageAsync(CancellationToken cancellation = default, bool automatic = false)
     {
         if (!Available) return "Production updates are unavailable in Development.";
+        if (automatic && !AutoInstall) return "Automatic updates are off.";
         await _checkGate.WaitAsync(cancellation);
-        try { return await CheckAndStageCoreAsync(cancellation); }
+        try { return await CheckAndStageCoreAsync(cancellation, automatic); }
         finally { _checkGate.Release(); }
     }
 
-    private async Task<string> CheckAndStageCoreAsync(CancellationToken cancellation)
+    private async Task<string> CheckAndStageCoreAsync(CancellationToken cancellation, bool automatic)
     {
+        if (automatic && !AutoInstall) return "Automatic updates are off.";
         using var feedResponse = await _client.GetAsync(_feedUrl, HttpCompletionOption.ResponseHeadersRead, cancellation);
         feedResponse.EnsureSuccessStatusCode();
         using var signatureResponse = await _client.GetAsync(_feedUrl + ".sig", HttpCompletionOption.ResponseHeadersRead, cancellation);
@@ -123,6 +126,11 @@ public sealed class WindowsUpdateService
             if (count != item.Bytes || Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant() != item.Sha256)
                 throw new InvalidDataException("Update download differs from signed metadata.");
             await target.DisposeAsync();
+            if (automatic && !AutoInstall)
+            {
+                File.Delete(path);
+                return "Automatic updates are off.";
+            }
             // Preserve internet origin so Windows can apply its normal SmartScreen policy.
             File.WriteAllText(path + ":Zone.Identifier", "[ZoneTransfer]\r\nZoneId=3\r\nHostUrl=" + item.Url + "\r\n");
             _pendingPath = path;
@@ -139,7 +147,7 @@ public sealed class WindowsUpdateService
 
     public void LaunchPendingAfterQuit(int currentPid)
     {
-        if (_pendingPath is null || _pendingHash is null) return;
+        if (_pendingPath is null || _pendingHash is null || !CanInstallAfterQuit) return;
         var path = _pendingPath;
         var encodedPath = Convert.ToBase64String(Encoding.UTF8.GetBytes(path));
         var log = Convert.ToBase64String(Encoding.UTF8.GetBytes(Path.Combine(_root, "last-install-error.txt")));
@@ -164,7 +172,16 @@ try {{
         start.ArgumentList.Add(Convert.ToBase64String(Encoding.Unicode.GetBytes(script)));
         using var runner = Process.Start(start) ?? throw new InvalidOperationException("Could not launch the update installer.");
         _pendingPath = null;
+        _manualInstallApproved = false;
     }
+
+    public void ApproveManualInstall()
+    {
+        if (_pendingPath is null) throw new InvalidOperationException("No verified update is staged.");
+        _manualInstallApproved = true;
+    }
+
+    internal bool CanInstallAfterQuit => HasPending && (AutoInstall || _manualInstallApproved);
 
     private void ClearPending()
     {
@@ -172,6 +189,7 @@ try {{
         _pendingPath = null;
         _pendingHash = null;
         _pendingBytes = 0;
+        _manualInstallApproved = false;
     }
 
     private static async Task<byte[]> ReadLimitedAsync(HttpContent content, int limit, CancellationToken cancellation)

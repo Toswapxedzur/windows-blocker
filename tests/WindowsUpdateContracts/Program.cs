@@ -75,7 +75,29 @@ try
     update.SetAutoInstall(false);
     if (new WindowsUpdateService(client, feedUrl, key, fixtureRoot, new Version(0, 3, 0), true).AutoInstall)
         throw new ExceptionWithFailedAssertion();
-    Console.WriteLine("PASS verified staging, pending cleanup, and off-by-default preference");
+    if (await update.CheckAndStageAsync(automatic: true) != "Automatic updates are off." || update.HasPending)
+        throw new ExceptionWithFailedAssertion();
+    await update.CheckAndStageAsync();
+    if (!update.HasPending || update.CanInstallAfterQuit) throw new ExceptionWithFailedAssertion();
+    update.ApproveManualInstall();
+    if (!update.CanInstallAfterQuit) throw new ExceptionWithFailedAssertion();
+    update.DiscardPending();
+    if (update.CanInstallAfterQuit) throw new ExceptionWithFailedAssertion();
+    Console.WriteLine("PASS verified staging, manual approval, pending cleanup, and off-by-default preference");
+
+    var requested = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    using var delayedClient = new HttpClient(new GatedFixtureHandler(feedUrl, (string)feed["url"], actualFeed, actualSignature, payload, requested, release));
+    var delayed = new WindowsUpdateService(delayedClient, feedUrl, key, Path.Combine(fixtureRoot, "race"), new Version(0, 3, 0), true);
+    delayed.SetAutoInstall(true);
+    var automaticCheck = delayed.CheckAndStageAsync(automatic: true);
+    await requested.Task.WaitAsync(TimeSpan.FromSeconds(10));
+    delayed.SetAutoInstall(false);
+    release.SetResult(true);
+    if (await automaticCheck != "Automatic updates are off." || delayed.HasPending ||
+        Directory.GetFiles(Path.Combine(fixtureRoot, "race"), "pending-*.exe").Length != 0)
+        throw new ExceptionWithFailedAssertion();
+    Console.WriteLine("PASS disabling automatic updates during download leaves no staged installer");
 
     using var corruptClient = new HttpClient(new FixtureHandler(uri => uri.AbsoluteUri switch
     {
@@ -98,4 +120,22 @@ sealed class FixtureHandler(Func<Uri, byte[]> route) : HttpMessageHandler
 {
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
         Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(route(request.RequestUri!)) });
+}
+
+sealed class GatedFixtureHandler(string feedUrl, string payloadUrl, byte[] feed, byte[] signature, byte[] payload,
+    TaskCompletionSource<bool> requested, TaskCompletionSource<bool> release) : HttpMessageHandler
+{
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var url = request.RequestUri!.AbsoluteUri;
+        if (url == payloadUrl)
+        {
+            requested.TrySetResult(true);
+            await release.Task.WaitAsync(cancellationToken);
+        }
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(url == feedUrl ? feed : url == feedUrl + ".sig" ? signature : payload)
+        };
+    }
 }

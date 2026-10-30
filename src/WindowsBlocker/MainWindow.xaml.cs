@@ -108,7 +108,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            await _updates.CheckAndStageAsync();
+            await _updates.CheckAndStageAsync(automatic: true);
             if (!_updates.AutoInstall) _updates.DiscardPending();
         }
         catch (Exception error)
@@ -128,7 +128,7 @@ public partial class MainWindow : Window
             {
                 var install = MessageBox.Show(this, status + "\n\nQuit Windows Vault and install now?", "Windows Vault updates",
                     MessageBoxButton.YesNo, MessageBoxImage.Question);
-                if (install == MessageBoxResult.Yes) Close();
+                if (install == MessageBoxResult.Yes) { _updates.ApproveManualInstall(); Close(); }
                 else if (!_updates.AutoInstall) _updates.DiscardPending();
             }
             else MessageBox.Show(this, status, "Windows Vault updates", MessageBoxButton.OK, MessageBoxImage.Information);
