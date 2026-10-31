@@ -18,7 +18,7 @@ namespace WindowsBlocker.Updates;
 public sealed class WindowsUpdateService
 {
     private const string FeedUrl = "https://customblocker.com/downloads/updates/windows/current.json";
-    private const string PublicKey = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAElKTk9uWlSTRLYdHyLS+1msTVO0D+0bM0QjSW+6l6e3VD9aXgmh9/HBL5SE5hBZmHiIGFl8E0ZOtHJJYpxD1zhw==";
+    private const string PublicKey = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEMjt8jgwgM0YrB4up1nOhfPRBqfbtWupIksC0WPHs6Whwbngci2XsYvKeM9ItKIxoIxibGGe04/E9UPZMeDjrRA==";
     private const long MaxInstallerBytes = 1_073_741_824;
     private static readonly HttpClient Client = new(new HttpClientHandler { AllowAutoRedirect = false })
         { Timeout = TimeSpan.FromMinutes(10) };
