@@ -9,10 +9,6 @@
     <DockPanel>
         <Menu x:Name="NativeMenu" DockPanel.Dock="Top">
             <MenuItem x:Name="McpConnectionsMenu" Header="AI connections…" AutomationProperties.AutomationId="McpConnectionsMenu" Click="OpenMcpConnections" />
-            <MenuItem x:Name="SettingsMenu" Header="Settings">
-                <MenuItem x:Name="AutoUpdateMenu" Header="Auto install updates" IsCheckable="True" Click="ToggleAutoUpdates" />
-                <MenuItem x:Name="CheckUpdateMenu" Header="Check for updates…" Click="CheckForUpdates" />
-            </MenuItem>
         </Menu>
         <Grid>
         <!-- Dedicated, non-interactive rule host. User scripts execute only in

@@ -40,6 +40,7 @@ public partial class MainWindow : Window
     private readonly SelfPreservationGuard _guard = new();
     private readonly WindowsUpdateService _updates = new();
     private readonly DispatcherTimer _updateTimer = new() { Interval = TimeSpan.FromHours(24) };
+    private bool _checkingUpdate;
     private WinEventMonitor? _monitor;
     private DispatcherTimer? _timer;
     private TimerOverlayWindow? _overlay;
@@ -62,12 +63,6 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         McpConnectionsMenu.Header = NativeLanguage.Text("windows.connections.menu", "AI connections…");
-        SettingsMenu.Header = NativeLanguage.Text("windows.updates.settings", "Settings");
-        AutoUpdateMenu.Header = NativeLanguage.Text("windows.updates.auto", "Auto install updates");
-        CheckUpdateMenu.Header = NativeLanguage.Text("windows.updates.check", "Check for updates…");
-        AutoUpdateMenu.IsChecked = _updates.AutoInstall;
-        AutoUpdateMenu.IsEnabled = _updates.Available;
-        CheckUpdateMenu.IsEnabled = _updates.Available;
         _updateTimer.Tick += async (_, _) => await CheckAutomaticUpdate();
         NativeMenu.FlowDirection = NativeLanguage.Language == "ar" ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         _engine = new EnforcementEngine(_store, _registry, _hub);
@@ -89,17 +84,16 @@ public partial class MainWindow : Window
 
     private void OpenMcpConnections(object sender,RoutedEventArgs e) => new McpConnectionsWindow(this).ShowDialog();
 
-    private void ToggleAutoUpdates(object sender, RoutedEventArgs e)
+    private void ToggleAutoUpdates(bool enabled)
     {
         try
         {
-            _updates.SetAutoInstall(AutoUpdateMenu.IsChecked);
+            _updates.SetAutoInstall(enabled);
             if (_updates.AutoInstall) { _updateTimer.Start(); _ = CheckAutomaticUpdate(); }
             else _updateTimer.Stop();
         }
         catch (Exception error)
         {
-            AutoUpdateMenu.IsChecked = _updates.AutoInstall;
             MessageBox.Show(this, error.Message, "Windows Vault updates", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
@@ -118,9 +112,10 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void CheckForUpdates(object sender, RoutedEventArgs e)
+    private async Task CheckForUpdates()
     {
-        CheckUpdateMenu.IsEnabled = false;
+        if (_checkingUpdate) return;
+        _checkingUpdate = true;
         try
         {
             var status = await _updates.CheckAndStageAsync();
@@ -137,7 +132,7 @@ public partial class MainWindow : Window
         {
             MessageBox.Show(this, error.Message, "Windows Vault updates", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
-        finally { CheckUpdateMenu.IsEnabled = _updates.Available; }
+        finally { _checkingUpdate = false; }
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -316,6 +311,18 @@ public partial class MainWindow : Window
             }
             switch (kindEl.GetString())
             {
+                case "updater":
+                    var action = root.TryGetProperty("message", out var updateMessage)
+                        && updateMessage.ValueKind == JsonValueKind.Object
+                        && updateMessage.TryGetProperty("action", out var updateAction)
+                        ? updateAction.GetString() : "status";
+                    if (action == "set" && updateMessage.TryGetProperty("enabled", out var enabled)
+                        && (enabled.ValueKind == JsonValueKind.True || enabled.ValueKind == JsonValueKind.False))
+                        ToggleAutoUpdates(enabled.GetBoolean());
+                    if (action == "check" && !_checkingUpdate) _ = CheckForUpdates();
+                    NativeReply(root, new JsonObject { ["available"] = _updates.Available,
+                        ["autoInstall"] = _updates.AutoInstall, ["checking"] = _checkingUpdate });
+                    break;
                 case "classifier-message":
                     if (root.TryGetProperty("message", out var classifierMessage) && JsonNode.Parse(classifierMessage.GetRawText()) is JsonObject classifierBody)
                     {
@@ -978,7 +985,16 @@ public partial class MainWindow : Window
         }
         if (!_flushedForClosing)
         {
-            e.Cancel = true; if(_closingFlush) return; _closingFlush=true; _timer?.Stop(); await _mcp.StopAsync(); await _hub.StopAsync(); await _classifier.ShutdownAsync(); _flushedForClosing = true; Close(); return;
+            e.Cancel = true; if(_closingFlush) return; _closingFlush=true;
+            // Start the verified runner before asynchronous service shutdown.
+            // It waits for this process to exit, so it cannot replace running binaries.
+            // A shutdown failure must not silently lose an approved update.
+            try { _updates.LaunchPendingAfterQuit(Process.GetCurrentProcess().Id); }
+            catch (Exception error)
+            {
+                File.WriteAllText(Path.Combine(Storage.RootDirectory, "Updates", "last-install-error.txt"), error.Message);
+            }
+            _timer?.Stop(); await _mcp.StopAsync(); await _hub.StopAsync(); await _classifier.ShutdownAsync(); _flushedForClosing = true; Close(); return;
         }
         _mcp.Dispose();
         _classifier.Dispose();
@@ -996,10 +1012,5 @@ public partial class MainWindow : Window
         _toast = null;
         _panel?.Teardown();
         _panel = null;
-        try { _updates.LaunchPendingAfterQuit(Process.GetCurrentProcess().Id); }
-        catch (Exception error)
-        {
-            File.WriteAllText(Path.Combine(Storage.RootDirectory, "Updates", "last-install-error.txt"), error.Message);
-        }
     }
 }
