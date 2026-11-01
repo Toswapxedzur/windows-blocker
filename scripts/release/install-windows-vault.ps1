@@ -41,28 +41,59 @@ if (!$hasRuntime) {
         if($process.ExitCode -notin 0,3010){throw 'Microsoft WebView2 installation failed.'}
     } finally { if(Test-Path $bootstrap){Remove-Item $bootstrap -Force} }
 }
+$previous=$Destination+'.previous-'+[Guid]::NewGuid().ToString('N')
+$nativeName=if($Environment -eq 'development'){'com.adamancia.vault.local_hub.development'}else{'com.adamancia.vault.local_hub'}
+$nativeKeys=@("HKCU:\Software\Google\Chrome\NativeMessagingHosts\$nativeName","HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\$nativeName")
+$registrations=@($nativeKeys|ForEach-Object {
+    $exists=Test-Path $_
+    @{key=$_;exists=$exists;value=$(if($exists){(Get-Item $_).GetValue('')}else{$null})}
+})
+$shortcut=Join-Path ([Environment]::GetFolderPath('Programs')) ('Windows Vault'+$(if($Environment -eq 'development'){' Development'}else{''})+'.lnk')
+$shortcutExisted=Test-Path $shortcut
+$shortcutBytes=if($shortcutExisted){[IO.File]::ReadAllBytes($shortcut)}else{$null}
 $stage=$Destination+'.staging-'+[Guid]::NewGuid().ToString('N')
 New-Item -ItemType Directory -Force $stage|Out-Null
+$swapped=$false
 try {
     Get-ChildItem $source -Exclude Install.ps1|Copy-Item -Destination $stage -Recurse
     # Clear obsolete files by replacing the application directory, while data
     # stays in the separate current-user support directory.
     @{product='Windows Vault';environment=$Environment;version=$package.version}|ConvertTo-Json|Set-Content "$stage\.vault-install.json" -Encoding UTF8
-    $previous=$Destination+'.previous-'+[Guid]::NewGuid().ToString('N')
     if(Test-Path $Destination){Move-Item $Destination $previous}
-    try { Move-Item $stage $Destination } catch { if(Test-Path $previous){Move-Item $previous $Destination}; throw }
+    Move-Item $stage $Destination
+    $swapped=$true
+    & "$Destination\install-native-host.ps1" -HostDirectory "$Destination\NativeHost" -Environment $Environment
+    $launcher=Join-Path $Destination 'Start-WindowsVault.ps1'
+    @("`$env:VAULT_ENVIRONMENT='$Environment'", "Start-Process -FilePath '$($Destination.Replace("'","''"))\WindowsBlocker.exe'")|Set-Content $launcher -Encoding UTF8
+    $shell=New-Object -ComObject WScript.Shell
+    $link=$shell.CreateShortcut($shortcut)
+    $link.TargetPath="$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
+    $link.Arguments="-NoProfile -ExecutionPolicy Bypass -File `"$launcher`""
+    $link.WorkingDirectory=$Destination
+    $link.IconLocation="$Destination\WindowsBlocker.exe,0"
+    $link.Save()
+} catch {
+    $installError=$_
+    $rollbackErrors=[Collections.Generic.List[string]]::new()
+    if(($swapped -or (Test-Path $previous)) -and (Test-Path $Destination)) {
+        try {Remove-Item $Destination -Recurse -Force} catch {$rollbackErrors.Add("new app: $($_.Exception.Message)")}
+    }
+    if((Test-Path $previous) -and !(Test-Path $Destination)) {
+        try {Move-Item $previous $Destination} catch {$rollbackErrors.Add("old app: $($_.Exception.Message)")}
+    }
+    foreach($registration in $registrations) {
+        try {
+            if($registration.exists){New-Item $registration.key -Force|Out-Null;Set-Item $registration.key $registration.value}
+            else {Remove-Item $registration.key -Recurse -Force -ErrorAction SilentlyContinue}
+        } catch {$rollbackErrors.Add("browser registration: $($_.Exception.Message)")}
+    }
+    try {
+        if($shortcutExisted){[IO.File]::WriteAllBytes($shortcut,$shortcutBytes)}
+        elseif(Test-Path $shortcut){Remove-Item $shortcut -Force}
+    } catch {$rollbackErrors.Add("Start menu shortcut: $($_.Exception.Message)")}
+    if($rollbackErrors.Count){throw "Windows Vault installation failed: $installError. Rollback incomplete: $($rollbackErrors -join '; '). Old app backup: $previous"}
+    throw $installError
 } finally { if(Test-Path $stage){Remove-Item $stage -Recurse -Force} }
-& "$Destination\install-native-host.ps1" -HostDirectory "$Destination\NativeHost" -Environment $Environment
-$launcher=Join-Path $Destination 'Start-WindowsVault.ps1'
-@("`$env:VAULT_ENVIRONMENT='$Environment'", "Start-Process -FilePath '$($Destination.Replace("'","''"))\WindowsBlocker.exe'")|Set-Content $launcher -Encoding UTF8
-$shortcut=Join-Path ([Environment]::GetFolderPath('Programs')) ('Windows Vault'+$(if($Environment -eq 'development'){' Development'}else{''})+'.lnk')
-$shell=New-Object -ComObject WScript.Shell
-$link=$shell.CreateShortcut($shortcut)
-$link.TargetPath="$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
-$link.Arguments="-NoProfile -ExecutionPolicy Bypass -File `"$launcher`""
-$link.WorkingDirectory=$Destination
-$link.IconLocation="$Destination\WindowsBlocker.exe,0"
-$link.Save()
 # Finalize the usable launcher and registrations before removing old files.
 # A transient scanner/file lock must not interrupt a successful installation.
 if(Test-Path $previous){

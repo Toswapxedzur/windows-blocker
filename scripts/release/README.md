@@ -25,6 +25,10 @@ runtime. It needs an internet connection only for that missing dependency.
 Use `-Environment development` for the separate development profile. Close the
 app and connected browser/MCP clients before updating its installation. User data
 stays outside the application directory.
+If installation fails after replacing the application files, the installer restores the
+previous app directory, browser native-host registrations and Start menu shortcut before
+reporting the error. If restoration itself fails, the error names the retained old-app
+backup path for recovery.
 
 Windows 10 22H2 and Windows 11 are the intended x64 targets. Runtime acceptance
 on each OS is required before claiming release support; a cross-build alone is
