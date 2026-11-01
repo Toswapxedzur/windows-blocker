@@ -17,4 +17,4 @@
 - **Compact Info (2026-10-02):** 10px icons retain a 24px click area; explanations use 12px text in a softly shaded, 260px-wide popup with tighter padding. English search copy is concise.
 
 - The retired local model, official dictionary, and personal Knowledge remain dormant. `LEGAL/` retains historical terms.
-- Current install build: version 0.3.0, unsigned one-click x64 Setup.exe wrapping the verified self-contained Install.ps1 payload and portable AI worker. Historical alpha installers stay retired; installer provenance is separate from source milestones.
+- Current install build: version 0.3.1, unsigned one-click x64 Setup.exe with the opt-in updater and signed metadata feed. The exact installer was built and tested on Mini1, passed the owner's final Windows check, and was published on customblocker.com on 2026-11-01. Source `da115be688699ec6b5f0fa3f577318212e592794`; installer SHA-256 `33557ba4d6d40b36794d479050edd105cc94835afba85920347c141186ad7c75`. Historical alpha installers stay retired; installer provenance is separate from source milestones.
