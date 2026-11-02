@@ -103,7 +103,11 @@ try {
     Assert-Worker ($null -ne $group) 'UTF-8 group name did not round trip.'
     $null = Request-Worker 'action' @{action='setClassifierTypePaused'; data=@{typeID=$group.id; paused=$true}}
     $refusal = Request-Worker 'action' @{action='configureClassifierType'; data=@{typeID=$group.id; name='Changed'; applicablePlatformIDs=@('twitter')}}
-    Assert-Worker ($refusal.issue -eq 'Platforms cannot be changed after the group is created.') 'Fixed platforms were not enforced.'
+    Assert-Worker ($null -ne $refusal.issue) 'Legacy platform mutation was not refused.'
+    $unassigned = Request-Worker 'action' @{action='saveClassifierTypePlatforms'; data=@{typeID=$group.id; platformIDs=@()}}
+    Assert-Worker (!$unassigned.issue) 'Empty platform selection was refused.'
+    $reassigned = Request-Worker 'action' @{action='saveClassifierTypePlatforms'; data=@{typeID=$group.id; platformIDs=@('youtube','reddit')}}
+    Assert-Worker (!$reassigned.issue) 'Platform reassignment failed.'
     $null = Request-Worker 'action' @{action='addTag'; data=@{treeID=$group.treeID; name=$tagName; positionX=0; positionY=0}}
     $names = Request-Worker 'tagNames' @{platform='youtube'}
     Assert-Worker (@($names) -contains $tagName) 'Portable taxonomy is incomplete.'

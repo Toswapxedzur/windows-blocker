@@ -63,7 +63,7 @@ Een geblokkeerde app krijgt een verzoek om af te sluiten. **Een geblokkeerde app
 
 ## Inhoud taggen
 
-Elke Content taggen-groep tagt inhoud van de toegewezen platforms met een eigen tagboom en modelinstellingen. Elk platform hoort bij één groep; kies platforms bij het maken, later wijzigen kan niet. Planningen en filters van blocking groups bepalen tagging niet. Schakel tagging in Instellingen in en gebruik **Taggen pauzeren / Taggen hervatten** per groep. Het uitschakelen van feedopname onder **Activiteit → Registratie** stopt ook tagging van die feed.
+Elke Content taggen-groep tagt inhoud van de toegewezen platforms met een eigen tagboom en modelinstellingen. Elk platform hoort tegelijk bij één groep; je kunt platforms en inhoudstypen later wijzigen of alles uit laten. Planningen en filters van blocking groups bepalen tagging niet. Schakel tagging in Instellingen in en gebruik **Taggen pauzeren / Taggen hervatten** per groep. Het uitschakelen van feedopname onder **Activiteit → Registratie** stopt ook tagging van die feed.
 
 ### Tags en modelinstellingen
 

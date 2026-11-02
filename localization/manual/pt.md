@@ -63,7 +63,7 @@ Um aplicativo bloqueado recebe um pedido para encerrar. **Pedir que o aplicativo
 
 ## Marcação de conteúdo
 
-Cada Marcação de conteúdo marca conteúdo das plataformas atribuídas com sua própria árvore de tags e configurações de modelo. Cada plataforma pertence a um grupo; escolha ao criar, pois não poderá mudar depois. Agendas e filtros de bloqueio não controlam tagging. Ative tagging em Configurações e use **Pausar classificação / Retomar classificação** separadamente por grupo. Desligar a gravação de um feed em **Atividade → Gravação** também interrompe seu tagging.
+Cada Marcação de conteúdo marca conteúdo das plataformas atribuídas com sua própria árvore de tags e configurações de modelo. Cada plataforma pertence a um grupo por vez; você pode mudar plataformas e tipos de conteúdo depois ou deixar tudo desativado. Agendas e filtros de bloqueio não controlam tagging. Ative tagging em Configurações e use **Pausar classificação / Retomar classificação** separadamente por grupo. Desligar a gravação de um feed em **Atividade → Gravação** também interrompe seu tagging.
 
 ### Tags e configurações do modelo
 

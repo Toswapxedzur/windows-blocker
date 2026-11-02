@@ -47,8 +47,14 @@ for name in ["translation", "code-manual", "manual"]:
 for catalog in (dest / "translation").glob("*.json"):
     browser_strings = json.loads(catalog.read_text(encoding="utf-8"))
     native_strings = json.loads((editor / "translation" / catalog.name).read_text(encoding="utf-8"))
+    for key in list(browser_strings):
+        if key.startswith(("classifier.", "classifierInfo.")) and key not in native_strings:
+            del browser_strings[key]
     for key, value in native_strings.items():
-        browser_strings.setdefault(key, value)
+        if key.startswith(("classifier.", "classifierInfo.")):
+            browser_strings[key] = value
+        else:
+            browser_strings.setdefault(key, value)
     browser_strings.update(windows_native.get(catalog.name, {}))
     catalog.write_text(json.dumps(browser_strings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 # Windows editor branding comes solely from the selected Windows master.

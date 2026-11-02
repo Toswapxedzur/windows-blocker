@@ -63,7 +63,7 @@ A un'app bloccata viene richiesto di chiudersi. **Richiedi nuovamente la chiusur
 
 ## Etichettatura dei contenuti
 
-Il gruppo assegna tag ai contenuti delle piattaforme associate con il proprio albero tag e le impostazioni del modello. Ogni piattaforma appartiene a un gruppo; sceglila alla creazione, non si può cambiare dopo. Calendari e filtri di blocco non controllano il tagging. Attivalo in Impostazioni e usa **Sospendi i tag / Riprendi i tag** separatamente per ogni gruppo. Disattivare la registrazione del feed in **Attività → Registrazione** ferma anche il suo tagging.
+Il gruppo assegna tag ai contenuti delle piattaforme associate con il proprio albero tag e le impostazioni del modello. Una piattaforma può appartenere a un solo gruppo alla volta; puoi cambiare piattaforme e tipi di contenuto in seguito oppure lasciare tutto disattivato. Calendari e filtri di blocco non controllano il tagging. Attivalo in Impostazioni e usa **Sospendi i tag / Riprendi i tag** separatamente per ogni gruppo. Disattivare la registrazione del feed in **Attività → Registrazione** ferma anche il suo tagging.
 
 ### Tag e impostazioni del modello
 
