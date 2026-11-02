@@ -57,7 +57,7 @@ Custom rules have their own [Code manual](../code-manual/en.md). It explains the
 
 ## Native apps
 
-Use an Apps target's + picker to select installed or currently running apps. Reopen the picker to refresh its list when you launch an app from another folder. **Block every app except these** turns the list into an allowlist. Windows Vault can block ordinary Apple apps and whole browsers; Windows Vault itself and any app sharing its bundle identifier remain protected.
+Use an Apps target's + picker to select installed or currently running apps. Reopen the picker to refresh its list when you launch an app from another folder. **Block every app except these** turns the list into an allowlist. Windows Vault can block ordinary Windows apps and whole browsers; Vault itself remains available.
 
 A blocked app is asked to quit. **Ask a blocked app to quit again every (minutes)** controls retries. Website redirects, page pauses, and feed hiding are enforced by the browser extension; they do not become native app actions.
 
@@ -103,6 +103,8 @@ Platform feeds collect content shown on supported platform pages, whether opened
 ## Settings
 
 Choose the interface language in Settings. Field explanations are available through the small Info buttons in the selected interface language.
+
+Under **Updates**, choose **Check for updates** to check manually. **Auto install updates** starts off; turn it on if you want Vault to install available app updates automatically.
 
 ## Saving and troubleshooting
 
