@@ -1,4 +1,4 @@
-# Hướng dẫn mã Windows Vault
+# Hướng dẫn mã Adamancia Vault trên Windows
 
 [Hướng dẫn sử dụng](../manual/vi.md)
 
@@ -167,19 +167,25 @@ Steam bị chặn trừ khoảng tạm dừng năm phút được kích hoạt b
 
 ## Lời gọi AI từ quy tắc đang chạy
 
-Mỗi custom group chọn một connection/model và reasoning effort trong **AI calls**. Quy tắc Mac và trình duyệt dùng cùng API; request trình duyệt cần Windows Vault kết nối, thông tin nhà cung cấp được giữ tại đó. Nhóm liên kết chia sẻ lựa chọn và daily cap tùy chọn. Để trống nghĩa là không giới hạn ở nhóm; giới hạn tài khoản vẫn áp dụng. Cap theo ngày UTC, tồn tại qua khởi động lại và đếm mọi lần gửi kể cả lỗi. Link cộng usage hiện có; unlink giữ usage trước đó.
+Mỗi lệnh gọi `v.ai` chỉ định connection và model. Prompt và context lưu tùy chọn có trong handler qua `v.context.ai.prompt` và `v.context.ai.context`; Vault không tự gửi chúng. Rule chọn nội dung cho từng lệnh `v.ai`. Sửa các giá trị này làm mất hiệu lực phản hồi của cấu hình cũ.
 
-`v.ai({ prompt, input? })` trả request ID ngay. Gọi bên trong handler, không gọi lúc đăng ký quy tắc. `input` nhận mọi giá trị JSON; prompt/input tối đa20KB mỗi phần. Phản hồi đến trong event `ai`: `{requestId, ok, text, citations,
-error}`. Success text is at most48KB; citations are `{url,title}`. Giữ liên kết nguồn hiển thị và có thể nhấp khi trình bày câu trả lời từ web search. Search luôn sẵn có cho mô hình. Không có deadline cố định của app; concurrency có giới hạn; không fallback nhà cung cấp hoặc tự retry. Phản hồi là dữ liệu, không thực thi như JavaScript; quy tắc quyết định có dùng hành động hiện có nào.
+Tên `conversation` tùy chọn lưu toàn bộ hội thoại user/assistant trên máy; lần gọi sau gửi tối đa16KB tin nhắn mới nhất. Có thể đổi model. Xóa hoặc unlink group không xóa hội thoại. Lịch sử cũ trùng tên khi nhập được đổi tên và báo trong `preservedConversations`. Dùng `v.ai({op:"delete", conversation:"name"})` để xóa hội thoại dùng chung; phản hồi đến qua event `ai`. Lệnh cùng tên đang chạy trả `ai-conversation-busy`.
 
-Ví dụ bảng có nút `ask` và trường `note`:
+`v.ai({ model, reasoningEffort?, conversation?, prompt, input? })` trả request ID ngay. Gọi bên trong handler. `model` là ID có sẵn; effort là `default`, `low`, `medium`, `high` nếu được hỗ trợ. `input` nhận JSON bất kỳ; prompt/input tối đa20KB mỗi mục. Replies arrive as `ai` events: `{requestId, ok, text, citations,
+error, preservedConversations?}`. Success text is at most48KB; citations are `{url,title}`. Preserve visible,
+clickable source links when displaying answers based on web search. Search is always
+available to the model. Generation requests have no fixed app deadline. Several
+named conversations can run at once; calls using the same name run in order.
+Start another call from an `ai` event for a sequence. Vault chưa lập lịch lệnh gọi trễ. Năng lực và quota nhà cung cấp có thể xếp hàng hoặc từ chối yêu cầu; không có fallback hay retry tự động. Phản hồi là dữ liệu, không phải JavaScript; rule chọn action.
+
+Ví dụ panel có nút `ask` và trường `note`:
 
 ```javascript
 (on, v) => {
   let pending = null;
   on("panel", ({ data }) => {
     if (data.controlId !== "ask" || pending) return;
-    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+    pending = v.ai({ model: "chatgpt:MODEL_ID", conversation: "notes", prompt: v.context.ai.prompt || "Summarize this text.", input: {context:v.context.ai.context, note:data.values?.note ?? ""} });
   });
   on("ai", ({ data }) => {
     if (data.requestId !== pending) return;
@@ -190,6 +196,6 @@ Ví dụ bảng có nút `ask` và trường `note`:
 }
 ```
 
-Lời gọi đang chờ không chạy lại sau khởi động. Run, tắt/bật lại và xóa sẽ loại phản hồi cũ; trình duyệt mất kết nối báo `ai-unavailable`. Lỗi khác: `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`. Lời gọi lỗi không thay kết quả trước mà quy tắc muốn giữ. State của quy tắc vẫn giới hạn64KB.
+Lệnh đang chờ không chạy lại sau restart. Run, disable/re-enable và delete loại bỏ phản hồi cũ; browser mất kết nối báo `ai-unavailable`. Lỗi khác: `ai-not-configured`, `ai-invalid-input`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`, `ai-conversation-storage-unavailable`. Lệnh lỗi không ghi đè kết quả đã giữ; state giới hạn64KB.
 
-Tìm lựa chọn không cần credential bằng `rule_ai_models` trên Mac hoặc `settings-rule-ai-models` trong trình duyệt; cấu hình `ruleAI` qua đường set-group hiện có. Các trường: `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`) và `dailyRequestLimit` (null hoặc1–100000). Dùng lựa chọn được trả về; không đặt key hoặc URL nhà cung cấp trong mã nguồn quy tắc.
+Tùy chọn không cần credential: `rule_ai_models` trên Windows hoặc `settings-rule-ai-models` trong browser; cấu hình `ruleAI` qua set-group hiện có. Trường gồm `dailyRequestLimit` (null hoặc1–100000), `prompt`, `context` (chuỗi tùy chọn tối đa16KB mỗi trường). Chọn model và effort ở từng lần gọi. Dùng lựa chọn được trả về; không đưa key hoặc provider URL vào rule.

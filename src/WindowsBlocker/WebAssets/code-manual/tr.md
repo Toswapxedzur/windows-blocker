@@ -1,4 +1,4 @@
-# Windows Vault kod kılavuzu
+# Adamancia Vault Windows kod kılavuzu
 
 [Kullanıcı kılavuzu](../manual/tr.md)
 
@@ -167,19 +167,25 @@ Steam, Snooze veya panel düğmesiyle başlatılan beş dakikalık duraklama dı
 
 ## Çalışan kuraldan AI çağrıları
 
-Her custom group **AI calls** içinde bir connection/model ve reasoning effort seçer. Mac ve tarayıcı kuralları aynı API'yi kullanır; tarayıcı istekleri bağlı Windows Vault gerektirir ve provider kimlik bilgileri orada kalır. Bağlı gruplar seçimi ve isteğe bağlı günlük sınırı paylaşır. Boş değer grup sınırı olmadığı anlamına gelir; hesap limitleri geçerlidir. Sınır UTC gününe göre hesaplanır, restart'ta korunur ve başarısızlar dahil gönderilen denemeleri sayar. Link mevcut kullanımı birleştirir; unlink önceki kullanımı saklar.
+Her `v.ai` çağrısı bağlantı ve modeli belirtir. İsteğe bağlı kaydedilmiş prompt/context, handler içinde `v.context.ai.prompt` ve `v.context.ai.context` ile kullanılabilir; Vault bunları otomatik göndermez. Her `v.ai` çağrısına ne ekleneceğine kural karar verir. Düzenleme eski yapılandırmanın yanıtlarını geçersiz kılar.
 
-`v.ai({ prompt, input? })` hemen request ID döndürür. Kuralı kaydederken değil, handler içinde çağırın. `input` herhangi bir JSON olabilir; prompt/input ayrı ayrı20KB ile sınırlıdır. Yanıtlar `ai` event'leriyle gelir: `{requestId, ok, text, citations,
-error}`. Success text is at most48KB; citations are `{url,title}`. Web arama yanıtlarında kaynak bağlantılarını görünür ve tıklanabilir tutun. Search modele daima açıktır. Sabit app deadline yoktur, concurrency sınırlıdır; provider fallback veya otomatik retry yoktur. Yanıtlar veridir, JavaScript olarak çalıştırılmaz; mevcut eylemleri kural seçer.
+İsteğe bağlı `conversation` adı tam kullanıcı/asistan dökümünü yerel olarak saklar; sonraki çağrı en yeni mesajların16KB kadarını ekler. Model değiştirilebilir. Grup silinse veya bağlantısı kaldırılsa da konuşmalar kalır. İçe aktarılan aynı adlı eski geçmişler yeniden adlandırılır ve `preservedConversations` içinde bildirilir. Paylaşılan konuşmayı silmek için `v.ai({op:"delete", conversation:"name"})` kullanın; yanıt `ai` olayıyla gelir. Aynı addaki etkin çağrı `ai-conversation-busy` döndürür.
 
-`ask` düğmesi ve `note` alanı olan bir panel için:
+`v.ai({ model, reasoningEffort?, conversation?, prompt, input? })` hemen request ID döndürür. Handler içinde çağırın. `model` kullanılabilir bir ID; destekleniyorsa effort `default`, `low`, `medium`, `high`. `input` her tür JSON olabilir; prompt/input ayrı ayrı20KB ile sınırlı. Replies arrive as `ai` events: `{requestId, ok, text, citations,
+error, preservedConversations?}`. Success text is at most48KB; citations are `{url,title}`. Preserve visible,
+clickable source links when displaying answers based on web search. Search is always
+available to the model. Generation requests have no fixed app deadline. Several
+named conversations can run at once; calls using the same name run in order.
+Start another call from an `ai` event for a sequence. Vault henüz gecikmeli çağrıları planlamaz. Sağlayıcı kapasitesi ve kotalar istekleri sıraya alabilir veya reddedebilir; yedek sağlayıcı ya da otomatik tekrar yoktur. Yanıtlar veri, JavaScript değildir; eylemleri kural seçer.
+
+`ask` düğmesi ve `note` alanı içeren panel örneği:
 
 ```javascript
 (on, v) => {
   let pending = null;
   on("panel", ({ data }) => {
     if (data.controlId !== "ask" || pending) return;
-    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+    pending = v.ai({ model: "chatgpt:MODEL_ID", conversation: "notes", prompt: v.context.ai.prompt || "Summarize this text.", input: {context:v.context.ai.context, note:data.values?.note ?? ""} });
   });
   on("ai", ({ data }) => {
     if (data.requestId !== pending) return;
@@ -190,6 +196,6 @@ error}`. Success text is at most48KB; citations are `{url,title}`. Web arama yan
 }
 ```
 
-Bekleyen çağrılar restart sonrasında yeniden oynatılmaz. Run, devre dışı bırakıp yeniden etkinleştirme ve silme eski yanıtları atar; bağlantısız tarayıcı `ai-unavailable` bildirir. Diğer hatalar: `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`. Başarısız çağrı kuralın koruduğu önceki sonucu ezmez. Kural state sınırı64KB olarak kalır.
+Bekleyen çağrılar yeniden başlatmada tekrarlanmaz. Run, devre dışı bırakıp yeniden etkinleştirme ve silme eski yanıtları atar; bağlantısız tarayıcı `ai-unavailable` bildirir. Diğer hatalar: `ai-not-configured`, `ai-invalid-input`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`, `ai-conversation-storage-unavailable`. Başarısız çağrı saklanan sonucu değiştirmez; state sınırı64KB.
 
-Kimlik bilgisi gerektirmeyen seçimleri Mac'te `rule_ai_models`, tarayıcıda `settings-rule-ai-models` ile keşfedin; mevcut set-group yolu üzerinden `ruleAI` yapılandırın. Alanlar: `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`) ve `dailyRequestLimit` (null veya1–100000). Dönen seçimi kullanın; kural kaynağına key ya da provider URL koymayın.
+Kimlik bilgisi gerektirmeyen seçenekler Windows `rule_ai_models` veya tarayıcı `settings-rule-ai-models` üzerinden bulunur; `ruleAI` mevcut set-group yoluyla ayarlanır. Alanlar: `dailyRequestLimit` (null veya1–100000), `prompt`, `context` (isteğe bağlı, her biri16KB metin). Model ve effort her çağrıda seçilir. Dönen seçeneği kullanın; key veya provider URL’yi kurala yazmayın.

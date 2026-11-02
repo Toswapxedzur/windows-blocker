@@ -1,4 +1,4 @@
-# Manuale del codice Windows Vault
+# Manuale del codice di Adamancia Vault per Windows
 
 [Manuale utente](../manual/it.md)
 
@@ -167,19 +167,25 @@ Steam è bloccato tranne durante una pausa di cinque minuti attivata da Snooze o
 
 ## Chiamate IA da una regola in esecuzione
 
-Ogni custom group sceglie una connessione/modello e reasoning effort in **AI calls**. Le regole Mac e browser usano la stessa API; le richieste browser richiedono Windows Vault collegato e le credenziali provider restano lì. I gruppi collegati condividono la selezione e un limite giornaliero facoltativo. Campo vuoto significa nessun limite di gruppo, ma restano i limiti account. Il limite usa il giorno UTC, persiste al riavvio e conta i tentativi inviati inclusi quelli falliti. Link combina l’uso già fatto; unlink mantiene l’uso precedente.
+Ogni chiamata `v.ai` specifica connessione e modello. Prompt e contesto salvati come opzione sono disponibili negli handler tramite `v.context.ai.prompt` e `v.context.ai.context`; Vault non li invia automaticamente. La regola sceglie cosa includere in ogni chiamata `v.ai`. Modificarli invalida le risposte della configurazione precedente.
 
-`v.ai({ prompt, input? })` restituisce subito un request ID. Chiamala dentro un handler, non durante la registrazione della regola. `input` può essere qualsiasi valore JSON; prompt/input sono limitati a20KB ciascuno. Le risposte arrivano come eventi `ai`: `{requestId, ok, text, citations,
-error}`. Success text is at most48KB; citations are `{url,title}`. Mantieni visibili e cliccabili i link alle fonti nelle risposte della ricerca Web. Search è sempre disponibile al modello. Nessuna deadline fissa dell’app, concorrenza limitata, nessun fallback provider o retry automatico. Le risposte sono dati, non vengono eseguite come JavaScript; la regola decide quali azioni esistenti intraprendere.
+Il nome facoltativo `conversation` salva localmente l’intera trascrizione utente/assistente; la chiamata successiva include fino a16KB dei messaggi più recenti. Il modello può cambiare. Le conversazioni restano dopo eliminazione o scollegamento del gruppo. Le vecchie cronologie omonime importate vengono rinominate e indicate in `preservedConversations`. Usa `v.ai({op:"delete", conversation:"name"})` per eliminare una conversazione condivisa; la risposta arriva come evento `ai`. Una chiamata attiva con lo stesso nome restituisce `ai-conversation-busy`.
 
-Per un pannello con un pulsante `ask` e un campo `note`:
+`v.ai({ model, reasoningEffort?, conversation?, prompt, input? })` restituisce subito un ID richiesta. Chiamala dentro un handler. `model` è un ID disponibile; effort `default`, `low`, `medium` o `high` se supportato. `input` accetta qualsiasi JSON; prompt e input hanno limite20KB ciascuno. Replies arrive as `ai` events: `{requestId, ok, text, citations,
+error, preservedConversations?}`. Success text is at most48KB; citations are `{url,title}`. Preserve visible,
+clickable source links when displaying answers based on web search. Search is always
+available to the model. Generation requests have no fixed app deadline. Several
+named conversations can run at once; calls using the same name run in order.
+Start another call from an `ai` event for a sequence. Vault non pianifica ancora chiamate ritardate. Capacità e quote del provider possono accodare o rifiutare le richieste; niente fallback o retry automatico. Le risposte sono dati, non JavaScript; la regola sceglie le azioni.
+
+Esempio di pannello con pulsante `ask` e campo `note`:
 
 ```javascript
 (on, v) => {
   let pending = null;
   on("panel", ({ data }) => {
     if (data.controlId !== "ask" || pending) return;
-    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+    pending = v.ai({ model: "chatgpt:MODEL_ID", conversation: "notes", prompt: v.context.ai.prompt || "Summarize this text.", input: {context:v.context.ai.context, note:data.values?.note ?? ""} });
   });
   on("ai", ({ data }) => {
     if (data.requestId !== pending) return;
@@ -190,6 +196,6 @@ Per un pannello con un pulsante `ask` e un campo `note`:
 }
 ```
 
-Le chiamate pendenti non vengono riprodotte dopo il riavvio. Run, disabilita/riabilita ed elimina scartano risposte obsolete; un browser disconnesso segnala `ai-unavailable`. Altri errori: `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`. Le chiamate fallite non sovrascrivono un risultato precedente conservato dalla regola. Il limite di stato resta64KB.
+Le chiamate in sospeso non ripartono al riavvio. Run, disattivazione/riattivazione ed eliminazione scartano le vecchie risposte; un browser disconnesso segnala `ai-unavailable`. Altri errori: `ai-not-configured`, `ai-invalid-input`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`, `ai-conversation-storage-unavailable`. Un errore non sovrascrive un risultato conservato; state limitato a64KB.
 
-Scopri opzioni senza credenziali con `rule_ai_models` su Mac o `settings-rule-ai-models` nel browser; configura `ruleAI` tramite il percorso set-group esistente. Campi: `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`) e `dailyRequestLimit` (null o1–100000). Usa una scelta restituita; non inserire chiavi o URL provider nel sorgente della regola.
+Opzioni senza credenziali: `rule_ai_models` su Windows o `settings-rule-ai-models` nel browser; configura `ruleAI` tramite il percorso set-group esistente. Campi: `dailyRequestLimit` (null o1–100000), `prompt` e `context` (stringhe opzionali fino a16KB ciascuna). Scegli modello ed effort per ogni chiamata. Usa un’opzione restituita; non inserire chiavi o URL provider nella regola.

@@ -174,7 +174,7 @@ try
     await Tool("set_settings",new(){["patch"]=new JsonObject{["quickAddEnabled"]=false}});
     using(var ownApp=Process.GetProcessById(appPid))
     {
-        var editor=NativeInteraction.Windows(appPid).Select(AutomationElement.FromHandle).First(window=>window.Current.Name=="Windows Vault");
+        var editor=NativeInteraction.Windows(appPid).Select(AutomationElement.FromHandle).First(window=>window.Current.Name=="Vault");
         AutomationElement? EditorButton(string name)=>editor.FindFirst(TreeScope.Descendants,new AndCondition(new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Button),new PropertyCondition(AutomationElement.NameProperty,name)));
         var settingsButton=await WaitElement(()=>EditorButton("Settings"));Check(settingsButton!=null,"Shared Settings button is reachable in the actual WebView accessibility tree");
         ((InvokePattern)settingsButton!.GetCurrentPattern(InvokePattern.Pattern)).Invoke();

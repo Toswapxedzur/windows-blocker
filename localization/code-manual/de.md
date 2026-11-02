@@ -1,4 +1,4 @@
-# Windows Vault Codehandbuch
+# Code-Handbuch für Adamancia Vault unter Windows
 
 [Benutzerhandbuch](../manual/de.md)
 
@@ -167,19 +167,25 @@ Steam wird blockiert, außer während einer fünfminütigen Pause, ausgelöst du
 
 ## KI-Aufrufe aus einer laufenden Regel
 
-Jede benutzerdefinierte Gruppe wählt unter **AI calls** eine Verbindung/ein Modell und Reasoning effort. Mac- und Browserregeln verwenden dieselbe API. Browseranfragen benötigen ein verbundenes Windows Vault; Anbieterdaten bleiben dort. Verknüpfte Gruppen teilen Auswahl und optionales Tageslimit. Leer bedeutet kein Gruppenlimit; Kontolimits gelten weiter. Das Limit gilt pro UTC-Tag, bleibt nach Neustart bestehen und zählt gesendete Versuche einschließlich Fehlern. Verknüpfen addiert bisherigen Verbrauch; Trennen behält ihn.
+Jeder Aufruf von `v.ai` wählt Verbindung und Modell. Der optionale gespeicherte Prompt und Kontext sind in Handlern über `v.context.ai.prompt` und `v.context.ai.context` verfügbar; Vault sendet sie nicht automatisch. Die Regel bestimmt den Inhalt jedes `v.ai`-Aufrufs. Änderungen machen Antworten der alten Konfiguration ungültig.
 
-`v.ai({ prompt, input? })` liefert sofort eine Request-ID. Innerhalb eines Handlers aufrufen, nicht bei der Registrierung. `input` kann jeder JSON-Wert sein; prompt und input sind je auf20KB begrenzt. Antworten kommen als `ai`-Events: `{requestId, ok, text, citations,
-error}`. Success text is at most48KB; citations are `{url,title}`. Bei Websuche sichtbare, anklickbare Quellenlinks beibehalten. Suche ist für das Modell immer verfügbar. Keine feste App-Frist, begrenzte Gleichzeitigkeit, kein Provider-Fallback und keine automatische Wiederholung. Antworten sind Daten und werden nicht als JavaScript ausgeführt; die Regel entscheidet über bestehende Aktionen.
+Ein optionales `conversation`-Label speichert das vollständige Nutzer-/Assistentenprotokoll lokal; beim nächsten Aufruf werden bis zu16KB der neuesten Nachrichten mitgegeben. Das Modell kann wechseln. Unterhaltungen bleiben nach Löschen oder Aufheben der Verknüpfung erhalten. Importierte gleichnamige Altverläufe werden getrennt benannt und in `preservedConversations` gemeldet. Mit `v.ai({op:"delete", conversation:"name"})` wird eine gemeinsame Unterhaltung gelöscht; die Antwort kommt als `ai`-Ereignis. Ein aktiver Aufruf mit demselben Namen liefert `ai-conversation-busy`.
 
-Für ein Panel mit einer `ask`-Schaltfläche und einem `note`-Feld:
+`v.ai({ model, reasoningEffort?, conversation?, prompt, input? })` liefert sofort eine Request-ID. Nur innerhalb eines Handlers aufrufen. `model` ist eine verfügbare Modell-ID; Aufwand: `default`, `low`, `medium` oder `high`, soweit unterstützt. `input` darf beliebiges JSON sein; Prompt und Input sind je auf20KB begrenzt. Replies arrive as `ai` events: `{requestId, ok, text, citations,
+error, preservedConversations?}`. Success text is at most48KB; citations are `{url,title}`. Preserve visible,
+clickable source links when displaying answers based on web search. Search is always
+available to the model. Generation requests have no fixed app deadline. Several
+named conversations can run at once; calls using the same name run in order.
+Start another call from an `ai` event for a sequence. Vault plant noch keine verzögerten Aufrufe. Anbieterkapazität und Kontingente können Anforderungen verzögern oder ablehnen; es gibt keinen Fallback und keine automatische Wiederholung. Antworten sind Daten, kein JavaScript; Aktionen bestimmt die Regel.
+
+Beispiel für ein Panel mit `ask`-Schaltfläche und `note`-Feld:
 
 ```javascript
 (on, v) => {
   let pending = null;
   on("panel", ({ data }) => {
     if (data.controlId !== "ask" || pending) return;
-    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+    pending = v.ai({ model: "chatgpt:MODEL_ID", conversation: "notes", prompt: v.context.ai.prompt || "Summarize this text.", input: {context:v.context.ai.context, note:data.values?.note ?? ""} });
   });
   on("ai", ({ data }) => {
     if (data.requestId !== pending) return;
@@ -190,6 +196,6 @@ Für ein Panel mit einer `ask`-Schaltfläche und einem `note`-Feld:
 }
 ```
 
-Offene Aufrufe werden nach Neustart nicht wiederholt. Run, Deaktivieren/Aktivieren und Löschen verwerfen alte Antworten; ein getrennter Browser meldet `ai-unavailable`. Weitere Fehler: `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`. Fehlgeschlagene Aufrufe überschreiben kein vorheriges, von der Regel behaltenes Ergebnis. Zustandslimit bleibt64KB.
+Offene Aufrufe werden nach Neustart nicht wiederholt. Run, Deaktivieren/Aktivieren und Löschen verwerfen alte Antworten; ein getrennter Browser meldet `ai-unavailable`. Weitere Fehler: `ai-not-configured`, `ai-invalid-input`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`, `ai-conversation-storage-unavailable`. Fehlgeschlagene Aufrufe überschreiben kein behaltenes Ergebnis; Zustandslimit64KB.
 
-Anmeldedatenfreie Optionen: Mac `rule_ai_models`, Browser `settings-rule-ai-models`. `ruleAI` über den vorhandenen set-group-Pfad konfigurieren. Felder: `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`), `dailyRequestLimit` (null oder1–100000). Eine zurückgegebene Auswahl nutzen; keinen Schlüssel oder Anbieter-URL in den Regelquelltext schreiben.
+Anmeldedatenfreie Modelle: Windows `rule_ai_models`, Browser `settings-rule-ai-models`. `ruleAI` über den bestehenden set-group-Pfad konfigurieren. Felder: `dailyRequestLimit` (null oder1–100000), `prompt` und `context` (optionale Strings bis16KB). Modell und Aufwand pro Aufruf angeben. Eine zurückgegebene Auswahl nutzen; Schlüssel und Anbieter-URL nicht in den Regelquelltext schreiben.

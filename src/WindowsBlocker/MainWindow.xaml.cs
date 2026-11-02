@@ -94,7 +94,7 @@ public partial class MainWindow : Window
         }
         catch (Exception error)
         {
-            MessageBox.Show(this, error.Message, "Windows Vault updates", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, error.Message, "Vault updates", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -121,16 +121,16 @@ public partial class MainWindow : Window
             var status = await _updates.CheckAndStageAsync();
             if (_updates.HasPending)
             {
-                var install = MessageBox.Show(this, status + "\n\nQuit Windows Vault and install now?", "Windows Vault updates",
+                var install = MessageBox.Show(this, status + "\n\nQuit Vault and install now?", "Vault updates",
                     MessageBoxButton.YesNo, MessageBoxImage.Question);
                 if (install == MessageBoxResult.Yes) { _updates.ApproveManualInstall(); Close(); }
                 else if (!_updates.AutoInstall) _updates.DiscardPending();
             }
-            else MessageBox.Show(this, status, "Windows Vault updates", MessageBoxButton.OK, MessageBoxImage.Information);
+            else MessageBox.Show(this, status, "Vault updates", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception error)
         {
-            MessageBox.Show(this, error.Message, "Windows Vault updates", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, error.Message, "Vault updates", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         finally { _checkingUpdate = false; }
     }

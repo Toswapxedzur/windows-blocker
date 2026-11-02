@@ -97,9 +97,9 @@ public sealed class WindowsUpdateService
         var item = VerifyFeed(feed, signature, _publicKey);
         var installed = _installedVersion;
         var offered = Version.Parse(item.Version!);
-        if (offered <= installed) return "Windows Vault is up to date.";
+        if (offered <= installed) return "Vault is up to date.";
         if (_pendingPath is not null && File.Exists(_pendingPath) && _pendingHash == item.Sha256)
-            return $"Windows Vault {item.Version} is ready to install after quit.";
+            return $"Vault {item.Version} is ready to install after quit.";
 
         ClearPending();
         var path = Path.Combine(_root, "pending-" + Guid.NewGuid().ToString("N") + ".exe");
@@ -136,7 +136,7 @@ public sealed class WindowsUpdateService
             _pendingPath = path;
             _pendingHash = item.Sha256;
             _pendingBytes = item.Bytes;
-            return $"Windows Vault {item.Version} is ready to install after quit.";
+            return $"Vault {item.Version} is ready to install after quit.";
         }
         catch
         {
@@ -237,7 +237,7 @@ try {{
             uri.Host != "customblocker.com" || uri.Port != 443 ||
             !uri.AbsolutePath.StartsWith("/downloads/installers/install-v", StringComparison.Ordinal) ||
             !uri.AbsolutePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || uri.Query.Length != 0 || uri.Fragment.Length != 0)
-            throw new InvalidDataException("Update metadata is not for this Windows Vault installation.");
+            throw new InvalidDataException("Update metadata is not for this Vault installation.");
     }
 
     private sealed record UpdatePreference(bool AutoInstall);

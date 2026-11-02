@@ -1,6 +1,6 @@
-# Manual do usuário Windows Vault
+# Manual do usuário Adamancia Vault para Windows
 
-Windows Vault tem três páginas: **Vault** bloqueia aplicativos native, **Classifier** marca conteúdo compatível do navegador e **Activity** mostra o uso registrado. A extensão coleta conteúdo compatível e aplica bloqueio no navegador. Instale e conecte-a no navegador que você usa.
+Vault para Windows tem três páginas: **Vault** bloqueia aplicativos native, **Classifier** marca conteúdo compatível do navegador e **Activity** mostra o uso registrado. A extensão coleta conteúdo compatível e aplica bloqueio no navegador. Instale e conecte-a no navegador que você usa.
 
 ## Início rápido
 
@@ -47,7 +47,7 @@ Enquanto estiver congelado, é possível prolongar a espera e adicionar um PIN s
 
 Use **Vincular** para conectar grupos explicitamente selecionados em outros programas Vault. Grupos vinculados compartilham o nome, as configurações de política compatíveis, os alvos, o uso e as condições de congelamento. Cada programa edita e aplica os tipos de alvo compatíveis; outras entradas de alvo continuam disponíveis aos programas vinculados. Desvincular mantém cada grupo e suas configurações.
 
-Se um membro vinculado estiver offline, talvez não seja possível editá-lo. Abra Windows Vault e o navegador vinculado para reconectar. Uma política salva localmente pode continuar ativa enquanto o membro estiver offline.
+Se um membro vinculado estiver offline, talvez não seja possível editá-lo. Abra Vault para Windows e o navegador vinculado para reconectar. Uma política salva localmente pode continuar ativa enquanto o membro estiver offline.
 
 ## Ajuda
 

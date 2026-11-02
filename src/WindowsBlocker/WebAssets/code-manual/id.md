@@ -1,4 +1,4 @@
-# Panduan kode Windows Vault
+# Panduan kode Adamancia Vault untuk Windows
 
 [Panduan pengguna](../manual/id.md)
 
@@ -167,19 +167,25 @@ Steam diblokir kecuali selama jeda lima menit yang dipicu Snooze atau tombol pan
 
 ## Panggilan AI dari aturan berjalan
 
-Setiap custom group memilih satu connection/model dan reasoning effort di **AI calls**. Mac dan browser rule menggunakan API sama; request browser memerlukan Windows Vault terhubung, kredensial provider tetap di sana. Grup tertaut berbagi pilihan dan optional daily request cap. Kosong berarti tanpa cap grup, tetapi limit akun tetap berlaku. Cap memakai hari UTC, bertahan setelah restart, menghitung semua attempt terkirim termasuk gagal. Link menggabungkan usage yang ada; unlink mempertahankan usage sebelumnya.
+Setiap panggilan `v.ai` menetapkan koneksi dan model. Prompt/konteks opsional yang disimpan tersedia di handler melalui `v.context.ai.prompt` dan `v.context.ai.context`; Vault tidak mengirimkannya otomatis. Rule memilih isi setiap panggilan `v.ai`. Mengeditnya membatalkan balasan dari konfigurasi lama.
 
-`v.ai({ prompt, input? })` langsung mengembalikan request ID. Panggil di dalam handler, bukan saat mendaftarkan rule. `input` boleh berupa JSON apa pun; prompt/input masing-masing dibatasi20KB. Balasan hadir sebagai event `ai`: `{requestId, ok, text, citations,
-error}`. Success text is at most48KB; citations are `{url,title}`. Pertahankan link sumber yang terlihat dan dapat diklik saat menampilkan jawaban web-search. Search selalu tersedia bagi model. Tidak ada deadline app tetap; concurrency terbatas; tidak ada provider fallback atau retry otomatis. Respons adalah data, tidak dieksekusi sebagai JavaScript. Rule menentukan tindakan yang sudah ada.
+Nama `conversation` opsional menyimpan seluruh transkrip pengguna/asisten secara lokal; panggilan berikutnya menyertakan hingga16KB pesan terbaru. Model dapat diganti. Conversation tetap ada saat group dihapus atau dilepas tautannya. Riwayat lama bernama sama yang diimpor dan diganti nama dilaporkan di `preservedConversations`. Gunakan `v.ai({op:"delete", conversation:"name"})` untuk menghapus conversation bersama; balasan datang sebagai event `ai`. Panggilan aktif dengan nama sama menghasilkan `ai-conversation-busy`.
 
-Untuk panel dengan tombol `ask` dan field `note`:
+`v.ai({ model, reasoningEffort?, conversation?, prompt, input? })` langsung mengembalikan request ID. Panggil di dalam handler. `model` adalah ID model yang tersedia; effort `default`, `low`, `medium`, atau `high` jika didukung. `input` menerima JSON apa pun; prompt/input masing-masing dibatasi20KB. Replies arrive as `ai` events: `{requestId, ok, text, citations,
+error, preservedConversations?}`. Success text is at most48KB; citations are `{url,title}`. Preserve visible,
+clickable source links when displaying answers based on web search. Search is always
+available to the model. Generation requests have no fixed app deadline. Several
+named conversations can run at once; calls using the same name run in order.
+Start another call from an `ai` event for a sequence. Vault belum menjadwalkan panggilan tertunda. Kapasitas dan kuota provider dapat menunda atau menolak permintaan; tidak ada fallback atau retry otomatis. Balasan adalah data, bukan JavaScript; rule memilih tindakan.
+
+Contoh panel dengan tombol `ask` dan kolom `note`:
 
 ```javascript
 (on, v) => {
   let pending = null;
   on("panel", ({ data }) => {
     if (data.controlId !== "ask" || pending) return;
-    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+    pending = v.ai({ model: "chatgpt:MODEL_ID", conversation: "notes", prompt: v.context.ai.prompt || "Summarize this text.", input: {context:v.context.ai.context, note:data.values?.note ?? ""} });
   });
   on("ai", ({ data }) => {
     if (data.requestId !== pending) return;
@@ -190,6 +196,6 @@ Untuk panel dengan tombol `ask` dan field `note`:
 }
 ```
 
-Call yang masih berjalan tidak diputar ulang setelah restart. Run, disable/re-enable, dan delete membuang balasan usang; browser terputus melaporkan `ai-unavailable`. Error lain: `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`. Call gagal tidak menimpa hasil lama yang dipertahankan rule. Batas state tetap64KB.
+Panggilan tertunda tidak diputar ulang setelah restart. Run, disable/re-enable, atau delete membuang balasan lama; browser terputus melaporkan `ai-unavailable`. Error lain: `ai-not-configured`, `ai-invalid-input`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`, `ai-conversation-storage-unavailable`. Panggilan gagal tidak menimpa hasil yang disimpan; batas state64KB.
 
-Temukan pilihan bebas kredensial dengan `rule_ai_models` di Mac atau `settings-rule-ai-models` di browser; konfigurasi `ruleAI` melalui jalur set-group yang ada. Field: `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`), `dailyRequestLimit` (null atau1–100000). Gunakan pilihan yang dikembalikan; jangan taruh key atau URL provider di source rule.
+Pilihan tanpa kredensial tersedia lewat `rule_ai_models` di Windows atau `settings-rule-ai-models` di browser; atur `ruleAI` melalui set-group yang ada. Field: `dailyRequestLimit` (null atau1–100000), `prompt`, `context` (string opsional hingga16KB masing-masing). Pilih model dan effort pada tiap panggilan. Gunakan pilihan yang dikembalikan; jangan masukkan key atau URL provider ke sumber rule.

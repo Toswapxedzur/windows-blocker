@@ -1,6 +1,6 @@
-# Windows Vault ব্যবহারকারী নির্দেশিকা
+# Windows-এর Adamancia Vault ব্যবহারকারী নির্দেশিকা
 
-Windows Vault-এ তিনটি পৃষ্ঠা আছে: native app ব্লক করতে **Vault**, সমর্থিত browser content-এ tag দিতে **শ্রেণিবিন্যাস**, এবং রেকর্ড করা ব্যবহার দেখাতে **কার্যকলাপ**। Browser extension সমর্থিত content সংগ্রহ ও browser blocking প্রয়োগ করে। ব্যবহৃত browser-এ এটি install ও connect করুন।
+Windows-এর Vault-এ তিনটি পৃষ্ঠা আছে: native app ব্লক করতে **Vault**, সমর্থিত browser content-এ tag দিতে **শ্রেণিবিন্যাস**, এবং রেকর্ড করা ব্যবহার দেখাতে **কার্যকলাপ**। Browser extension সমর্থিত content সংগ্রহ ও browser blocking প্রয়োগ করে। ব্যবহৃত browser-এ এটি install ও connect করুন।
 
 ## দ্রুত শুরু
 
@@ -47,7 +47,7 @@ Windows Vault-এ তিনটি পৃষ্ঠা আছে: native app ব�
 
 অন্যান্য Vault প্রোগ্রামে স্পষ্টভাবে নির্বাচিত গ্রুপগুলো যুক্ত করতে **সংযুক্ত করুন** ব্যবহার করুন। সংযুক্ত গ্রুপ নাম, সমর্থিত নীতি-সেটিং, লক্ষ্য, ব্যবহার এবং ফ্রিজ-শর্ত ভাগ করে। প্রতিটি প্রোগ্রাম সমর্থিত লক্ষ্য সম্পাদনা ও কার্যকর করে; অন্য লক্ষ্যগুলো সংযুক্ত প্রোগ্রামের জন্য থাকে। সংযোগ বিচ্ছিন্ন করলে প্রতিটি গ্রুপ ও সেটিং অক্ষত থাকে।
 
-Connected member offline হলে editing অনুপলব্ধ হতে পারে। পুনঃসংযোগে Windows Vault ও linked browser খুলুন। Member offline থাকলেও locally saved policy প্রযোজ্য থাকতে পারে।
+Connected member offline হলে editing অনুপলব্ধ হতে পারে। পুনঃসংযোগে Windows-এর Vault ও linked browser খুলুন। Member offline থাকলেও locally saved policy প্রযোজ্য থাকতে পারে।
 
 ## সহায়তা নিন
 

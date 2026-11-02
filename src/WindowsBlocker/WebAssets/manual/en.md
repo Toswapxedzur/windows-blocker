@@ -1,6 +1,6 @@
-# Windows Vault user manual
+# Adamancia Vault on Windows user manual
 
-Windows Vault has three pages: **Vault** blocks native apps, **Content tagging** tags supported browser content, and **Activity** shows recorded use. The browser extension collects supported content and applies browser blocking. Install and connect it in the browser you use.
+Vault on Windows has three pages: **Vault** blocks native apps, **Content tagging** tags supported browser content, and **Activity** shows recorded use. The browser extension collects supported content and applies browser blocking. Install and connect it in the browser you use.
 
 ## Quick start
 
@@ -47,7 +47,7 @@ While frozen, the wait can be extended and a PIN can be added if none exists. Th
 
 Use **Link** to connect explicitly selected groups in other Vault programs. Linked groups share their name, supported policy settings, targets, usage, and freeze conditions. Each program edits and enforces the target types it supports; other target entries remain available to linked programs. Unlinking keeps each group and its settings.
 
-If a linked member is offline, editing can be unavailable. Open Windows Vault and the linked browser to reconnect. A local saved policy can continue to apply while a member is offline.
+If a linked member is offline, editing can be unavailable. Open Vault on Windows and the linked browser to reconnect. A local saved policy can continue to apply while a member is offline.
 
 ## Getting help
 
@@ -57,7 +57,7 @@ Custom rules have their own [Code manual](../code-manual/en.md). It explains the
 
 ## Native apps
 
-Use an Apps target's + picker to select installed or currently running apps. Reopen the picker to refresh its list when you launch an app from another folder. **Block every app except these** turns the list into an allowlist. Windows Vault can block ordinary Windows apps and whole browsers; Vault itself remains available.
+Use an Apps target's + picker to select installed or currently running apps. Reopen the picker to refresh its list when you launch an app from another folder. **Block every app except these** turns the list into an allowlist. Vault on Windows can block ordinary Windows apps and whole browsers; Vault itself remains available.
 
 A blocked app is asked to quit. **Ask a blocked app to quit again every (minutes)** controls retries. Website redirects, page pauses, and feed hiding are enforced by the browser extension; they do not become native app actions.
 

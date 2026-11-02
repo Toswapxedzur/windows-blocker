@@ -1,4 +1,4 @@
-# Windows Vault-codemanual
+# Codemanual voor Adamancia Vault op Windows
 
 [Gebruikershandleiding](../manual/nl.md)
 
@@ -167,19 +167,25 @@ Steam wordt geblokkeerd, behalve tijdens een pauze van vijf minuten gestart door
 
 ## AI-aanroepen vanuit een actieve regel
 
-Elke custom group kiest onder **AI calls** een verbinding/model en reasoning effort. Mac- en browserregels gebruiken dezelfde API; browserverzoeken vereisen een verbonden Windows Vault en providergegevens blijven daar. Gekoppelde groepen delen de keuze en een optionele dagelijkse limiet. Leeg betekent geen groepslimiet; accountlimieten blijven gelden. De limiet gebruikt UTC-dagen, blijft na herstart bestaan en telt ingediende pogingen, ook mislukte. Link combineert bestaand gebruik; unlink behoudt eerder gebruik.
+Elke `v.ai`-aanroep kiest een verbinding en model. De optioneel opgeslagen prompt en context zijn in handlers beschikbaar via `v.context.ai.prompt` en `v.context.ai.context`; Vault verstuurt ze niet automatisch. De regel kiest wat elke `v.ai`-aanroep meestuurt. Wijzigingen maken antwoorden van de oude configuratie ongeldig.
 
-`v.ai({ prompt, input? })` retourneert direct een request-ID. Roep dit binnen een handler aan, niet bij registratie. `input` mag elke JSON-waarde zijn; prompt en input zijn elk maximaal20KB. Antwoorden komen als `ai`-events: `{requestId, ok, text, citations,
-error}`. Success text is at most48KB; citations are `{url,title}`. Behoud zichtbare, klikbare bronlinks bij antwoorden op basis van web search. Search is altijd beschikbaar voor het model. Geen vaste app-deadline; concurrency is begrensd; geen provider-fallback of automatische retry. Antwoorden zijn gegevens, geen uitvoerbare JavaScript; de regel beslist welke bestaande acties worden uitgevoerd.
+Een optionele `conversation`-naam bewaart lokaal het volledige transcript van gebruiker en assistent; de volgende aanroep neemt maximaal16KB van de nieuwste berichten mee. Het model kan wisselen. Gesprekken blijven bestaan na verwijderen of ontkoppelen van een groep. Geïmporteerde oude gesprekken met dezelfde naam krijgen aparte namen en staan in `preservedConversations`. Verwijder een gedeeld gesprek met `v.ai({op:"delete", conversation:"name"})`; het antwoord komt als `ai`-event. Een actieve aanroep met dezelfde naam geeft `ai-conversation-busy` terug.
 
-Voor een paneel met een `ask`-knop en een `note`-veld:
+`v.ai({ model, reasoningEffort?, conversation?, prompt, input? })` geeft direct een request-ID. Roep dit aan in een handler. `model` is een beschikbaar model-ID; effort is `default`, `low`, `medium` of `high` indien ondersteund. `input` mag elke JSON-waarde zijn; prompt en input zijn elk20KB. Replies arrive as `ai` events: `{requestId, ok, text, citations,
+error, preservedConversations?}`. Success text is at most48KB; citations are `{url,title}`. Preserve visible,
+clickable source links when displaying answers based on web search. Search is always
+available to the model. Generation requests have no fixed app deadline. Several
+named conversations can run at once; calls using the same name run in order.
+Start another call from an `ai` event for a sequence. Vault plant nog geen uitgestelde aanroepen. Provider-capaciteit en quota kunnen verzoeken in de wachtrij zetten of weigeren; er is geen fallback of automatische retry. Antwoorden zijn data, geen JavaScript; de regel kiest de acties.
+
+Voorbeeld van een panel met `ask`-knop en `note`-veld:
 
 ```javascript
 (on, v) => {
   let pending = null;
   on("panel", ({ data }) => {
     if (data.controlId !== "ask" || pending) return;
-    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+    pending = v.ai({ model: "chatgpt:MODEL_ID", conversation: "notes", prompt: v.context.ai.prompt || "Summarize this text.", input: {context:v.context.ai.context, note:data.values?.note ?? ""} });
   });
   on("ai", ({ data }) => {
     if (data.requestId !== pending) return;
@@ -190,6 +196,6 @@ Voor een paneel met een `ask`-knop en een `note`-veld:
 }
 ```
 
-Openstaande aanroepen worden na herstart niet opnieuw afgespeeld. Run, uitschakelen/opnieuw inschakelen en verwijderen verwerpen oude antwoorden; een niet-verbonden browser meldt `ai-unavailable`. Andere fouten: `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`. Mislukte aanroepen overschrijven geen eerder resultaat dat de regel bewaart. De statelimiet blijft64KB.
+Openstaande aanroepen worden na herstart niet herhaald. Run, uitschakelen/opnieuw inschakelen en verwijderen verwerpen oude antwoorden; een niet-verbonden browser meldt `ai-unavailable`. Overige fouten: `ai-not-configured`, `ai-invalid-input`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable` en `ai-conversation-storage-unavailable`. Fouten overschrijven geen bewaard resultaat; de state-limiet blijft64KB.
 
-Ontdek keuzes zonder inloggegevens met `rule_ai_models` op Mac of `settings-rule-ai-models` in de browser. Configureer `ruleAI` via het bestaande set-group-pad. Velden: `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`) en `dailyRequestLimit` (null of1–100000). Gebruik een geretourneerde keuze; zet geen sleutel of provider-URL in de regelbron.
+Opties zonder inloggegevens: Windows `rule_ai_models` of browser `settings-rule-ai-models`; stel `ruleAI` in via de bestaande set-group-route. Velden: `dailyRequestLimit` (null of1–100000), `prompt` en `context` (optionele strings van maximaal16KB). Kies model en effort per aanroep. Gebruik een gevonden optie; zet geen sleutel of provider-URL in de regel.

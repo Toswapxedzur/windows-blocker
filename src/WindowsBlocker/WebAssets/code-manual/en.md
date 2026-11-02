@@ -1,4 +1,4 @@
-# Windows Vault code manual
+# Adamancia Vault on Windows code manual
 
 [User manual](../manual/en.md)
 
@@ -58,7 +58,7 @@ Named objects survive Run and restart in reserved `v.state.$vaultTime`; do not e
 - `v.quit(appId)`: one normal quit request, subject to the same protection/retry policy; no ongoing block.
 - `v.open(appId)`: asks Windows to open an installed app; no success callback.
 
-Other calls return `undefined`. App IDs are bundle identifiers (for example `com.valvesoftware.steam`), available in events. Block/Quit can target Apple apps and whole browsers. They ignore Windows Vault's bundle identifier and its helpers, including any other app sharing that identity, and empty IDs. Panel IDs/state belong to one group, not its display name.
+Other calls return `undefined`. App IDs are bundle identifiers (for example `com.valvesoftware.steam`), available in events. Block/Quit can target Apple apps and whole browsers. They ignore Vault on Windows app's bundle identifier and its helpers, including any other app sharing that identity, and empty IDs. Panel IDs/state belong to one group, not its display name.
 
 ## Events
 
@@ -190,7 +190,7 @@ Steam is blocked except during a five-minute pause triggered by Snooze or its pa
 Every `v.ai` call names its connection/model; there is no group default. Copy a
 model ID from **AI calls** or discover the credential-free catalog through Vault's
 rule AI model tool. Reasoning effort is chosen per call. Browser requests require
-a connected Windows Vault; provider credentials stay there. Linked groups share
+a connected Vault on Windows; provider credentials stay there. Linked groups share
 the optional daily request cap. Blank means no group cap; account limits still apply.
 The cap uses the UTC day, persists across restart, and counts submitted attempts
 including failures. Linking combines existing usage; unlinking retains prior usage.
@@ -201,7 +201,7 @@ The rule chooses what to include in each `v.ai` call. Editing either value
 invalidates replies from the old configuration.
 
 `conversation` is an optional name. Without it, the call is stateless. With it,
-Windows Vault saves the complete user/assistant transcript locally and includes
+Vault on Windows saves the complete user/assistant transcript locally and includes
 up to16KB of the newest messages on the next call. The same conversation may
 switch models; only portable text is passed to the new model. A name is shared
 by every rule and group on this device. Deleting or unlinking a group leaves

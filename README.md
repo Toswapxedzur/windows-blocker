@@ -19,13 +19,13 @@ The code is the product contract. The maintained in-app manual is [src/WindowsBl
 
 ## Build
 
-Generate shared assets from the sibling browser/Mac checkouts with `bash sync-webui.sh`, then use the checked-in solution and project on mini1’s Windows VM:
+Generate shared assets from the sibling browser/Mac checkouts with `bash sync-webui.sh`, then use the checked-in solution and project on Mini2’s Windows VM:
 
 ```powershell
 dotnet build WindowsBlocker.sln
 ```
 
-The application project targets `net8.0-windows` and uses WPF plus WebView2. Build and run it on Windows with the required .NET SDK, bundled Classifier worker, and WebView2 runtime available. All product tests run on mini1; Windows presentation uses its VM. Windows 10 and Windows 11 are the intended OS targets. Do not infer a verified OS or CPU architecture from a cross-build.
+The application project targets `net8.0-windows` and uses WPF plus WebView2. Build and run it on Windows with the required .NET SDK, bundled Classifier worker, and WebView2 runtime available. All product tests run on Mini2; Windows presentation uses its VM. Windows 10 and Windows 11 are the intended OS targets. Do not infer a verified OS or CPU architecture from a cross-build.
 
 The [release scripts](scripts/release/README.md) create a self-contained x64 package with the verified Classifier worker. Installation is per user, preserves the separate data directory, registers the browser helper and adds a Start menu shortcut. End users need the WebView2 Runtime; the installer obtains Microsoft's signed bootstrapper when it is absent. They do not need the development SDKs or Node.
 

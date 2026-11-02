@@ -461,7 +461,7 @@
       }
     },
     getManifest: function () {
-      return window.__CB_DESKTOP_MANIFEST || { version: "2.2.8", name: "Mac Vault" };
+      return window.__CB_DESKTOP_MANIFEST || { version: "2.2.8", name: "Vault" };
     },
     sendMessage: function (message, callback) {
       var result = handleSendMessage(message);

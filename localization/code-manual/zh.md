@@ -1,4 +1,4 @@
-# Windows Vault 代码手册
+# Adamancia Vault for Windows 代码手册
 
 [用户手册](../manual/zh.md)
 
@@ -167,10 +167,16 @@ file.data = { requestId: string, op: string, path: string, ok: boolean,
 
 ## 运行中规则的 AI 调用
 
-每个 custom group 在 **AI calls** 中选择一个 connection/model 和 reasoning effort。Mac 与浏览器规则使用同一 API；浏览器请求需要连接 Windows Vault，提供商凭据保存在那里。链接组共享选择和可选的每日请求上限。留空表示组级不限额，账户限制仍适用。上限按 UTC 日计算，重启后保留，并统计已提交的尝试（包括失败）。Link 合并现有用量；unlink 保留之前的用量。
+每次 `v.ai` 调用都指定连接和模型。可选保存的 prompt 与 context 可在 handler 中通过 `v.context.ai.prompt` 和 `v.context.ai.context` 读取；Vault 不会自动发送它们。每次 `v.ai` 调用包含哪些内容由规则决定。修改设置后，旧配置的回复会失效。
 
-`v.ai({ prompt, input? })` 立即返回 request ID。请在 handler 中调用，不要在注册规则时调用。`input` 可以是任意 JSON 值；prompt/input 各限20KB。回复通过 `ai` 事件到达：`{requestId, ok, text, citations,
-error}`. Success text is at most48KB; citations are `{url,title}`。展示网页搜索答案时保留可见、可点击的来源链接。模型始终可以使用搜索。没有固定的 app 截止时间，并发数受限；不会回退到其他提供商或自动重试。回复是数据，不会作为 JavaScript 执行；规则决定采取哪些现有操作。
+可选的 `conversation` 名称会在本地保存完整的用户/助手记录；下次调用会带上最新消息，最多16KB。对话可切换模型。删除或取消关联组不会删除对话。同名旧记录导入后会另取名称，并在 `preservedConversations` 中报告。用 `v.ai({op:"delete", conversation:"name"})` 删除共享对话；回复通过 `ai` 事件返回。同名调用正在运行时会返回 `ai-conversation-busy`。
+
+`v.ai({ model, reasoningEffort?, conversation?, prompt, input? })` 会立即返回 request ID。请在 handler 内调用。`model` 是可用模型 ID；支持时 effort 可为 `default`、`low`、`medium` 或 `high`。`input` 可为任意 JSON；prompt 与 input 各限20KB。Replies arrive as `ai` events: `{requestId, ok, text, citations,
+error, preservedConversations?}`. Success text is at most48KB; citations are `{url,title}`. Preserve visible,
+clickable source links when displaying answers based on web search. Search is always
+available to the model. Generation requests have no fixed app deadline. Several
+named conversations can run at once; calls using the same name run in order.
+Start another call from an `ai` event for a sequence. Vault 尚不安排延迟调用。提供商容量和配额可能使请求排队或被拒绝；没有提供商回退或自动重试。回复是数据，不会执行为 JavaScript；规则决定采取哪些操作。
 
 包含 `ask` 按钮和 `note` 字段的面板示例：
 
@@ -179,7 +185,7 @@ error}`. Success text is at most48KB; citations are `{url,title}`。展示网页
   let pending = null;
   on("panel", ({ data }) => {
     if (data.controlId !== "ask" || pending) return;
-    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+    pending = v.ai({ model: "chatgpt:MODEL_ID", conversation: "notes", prompt: v.context.ai.prompt || "Summarize this text.", input: {context:v.context.ai.context, note:data.values?.note ?? ""} });
   });
   on("ai", ({ data }) => {
     if (data.requestId !== pending) return;
@@ -190,6 +196,6 @@ error}`. Success text is at most48KB; citations are `{url,title}`。展示网页
 }
 ```
 
-未完成的调用不会在重启后重放。Run、禁用/重新启用和删除会丢弃过时回复；断开的浏览器会报告 `ai-unavailable`。其他错误包括 `ai-not-configured`、`ai-invalid-input`、`ai-busy`、`ai-daily-limit`、`ai-request-failed` 和 `ai-usage-storage-unavailable`。失败调用不会覆盖规则选择保留的旧结果。规则 state 仍受64KB限制。
+待处理调用不会在重启后重放。Run、禁用/重新启用和删除会丢弃旧回复；断开的浏览器报告 `ai-unavailable`。其他错误包括 `ai-not-configured`、`ai-invalid-input`、`ai-daily-limit`、`ai-request-failed`、`ai-usage-storage-unavailable` 和 `ai-conversation-storage-unavailable`。失败调用不会覆盖保留结果；state 仍限64KB。
 
-可在 Mac 使用 `rule_ai_models`，或在浏览器使用 `settings-rule-ai-models` 查找无需凭据的选项；通过现有 set-group 路径配置 `ruleAI`。字段为 `providerModel`、`accountID`、`reasoningEffort`（`default`、`low`、`medium`、`high`）和 `dailyRequestLimit`（null 或1–100000）。使用返回的选项；不要把 key 或 provider URL 写进规则源码。
+无需凭据的选项可通过 Windows 的 `rule_ai_models` 或浏览器的 `settings-rule-ai-models` 获取；通过现有 set-group 路径设置 `ruleAI`。字段为 `dailyRequestLimit`（null 或1–100000）、`prompt` 和 `context`（可选字符串，每项最多16KB）。每次调用都选择模型和 effort。使用返回的选项；不要把 key 或 provider URL 写入规则源码。

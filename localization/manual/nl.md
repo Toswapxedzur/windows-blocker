@@ -1,6 +1,6 @@
-# Gebruikershandleiding Windows Vault
+# Gebruikershandleiding Adamancia Vault voor Windows
 
-Windows Vault heeft drie pagina's: **Vault** blokkeert native apps, **Classifier** tagt ondersteunde browserinhoud en **Activity** toont geregistreerd gebruik. De browserextensie verzamelt ondersteunde inhoud en past browserblokkering toe. Installeer en verbind de extensie in de browser die je gebruikt.
+Vault voor Windows heeft drie pagina's: **Vault** blokkeert native apps, **Classifier** tagt ondersteunde browserinhoud en **Activity** toont geregistreerd gebruik. De browserextensie verzamelt ondersteunde inhoud en past browserblokkering toe. Installeer en verbind de extensie in de browser die je gebruikt.
 
 ## Snel starten
 
@@ -47,7 +47,7 @@ Tijdens het bevriezen kan de wachttijd worden verlengd en kan een PIN worden toe
 
 Gebruik **Koppelen** om expliciet geselecteerde groepen in andere Vault-programma's te verbinden. Gekoppelde groepen delen hun naam, ondersteunde beleidsinstellingen, doelen, gebruik en bevriesvoorwaarden. Elk programma bewerkt en handhaaft de doeltypen die het ondersteunt; andere doelen blijven beschikbaar voor gekoppelde programma's. Ontkoppelen behoudt elke groep en de instellingen ervan.
 
-Als een gekoppeld lid offline is, kan bewerken niet beschikbaar zijn. Open Windows Vault en de gekoppelde browser om opnieuw te verbinden. Een lokaal opgeslagen beleid kan actief blijven terwijl een lid offline is.
+Als een gekoppeld lid offline is, kan bewerken niet beschikbaar zijn. Open Vault voor Windows en de gekoppelde browser om opnieuw te verbinden. Een lokaal opgeslagen beleid kan actief blijven terwijl een lid offline is.
 
 ## Hulp krijgen
 

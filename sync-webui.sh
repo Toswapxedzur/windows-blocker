@@ -21,15 +21,26 @@ for name in files:
     # Browser assets stay canonical even if the Mac mirror has not been synced.
     source = ext / name if (ext / name).is_file() and name != "popup.html" else editor / name
     shutil.copy2(source, dest / name)
+for name in ["popup.html", "rule-core.js"]:
+    page = dest / name
+    page.write_text(page.read_text(encoding="utf-8").replace("Vault on Mac", "Vault on Windows"), encoding="utf-8")
+# Windows update strings are maintained in the checked-in desktop catalogs;
+# preserve them when refreshing the shared browser and Mac strings.
+windows_native = {}
+for catalog in (dest / "translation").glob("*.json"):
+    current = json.loads(catalog.read_text(encoding="utf-8"))
+    windows_native[catalog.name] = {key: value for key, value in current.items() if key.startswith("windows.")}
 for name in ["translation", "code-manual", "manual"]:
     target = dest / name
     if target.exists(): shutil.rmtree(target)
-    source = editor / name if name in ["code-manual", "manual"] else ext / name
     if name in ["manual", "code-manual"]:
+        source = root / "localization" / name
         target.mkdir(parents=True)
-        shutil.copy2(source / "en.md", target / "en.md")
+        for page in source.glob("*.md"):
+            if page.name != "package-info.md": shutil.copy2(page, target / page.name)
+        assert len(list(target.glob("*.md"))) == 20, f"{name} must cover all supported languages"
     else:
-        shutil.copytree(source, target)
+        shutil.copytree(ext / name, target)
 # The browser editor and the native Classifier scene have separate English
 # catalogs. Windows hosts both in one WebView, so it needs their union in every
 # locale. Keep browser wording for shared keys and add native-only scene keys.
@@ -38,6 +49,7 @@ for catalog in (dest / "translation").glob("*.json"):
     native_strings = json.loads((editor / "translation" / catalog.name).read_text(encoding="utf-8"))
     for key, value in native_strings.items():
         browser_strings.setdefault(key, value)
+    browser_strings.update(windows_native.get(catalog.name, {}))
     catalog.write_text(json.dumps(browser_strings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 # Windows editor branding comes solely from the selected Windows master.
 # Browser-only master previews must not leak into the desktop payload.
@@ -47,31 +59,14 @@ icons.mkdir()
 for icon in (root / "src/WindowsBlocker/Assets/BrowserIcons").iterdir():
     if icon.suffix not in (".png", ".svg") and icon.name != "package-info.md": continue
     shutil.copy2(icon, icons / icon.name)
-# Native API differences are kept explicit in English; locale catalogs remain
-# the same canonical assets for the separate translation batch.
-for folder in ["manual", "code-manual"]:
-    page = dest / folder / "en.md"
-    text = page.read_text(encoding="utf-8").replace("Mac Vault", "Windows Vault").replace("this Mac", "this PC").replace("the Mac", "the PC")
-    text = text.replace("asks macOS to open", "asks Windows to open")
-    text = text.replace("App IDs are bundle identifiers (for example `com.valvesoftware.steam`), available in events. Block/Quit ignore `com.apple.*`, browsers, Vault and its helpers, and empty IDs.",
-        "App IDs are full executable paths or application user model IDs, available in events and the app picker. Block/Quit ignore Windows system processes, browsers, Vault and its helpers, and empty IDs.")
-    text = text.replace("Running includes foreground, menu-bar and background `.app` processes with bundle IDs; not every Unix process.", "Running lists identified Windows application processes.")
-    text = text.replace("displayed as plain text on Mac", "displayed as plain text on Windows")
-    text = text.replace('"com.valvesoftware.steam"', json.dumps(r"C:\Program Files (x86)\Steam\steam.exe"))
-    text = text.replace("Safari rules use the browser code manual and run in Safari Vault's own containing app.", "Browser rules use the browser extension's code manual.")
-    text = text.replace("not the system Keychain", "with access restricted to the current Windows user")
-    page.write_text(text, encoding="utf-8")
-for folder in ["manual", "code-manual"]:
-    source = root / "localization" / folder
-    if source.exists():
-        for page in source.glob("*.md"):
-            if page.stem not in {"en", "package-info"}: shutil.copy2(page, dest / folder / page.name)
+# Windows guides, including English and native API differences, are maintained
+# in localization/ and copied above.
 target = dest / "classifier"
 if target.exists(): shutil.rmtree(target)
 shutil.copytree(mac / "classifier/Sources/VaultClassifierApp/WebAssets", target)
 shutil.copy2(mac / "Sources/MacBlockerCore/Resources/custom-rule-runtime.js", dest / "custom-rule-runtime.js")
 version = ET.parse(root / "src/WindowsBlocker/WindowsBlocker.csproj").findtext("PropertyGroup/Version")
-config = 'window.__CB_DESKTOP_PROGRAM_ID="windowsapp";\nwindow.__CB_DESKTOP_MANIFEST=' + json.dumps({"version": version, "name": "Windows Vault"}) + ';\n'
+config = 'window.__CB_DESKTOP_PROGRAM_ID="windowsapp";\nwindow.__CB_DESKTOP_MANIFEST=' + json.dumps({"version": version, "name": "Vault"}) + ';\n'
 (dest / "desktop-config.js").write_text(config, encoding="utf-8")
 html = (dest / "popup.html").read_text(encoding="utf-8")
 marker = '    <script src="chrome-shim.js"></script>'
@@ -88,7 +83,7 @@ def windows_metadata(value):
     if isinstance(value, list): return [windows_metadata(item) for item in value]
     if isinstance(value, dict): return {key: windows_metadata(item) for key, item in value.items()}
     if not isinstance(value, str): return value
-    return (value.replace("Mac Vault", "Windows Vault").replace("macapp", "windowsapp")
+    return (value.replace("Vault on Mac", "Vault on Windows").replace("Mac Vault", "Vault on Windows").replace("macapp", "windowsapp")
         .replace("chrome, edge, safari", "chrome, edge")
         .replace("macOS application (by bundle identifier)", "Windows application (by full executable path or application user model ID)")
         .replace("by bundle identifier", "by full executable path or application user model ID")

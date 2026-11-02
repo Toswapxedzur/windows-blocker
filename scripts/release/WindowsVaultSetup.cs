@@ -31,14 +31,14 @@ internal static class WindowsVaultSetup
         }
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        var form = new Form { Text = "Install Windows Vault", ClientSize = new Size(480, 200),
+        var form = new Form { Text = "Install Adamancia Vault", ClientSize = new Size(480, 200),
             StartPosition = FormStartPosition.CenterScreen, FormBorderStyle = FormBorderStyle.FixedDialog,
             MaximizeBox = false, MinimizeBox = false, Font = new Font("Segoe UI", 10) };
-        var title = new Label { Text = "Windows Vault", Font = new Font("Segoe UI", 19, FontStyle.Bold),
+        var title = new Label { Text = "Adamancia Vault", Font = new Font("Segoe UI", 19, FontStyle.Bold),
             Location = new Point(24, 20), Size = new Size(430, 36) };
         var status = new Label { Text = "Installing for your account…", Location = new Point(24, 68), Size = new Size(430, 56) };
         var progress = new ProgressBar { Style = ProgressBarStyle.Marquee, Location = new Point(24, 132), Size = new Size(430, 8) };
-        var open = new Button { Text = "Open Windows Vault", Location = new Point(248, 152), Size = new Size(206, 30), Visible = false };
+        var open = new Button { Text = "Open Vault", Location = new Point(248, 152), Size = new Size(206, 30), Visible = false };
         form.Controls.AddRange(new Control[] { title, status, progress, open });
         bool busy = true;
         int result = 1;
@@ -49,7 +49,7 @@ internal static class WindowsVaultSetup
             {
                 string installed = await Task.Run(() => Install(environment, destination));
                 result = 0;
-                status.Text = "Installed. You can also open Windows Vault from the Start menu.";
+                status.Text = "Installed. You can also open Vault from the Start menu.";
                 open.Click += delegate
                 {
                     Process.Start(new ProcessStartInfo {

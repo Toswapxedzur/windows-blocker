@@ -1,6 +1,6 @@
-# Podręcznik użytkownika Windows Vault
+# Podręcznik użytkownika Adamancia Vault w systemie Windows
 
-Windows Vault ma trzy strony: **Vault** blokuje aplikacje natywne, **Classifier** taguje obsługiwane treści przeglądarkowe, a **Activity** pokazuje zarejestrowane użycie. Rozszerzenie przeglądarki zbiera obsługiwane treści i stosuje blokowanie w przeglądarce. Zainstaluj je i połącz w używanej przeglądarce.
+Vault w systemie Windows ma trzy strony: **Vault** blokuje aplikacje natywne, **Classifier** taguje obsługiwane treści przeglądarkowe, a **Activity** pokazuje zarejestrowane użycie. Rozszerzenie przeglądarki zbiera obsługiwane treści i stosuje blokowanie w przeglądarce. Zainstaluj je i połącz w używanej przeglądarce.
 
 ## Szybki start
 
@@ -47,7 +47,7 @@ Podczas zamrożenia można wydłużyć czas oczekiwania i dodać PIN, jeśli go 
 
 Użyj **Połącz**, aby połączyć jawnie wybrane grupy w innych programach Vault. Połączone grupy współdzielą nazwę, obsługiwane ustawienia zasad, cele, użycie i warunki zamrożenia. Każdy program edytuje i egzekwuje obsługiwane przez siebie typy celów; pozostałe wpisy celów są dostępne dla połączonych programów. Rozłączenie zachowuje każdą grupę i jej ustawienia.
 
-Jeśli połączony członek jest offline, edycja może być niedostępna. Otwórz Windows Vault i połączoną przeglądarkę, aby połączyć się ponownie. Zapisane lokalnie zasady mogą nadal obowiązywać, gdy członek jest offline.
+Jeśli połączony członek jest offline, edycja może być niedostępna. Otwórz Vault w systemie Windows i połączoną przeglądarkę, aby połączyć się ponownie. Zapisane lokalnie zasady mogą nadal obowiązywać, gdy członek jest offline.
 
 ## Uzyskiwanie pomocy
 

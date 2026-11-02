@@ -1,4 +1,4 @@
-# Windows Vaultコードマニュアル
+# Adamancia Vault for Windows コードマニュアル
 
 [ユーザーマニュアル](../manual/ja.md)
 
@@ -167,19 +167,25 @@ Snoozeまたはパネルボタンで起動する5分間の一時停止中を除�
 
 ## 実行中ルールからの AI 呼び出し
 
-各 custom group は **AI calls** で接続/モデルと reasoning effort を選択します。Mac とブラウザーのルールは同じ API を使います。ブラウザー要求には Windows Vault 接続が必要で、プロバイダー認証情報はそこに保持されます。リンク済みグループは選択と任意の日次上限を共有します。空欄はグループ上限なしですが、アカウント制限は適用されます。上限は UTC 日で計算し、再起動後も維持、失敗を含む送信試行を数えます。Link は既存使用量を合算し、Unlink 後も過去分は保持されます。
+各 `v.ai` 呼び出しで接続とモデルを指定します。任意で保存した prompt と context は、handler 内で `v.context.ai.prompt` と `v.context.ai.context` として利用できます。Vault は自動送信しません。各 `v.ai` 呼び出しに含める内容はルールが選びます。設定変更前の応答は無効になります。
 
-`v.ai({ prompt, input? })` は即時に request ID を返します。ルール登録時でなくハンドラー内で呼びます。`input` は任意の JSON 値で、prompt/input はそれぞれ20KBまでです。応答は `ai` イベント `{requestId, ok, text, citations,
-error}`. Success text is at most48KB; citations are `{url,title}`。Web 検索の回答を表示する際はソースリンクを見えるクリック可能な状態に保ちます。検索は常にモデルから利用可能です。アプリの固定期限はなく、並行処理は制限されます。プロバイダーフォールバックや自動再試行はありません。応答はデータであり JavaScript として実行されません。既存アクションを取るかはルールが決めます。
+任意の `conversation` 名を指定すると、ユーザーとアシスタントの会話全体がローカルに保存され、次回は最新メッセージ最大16KBが含まれます。会話中にモデルを切り替えられます。グループ削除やリンク解除後も会話は残ります。同名の旧履歴を別名で取り込んだ場合、改名結果は `preservedConversations` に記録されます。共有会話は `v.ai({op:"delete", conversation:"name"})` で削除し、応答は `ai` イベントで届きます。同じ名前の実行中呼び出しは `ai-conversation-busy` を返します。
 
-`ask` ボタンと `note` フィールドを持つパネルの例:
+`v.ai({ model, reasoningEffort?, conversation?, prompt, input? })` はすぐ request ID を返します。handler 内で呼び出してください。`model` は利用可能な ID、effort は対応時に `default`、`low`、`medium`、`high` です。`input` は任意の JSON、prompt/input は各20KBまでです。Replies arrive as `ai` events: `{requestId, ok, text, citations,
+error, preservedConversations?}`. Success text is at most48KB; citations are `{url,title}`. Preserve visible,
+clickable source links when displaying answers based on web search. Search is always
+available to the model. Generation requests have no fixed app deadline. Several
+named conversations can run at once; calls using the same name run in order.
+Start another call from an `ai` event for a sequence. Vault は遅延呼び出しをまだスケジュールしません。プロバイダーの容量や割り当てにより待機または拒否されることがあります。代替プロバイダーや自動再試行はありません。応答はデータで JavaScript ではなく、実行内容はルールが選びます。
+
+`ask` ボタンと `note` 欄のあるパネル例：
 
 ```javascript
 (on, v) => {
   let pending = null;
   on("panel", ({ data }) => {
     if (data.controlId !== "ask" || pending) return;
-    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+    pending = v.ai({ model: "chatgpt:MODEL_ID", conversation: "notes", prompt: v.context.ai.prompt || "Summarize this text.", input: {context:v.context.ai.context, note:data.values?.note ?? ""} });
   });
   on("ai", ({ data }) => {
     if (data.requestId !== pending) return;
@@ -190,6 +196,6 @@ error}`. Success text is at most48KB; citations are `{url,title}`。Web 検索�
 }
 ```
 
-未完了呼び出しは再起動後に再送されません。Run、無効化/再有効化、削除は古い応答を破棄します。未接続ブラウザーは `ai-unavailable` を返します。その他のエラー: `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`。失敗した呼び出しはルールが保持した前の結果を上書きしません。state 上限は64KBのままです。
+保留中の呼び出しは再起動後に再実行されません。Run、無効化/再有効化、削除で古い応答を破棄します。未接続ブラウザーは `ai-unavailable` を返します。その他のエラー: `ai-not-configured`、`ai-invalid-input`、`ai-daily-limit`、`ai-request-failed`、`ai-usage-storage-unavailable`、`ai-conversation-storage-unavailable`。失敗は保持済み結果を上書きしません。state 上限は64KBです。
 
-認証情報なしの候補は Mac の `rule_ai_models`、ブラウザーの `settings-rule-ai-models` で取得し、既存の set-group 経路から `ruleAI` を設定します。フィールドは `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`), `dailyRequestLimit` (null または1～100000) です。返された候補を使い、キーやプロバイダー URL をルールソースに書かないでください。
+資格情報不要の候補は Windows の `rule_ai_models`、ブラウザーの `settings-rule-ai-models` で取得します。既存 set-group 経路から `ruleAI` を設定します。項目は `dailyRequestLimit`（null または1–100000）、`prompt`、`context`（任意の文字列、各16KBまで）です。モデルと effort は呼び出しごとに指定します。返された候補を使い、key や provider URL をルールに書かないでください。

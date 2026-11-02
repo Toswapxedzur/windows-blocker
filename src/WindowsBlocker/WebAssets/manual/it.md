@@ -1,6 +1,6 @@
-# Manuale utente Windows Vault
+# Manuale utente Adamancia Vault per Windows
 
-Windows Vault ha tre pagine: **Vault** blocca le app native, **Classifier** applica tag ai contenuti browser supportati e **Activity** mostra l'uso registrato. L'estensione browser raccoglie i contenuti supportati e applica i blocchi nel browser. Installala e connettila nel browser che usi.
+Vault per Windows ha tre pagine: **Vault** blocca le app native, **Classifier** applica tag ai contenuti browser supportati e **Activity** mostra l'uso registrato. L'estensione browser raccoglie i contenuti supportati e applica i blocchi nel browser. Installala e connettila nel browser che usi.
 
 ## Avvio rapido
 
@@ -47,7 +47,7 @@ Mentre il gruppo è congelato, l'attesa può essere prolungata e si può aggiung
 
 Usa **Collega** per connettere gruppi selezionati esplicitamente in altri programmi Vault. I gruppi collegati condividono nome, impostazioni di policy supportate, obiettivi, utilizzo e condizioni di congelamento. Ogni programma modifica e applica i tipi di obiettivo supportati; le altre voci restano disponibili ai programmi collegati. Scollegare mantiene ciascun gruppo e le sue impostazioni.
 
-Se un membro collegato è offline, potrebbe non essere possibile modificarlo. Apri Windows Vault e il browser collegato per riconnetterti. Una policy salvata localmente può continuare ad applicarsi quando il membro è offline.
+Se un membro collegato è offline, potrebbe non essere possibile modificarlo. Apri Vault per Windows e il browser collegato per riconnetterti. Una policy salvata localmente può continuare ad applicarsi quando il membro è offline.
 
 ## Assistenza
 

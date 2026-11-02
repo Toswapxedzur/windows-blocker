@@ -1,6 +1,6 @@
-# Manuel utilisateur de Windows Vault
+# Manuel utilisateur de Adamancia Vault pour Windows
 
-Windows Vault comporte trois pages : **Vault** bloque les applications natives, **Classificateur** attribue des tags au contenu des navigateurs pris en charge et **Activité** affiche l’utilisation enregistrée. L’extension collecte le contenu pris en charge et applique le blocage dans le navigateur. Installez-la et connectez-la dans le navigateur que vous utilisez.
+Vault pour Windows comporte trois pages : **Vault** bloque les applications natives, **Classificateur** attribue des tags au contenu des navigateurs pris en charge et **Activité** affiche l’utilisation enregistrée. L’extension collecte le contenu pris en charge et applique le blocage dans le navigateur. Installez-la et connectez-la dans le navigateur que vous utilisez.
 
 ## Démarrage rapide
 
@@ -47,7 +47,7 @@ Pendant le verrouillage, l’attente peut être prolongée et un PIN ajouté s�
 
 Utilisez **Lier** pour connecter des groupes explicitement sélectionnés dans d’autres programmes Vault. Les groupes liés partagent leur nom, les paramètres de politique pris en charge, les cibles, l’utilisation et les conditions de verrouillage. Chaque programme modifie et applique les types de cibles qu’il prend en charge ; les autres entrées restent accessibles aux programmes liés. Délier conserve chaque groupe et ses paramètres.
 
-Si un membre lié est hors ligne, les modifications peuvent être indisponibles. Ouvrez Windows Vault et le navigateur lié pour les reconnecter. Une politique locale enregistrée peut continuer à s’appliquer pendant qu’un membre est hors ligne.
+Si un membre lié est hors ligne, les modifications peuvent être indisponibles. Ouvrez Vault pour Windows et le navigateur lié pour les reconnecter. Une politique locale enregistrée peut continuer à s’appliquer pendant qu’un membre est hors ligne.
 
 ## Obtenir de l’aide
 

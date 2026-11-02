@@ -1,4 +1,4 @@
-# Windows Vault 코드 설명서
+# Windows용 Adamancia Vault 코드 설명서
 
 [사용자 설명서](../manual/ko.md)
 
@@ -167,19 +167,25 @@ Snooze 또는 패널 버튼으로 시작되는 5분 일시 중지 중에만 Stea
 
 ## 실행 중인 규칙의 AI 호출
 
-각 custom group은 **AI calls**에서 connection/model과 reasoning effort를 선택합니다. Mac과 브라우저 규칙은 같은 API를 사용합니다. 브라우저 요청은 Windows Vault 연결이 필요하며 provider 자격 증명은 그곳에 유지됩니다. 연결된 그룹은 선택 및 선택적 일일 요청 한도를 공유합니다. 빈 값은 그룹 한도 없음이며 계정 제한은 계속 적용됩니다. 한도는 UTC 날짜 기준이고 재시작 후 유지되며 실패를 포함한 제출 시도를 셉니다. Link는 기존 사용량을 합치고 Unlink 후에도 이전 사용량을 유지합니다.
+각 `v.ai` 호출은 connection과 model을 지정합니다. 선택적으로 저장한 prompt와 context는 handler에서 `v.context.ai.prompt`, `v.context.ai.context`로 사용할 수 있으며 Vault가 자동 전송하지 않습니다. 각 `v.ai` 호출에 포함할 내용은 rule이 정합니다. 설정을 바꾸면 이전 설정의 응답은 무효가 됩니다.
 
-`v.ai({ prompt, input? })`는 즉시 request ID를 반환합니다. 규칙 등록이 아니라 handler 안에서 호출하세요. `input`은 모든 JSON 값이며 prompt/input 각각 최대20KB입니다. 응답은 `ai` 이벤트 `{requestId, ok, text, citations,
-error}`. Success text is at most48KB; citations are `{url,title}`입니다. 웹 검색 답변을 표시할 때 출처 링크를 보이고 클릭 가능하게 유지하세요. 검색은 모델에 항상 제공됩니다. 앱의 고정 deadline은 없고 동시성은 제한됩니다. provider 대체나 자동 재시도는 없습니다. 응답은 데이터이며 JavaScript로 실행되지 않습니다. 기존 동작을 할지는 규칙이 결정합니다.
+선택적 `conversation` 이름은 사용자/assistant 전체 기록을 로컬에 저장하고 다음 호출에 최신 메시지 최대16KB를 포함합니다. 대화 중 model을 바꿀 수 있습니다. group 삭제나 연결 해제 후에도 대화는 남습니다. 같은 이름의 이전 기록을 가져와 별도 이름으로 바꾸면 `preservedConversations`에 표시됩니다. 공유 대화는 `v.ai({op:"delete", conversation:"name"})`로 삭제하고 응답은 `ai` event로 받습니다. 같은 이름의 진행 중 호출은 `ai-conversation-busy`를 반환합니다.
 
-`ask` 버튼과 `note` 필드가 있는 패널의 예:
+`v.ai({ model, reasoningEffort?, conversation?, prompt, input? })`는 request ID를 즉시 반환합니다. handler 안에서 호출하세요. `model`은 사용할 수 있는 ID이며 effort는 지원 시 `default`, `low`, `medium`, `high`입니다. `input`은 어떤 JSON이든 가능하고 prompt/input 각각20KB 제한입니다. Replies arrive as `ai` events: `{requestId, ok, text, citations,
+error, preservedConversations?}`. Success text is at most48KB; citations are `{url,title}`. Preserve visible,
+clickable source links when displaying answers based on web search. Search is always
+available to the model. Generation requests have no fixed app deadline. Several
+named conversations can run at once; calls using the same name run in order.
+Start another call from an `ai` event for a sequence. Vault는 아직 지연 호출을 예약하지 않습니다. Provider 용량과 quota 때문에 요청이 대기하거나 거부될 수 있으며 fallback이나 자동 재시도는 없습니다. 응답은 JavaScript가 아닌 데이터이고 action은 rule이 선택합니다.
+
+`ask` 버튼과 `note` 입력란이 있는 panel 예시:
 
 ```javascript
 (on, v) => {
   let pending = null;
   on("panel", ({ data }) => {
     if (data.controlId !== "ask" || pending) return;
-    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+    pending = v.ai({ model: "chatgpt:MODEL_ID", conversation: "notes", prompt: v.context.ai.prompt || "Summarize this text.", input: {context:v.context.ai.context, note:data.values?.note ?? ""} });
   });
   on("ai", ({ data }) => {
     if (data.requestId !== pending) return;
@@ -190,6 +196,6 @@ error}`. Success text is at most48KB; citations are `{url,title}`입니다. 웹 
 }
 ```
 
-대기 중 호출은 재시작 후 재생되지 않습니다. Run, 비활성화/재활성화, 삭제는 오래된 응답을 버립니다. 연결이 끊긴 브라우저는 `ai-unavailable`을 보고합니다. 다른 오류: `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`. 실패 호출은 규칙이 유지하기로 한 이전 결과를 덮어쓰지 않습니다. 규칙 state 한도는64KB입니다.
+대기 중인 호출은 재시작 후 재생되지 않습니다. Run, 비활성화/재활성화, 삭제는 오래된 응답을 버립니다. 연결이 끊긴 browser는 `ai-unavailable`을 보고합니다. 다른 오류: `ai-not-configured`, `ai-invalid-input`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`, `ai-conversation-storage-unavailable`. 실패가 보존한 결과를 덮어쓰지 않습니다. state 제한은64KB입니다.
 
-자격 증명 없는 선택지는 Mac의 `rule_ai_models` 또는 브라우저의 `settings-rule-ai-models`로 확인하고 기존 set-group 경로에서 `ruleAI`를 설정합니다. 필드: `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`), `dailyRequestLimit` (null 또는1–100000). 반환된 선택지를 사용하고 규칙 소스에 키나 provider URL을 넣지 마세요.
+자격 증명 없이 Windows의 `rule_ai_models` 또는 browser의 `settings-rule-ai-models`에서 옵션을 찾고, 기존 set-group 경로로 `ruleAI`를 설정합니다. 필드는 `dailyRequestLimit`(null 또는1–100000), `prompt`, `context`(선택 문자열, 각각16KB 이하)입니다. 매 호출에 model과 effort를 지정하세요. 반환된 옵션을 쓰고 key나 provider URL을 rule source에 넣지 마세요.

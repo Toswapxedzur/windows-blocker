@@ -1,4 +1,4 @@
-# دليل برمجة Windows Vault
+# دليل برمجة Adamancia Vault على Windows
 
 [دليل المستخدم](../manual/ar.md)
 
@@ -167,19 +167,25 @@ file.data = { requestId: string, op: string, path: string, ok: boolean,
 
 ## استدعاءات الذكاء الاصطناعي من قاعدة قيد التشغيل
 
-تختار كل مجموعة اتصالًا/نموذجًا وجهد استدلال ضمن **AI calls**. الواجهة نفسها لقواعد Mac والمتصفح؛ طلب المتصفح يتطلب اتصال Windows Vault، وتبقى بيانات اعتماد المزود فيه. تتشارك المجموعات المرتبطة الاختيار وحدًا يوميًا اختياريًا. الفراغ يعني بلا حد للمجموعة، وتظل حدود الحساب سارية. يحسب الحد يوم UTC، ويستمر بعد إعادة التشغيل، ويعد كل محاولة مرسلة بما فيها الفاشلة. يجمع الربط الاستخدام الموجود؛ والفصل يبقي الاستخدام السابق.
+يحدد كل استدعاء `v.ai` الاتصال والنموذج. يتيح Vault المطالبة والسياق الاختياريين المحفوظين عبر `v.context.ai.prompt` و`v.context.ai.context` داخل المعالجات؛ ولا يرسلهما تلقائيًا. تختار القاعدة ما تدرجه في كل استدعاء `v.ai`. تعديل أي منهما يبطل ردود الإعداد السابق.
 
-تعيد `v.ai({ prompt, input? })` معرّف طلب فورًا. استدعها داخل معالج لا عند تسجيل القاعدة. `input` أي قيمة JSON؛ حد كل من prompt/input هو20KB. تصل الردود كأحداث `ai`: `{requestId, ok, text, citations,
-error}`. Success text is at most48KB; citations are `{url,title}`. أظهر روابط المصادر قابلة للنقر عند عرض إجابات بحث الويب. البحث متاح دائمًا للنموذج. لا مهلة ثابتة للطلب، مع تزامن محدود؛ لا تبديل مزود أو إعادة تلقائية. الردود بيانات ولا تنفذ JavaScript؛ وتقرر القاعدة الإجراءات القائمة التي تتخذها.
+يمكن استخدام `conversation` اختياري لحفظ سجل المستخدم والمساعد كاملًا محليًا. تُضمّن أحدث الرسائل حتى16KB في الاستدعاء التالي، ويمكن للمحادثة تغيير النموذج. تبقى المحادثات عند حذف المجموعة أو إلغاء ربطها. إذا استورد Vault سجلات قديمة متطابقة الاسم، تظهر الأسماء المعاد تسميتها في `preservedConversations`. استخدم `v.ai({op:"delete", conversation:"name"})` لحذف محادثة مشتركة؛ يصل الرد كحدث `ai`. الاستدعاء النشط بالاسم نفسه يعيد `ai-conversation-busy`.
 
-للوحة التي تحتوي زر `ask` وحقل `note`:
+تعيد صيغة `v.ai({ model, reasoningEffort?, conversation?, prompt, input? })` معرّف طلب فورًا. استدعها داخل معالج. `model` معرّف متاح؛ والجهد `default` أو `low` أو `medium` أو `high` عند الدعم. يقبل `input` أي JSON؛ حد prompt/input هو20KB. Replies arrive as `ai` events: `{requestId, ok, text, citations,
+error, preservedConversations?}`. Success text is at most48KB; citations are `{url,title}`. Preserve visible,
+clickable source links when displaying answers based on web search. Search is always
+available to the model. Generation requests have no fixed app deadline. Several
+named conversations can run at once; calls using the same name run in order.
+Start another call from an `ai` event for a sequence. Vault لا يحدد مكالمات مؤجلة بعد. قد تؤخر سعة المزود والحصص الطلبات أو ترفضها؛ لا يوجد تبديل مزود أو إعادة تلقائية. الردود بيانات وليست تعليمات JavaScript، والقاعدة تختار الإجراءات.
+
+مثال لوحة بزر `ask` وحقل `note`:
 
 ```javascript
 (on, v) => {
   let pending = null;
   on("panel", ({ data }) => {
     if (data.controlId !== "ask" || pending) return;
-    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+    pending = v.ai({ model: "chatgpt:MODEL_ID", conversation: "notes", prompt: v.context.ai.prompt || "Summarize this text.", input: {context:v.context.ai.context, note:data.values?.note ?? ""} });
   });
   on("ai", ({ data }) => {
     if (data.requestId !== pending) return;
@@ -190,6 +196,6 @@ error}`. Success text is at most48KB; citations are `{url,title}`. أظهر رو
 }
 ```
 
-لا تعاد الطلبات قيد التنفيذ بعد إعادة التشغيل. Run أو التعطيل/إعادة التفعيل أو الحذف يسقط الردود القديمة؛ والمتصفح غير المتصل يبلغ `ai-unavailable`. تشمل الأخطاء `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`. لا تمحو المكالمات الفاشلة نتيجة سابقة احتفظت بها القاعدة؛ وحد حالة القاعدة ما زال64KB.
+لا يعاد تشغيل الطلبات المعلقة بعد إعادة التشغيل. Run أو التعطيل/إعادة التفعيل أو الحذف يسقط الردود القديمة؛ المتصفح المنفصل يبلغ `ai-unavailable`. الأخطاء تشمل `ai-not-configured` و`ai-invalid-input` و`ai-daily-limit` و`ai-request-failed` و`ai-usage-storage-unavailable` و`ai-conversation-storage-unavailable`. لا تستبدل المكالمات الفاشلة نتيجة محفوظة؛ وحد الحالة64KB.
 
-اكتشف الخيارات الخالية من بيانات الاعتماد عبر `rule_ai_models` على Mac أو `settings-rule-ai-models` في المتصفح، واضبط `ruleAI` عبر مسار set-group الحالي. الحقول `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`) و`dailyRequestLimit` (null أو1–100000). استخدم خيارًا معادًا؛ لا تضع مفتاحًا أو عنوان مزود في مصدر القاعدة.
+اكتشف الخيارات بلا بيانات اعتماد عبر `rule_ai_models` على Windows أو `settings-rule-ai-models` في المتصفح، واضبط `ruleAI` عبر set-group. الحقول `dailyRequestLimit` (null أو1–100000) و`prompt` و`context` (نصان اختياريان، حتى16KB لكل منهما). عيّن النموذج والجهد في كل استدعاء؛ استخدم اختيارًا معادًا ولا تضع مفتاحًا أو رابط مزود في القاعدة.

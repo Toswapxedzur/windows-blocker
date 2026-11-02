@@ -10,7 +10,7 @@
     <RootNamespace>WindowsBlocker</RootNamespace>
     <!-- User-facing product name (shown in the .exe file properties). The
          AssemblyName/namespace stay "WindowsBlocker" as the internal identifier. -->
-    <Product>Windows Vault</Product>
+    <Product>Adamancia Vault</Product>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets/windows-vault.ico</ApplicationIcon>
     <LangVersion>latest</LangVersion>

@@ -1,4 +1,4 @@
-# Руководство по коду Windows Vault
+# Руководство по коду Adamancia Vault для Windows
 
 [Руководство пользователя](../manual/ru.md)
 
@@ -167,19 +167,25 @@ Steam заблокирован, кроме пятиминутной паузы, 
 
 ## Вызовы ИИ из работающего правила
 
-Каждая custom group выбирает подключение/модель и reasoning effort в **AI calls**. Правила Mac и браузера используют один API; браузерным запросам нужен подключенный Windows Vault, учетные данные поставщика остаются там. Связанные группы совместно используют выбор и необязательный дневной лимит. Пустое поле означает отсутствие лимита группы; лимиты аккаунта сохраняются. Лимит считается по UTC-дню, переживает перезапуск и учитывает отправленные попытки, включая неудачные. Link объединяет прежнее использование; unlink сохраняет его.
+Каждый вызов `v.ai` задаёт подключение и модель. Необязательные сохранённые prompt и context доступны обработчикам через `v.context.ai.prompt` и `v.context.ai.context`; Vault не отправляет их автоматически. Правило само выбирает содержимое каждого вызова `v.ai`. Изменение настроек делает старые ответы недействительными.
 
-`v.ai({ prompt, input? })` немедленно возвращает request ID. Вызывайте внутри обработчика, не при регистрации правила. `input` может быть любым JSON; prompt/input ограничены20KB каждый. Ответы приходят в событиях `ai`: `{requestId, ok, text, citations,
-error}`. Success text is at most48KB; citations are `{url,title}`. Сохраняйте видимые и кликабельные ссылки на источники в ответах веб-поиска. Поиск всегда доступен модели. Фиксированного срока приложения нет; параллелизм ограничен; нет fallback поставщика и автоматического повтора. Ответы — данные, они не исполняются как JavaScript; правило решает, какие существующие действия выполнять.
+Необязательное имя `conversation` локально сохраняет полную переписку пользователя и ассистента; следующий вызов включает до16KB последних сообщений. Модель можно менять. Удаление или отвязка группы не удаляет переписки. Импортированные старые истории с одинаковым именем переименовываются и перечисляются в `preservedConversations`. Удалите общую переписку через `v.ai({op:"delete", conversation:"name"})`; ответ придёт как событие `ai`. Активный вызов с тем же именем возвращает `ai-conversation-busy`.
 
-Для панели с кнопкой `ask` и полем `note`:
+`v.ai({ model, reasoningEffort?, conversation?, prompt, input? })` сразу возвращает ID запроса. Вызывайте его внутри обработчика. `model` — доступный ID; effort — `default`, `low`, `medium` или `high`, если поддерживается. `input` может быть любым JSON; prompt и input ограничены20KB каждый. Replies arrive as `ai` events: `{requestId, ok, text, citations,
+error, preservedConversations?}`. Success text is at most48KB; citations are `{url,title}`. Preserve visible,
+clickable source links when displaying answers based on web search. Search is always
+available to the model. Generation requests have no fixed app deadline. Several
+named conversations can run at once; calls using the same name run in order.
+Start another call from an `ai` event for a sequence. Vault пока не планирует отложенные вызовы. Возможности и квоты провайдера могут поставить запрос в очередь или отклонить его; нет переключения провайдера и автоматического повтора. Ответы — данные, не JavaScript; действия выбирает правило.
+
+Пример панели с кнопкой `ask` и полем `note`:
 
 ```javascript
 (on, v) => {
   let pending = null;
   on("panel", ({ data }) => {
     if (data.controlId !== "ask" || pending) return;
-    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+    pending = v.ai({ model: "chatgpt:MODEL_ID", conversation: "notes", prompt: v.context.ai.prompt || "Summarize this text.", input: {context:v.context.ai.context, note:data.values?.note ?? ""} });
   });
   on("ai", ({ data }) => {
     if (data.requestId !== pending) return;
@@ -190,6 +196,6 @@ error}`. Success text is at most48KB; citations are `{url,title}`. Сохран�
 }
 ```
 
-Незавершенные вызовы не воспроизводятся после перезапуска. Run, отключение/повторное включение и удаление отбрасывают старые ответы; отключенный браузер сообщает `ai-unavailable`. Другие ошибки: `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`. Неудачные вызовы не заменяют сохраненный правилом предыдущий результат. Лимит состояния по-прежнему64KB.
+Ожидающие вызовы не повторяются после перезапуска. Run, отключение/повторное включение и удаление отбрасывают старые ответы; отключённый браузер сообщает `ai-unavailable`. Другие ошибки: `ai-not-configured`, `ai-invalid-input`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`, `ai-conversation-storage-unavailable`. Сбой не заменяет сохранённый результат; лимит state —64KB.
 
-Варианты без учетных данных доступны через `rule_ai_models` на Mac или `settings-rule-ai-models` в браузере; настройте `ruleAI` существующим путем set-group. Поля: `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`), `dailyRequestLimit` (null или1–100000). Используйте возвращенный вариант; не помещайте ключ или URL поставщика в исходный код правила.
+Варианты без учётных данных: `rule_ai_models` в Windows или `settings-rule-ai-models` в браузере; настройте `ruleAI` через существующий путь set-group. Поля: `dailyRequestLimit` (null или1–100000), `prompt`, `context` (необязательные строки до16KB каждая). Модель и effort указываются в каждом вызове. Используйте возвращённый вариант; не помещайте ключ или URL провайдера в правило.

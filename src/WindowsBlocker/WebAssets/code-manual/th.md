@@ -1,4 +1,4 @@
-# คู่มือโค้ด Windows Vault
+# คู่มือโค้ด Adamancia Vault สำหรับ Windows
 
 [คู่มือผู้ใช้](../manual/th.md)
 
@@ -167,19 +167,25 @@ Steam ถูกบล็อก ยกเว้นช่วงพักห้า�
 
 ## การเรียก AI จากกฎที่กำลังทำงาน
 
-แต่ละ custom group เลือก connection/model และ reasoning effort ใน **AI calls** กฎ Mac และ browser ใช้ API เดียวกัน; browser request ต้องเชื่อม Windows Vault และ credentials ของ provider อยู่ที่นั่น กลุ่มที่เชื่อมกันแชร์ตัวเลือกและ daily cap แบบเลือกได้ ค่าว่างหมายถึงไม่จำกัดระดับกลุ่ม แต่ข้อจำกัดบัญชียังใช้ cap คิดตามวัน UTC อยู่หลัง restart และนับทุก attempt ที่ส่งรวมถึงที่ล้มเหลว Link รวม usage เดิม; unlink เก็บ usage ที่ผ่านมา
+แต่ละการเรียก `v.ai` ระบุ connection และ model ค่า prompt และ context ที่บันทึกไว้แบบเลือกได้ใช้ใน handler ผ่าน `v.context.ai.prompt` และ `v.context.ai.context`; Vault จะไม่ส่งค่าเหล่านี้เอง rule เลือกข้อมูลของแต่ละ `v.ai` call การแก้ไขค่าจะทำให้คำตอบจาก configuration เก่าใช้ไม่ได้
 
-`v.ai({ prompt, input? })` คืน request ID ทันที เรียกใน handler ไม่ใช่ตอนลงทะเบียน rule `input` เป็น JSON ใดก็ได้; prompt/input จำกัดอย่างละ20KB คำตอบมาใน `ai` event: `{requestId, ok, text, citations,
-error}`. Success text is at most48KB; citations are `{url,title}` เก็บลิงก์แหล่งที่มาให้มองเห็นและคลิกได้เมื่อแสดงคำตอบจาก web search Search มีให้โมเดลเสมอ ไม่มี app deadline คงที่และจำกัด concurrency; ไม่มี provider fallback หรือ auto retry คำตอบเป็นข้อมูล ไม่ถูก execute เป็น JavaScript และ rule ตัดสินใจว่าจะใช้ action เดิมใด
+ชื่อ `conversation` แบบเลือกได้บันทึก transcript ของผู้ใช้/assistant ทั้งหมดไว้ในเครื่อง และส่งข้อความล่าสุดได้สูงสุด16KB ใน call ถัดไป เปลี่ยน model ระหว่าง conversation ได้ การลบหรือ unlink group ไม่ลบ conversation ประวัติชื่อซ้ำที่นำเข้าจะเปลี่ยนชื่อและรายงานใน `preservedConversations` ลบ conversation ร่วมด้วย `v.ai({op:"delete", conversation:"name"})`; คำตอบมาใน event `ai` call ที่กำลังทำงานด้วยชื่อเดิมจะคืน `ai-conversation-busy`
 
-สำหรับแผงที่มีปุ่ม `ask` และช่อง `note`:
+`v.ai({ model, reasoningEffort?, conversation?, prompt, input? })` คืน request ID ทันที เรียกภายใน handler `model` ต้องเป็น ID ที่มี; effort คือ `default`, `low`, `medium` หรือ `high` เมื่อรองรับ `input` เป็น JSON ใดก็ได้; prompt/input จำกัดอย่างละ20KB Replies arrive as `ai` events: `{requestId, ok, text, citations,
+error, preservedConversations?}`. Success text is at most48KB; citations are `{url,title}`. Preserve visible,
+clickable source links when displaying answers based on web search. Search is always
+available to the model. Generation requests have no fixed app deadline. Several
+named conversations can run at once; calls using the same name run in order.
+Start another call from an `ai` event for a sequence. Vault ยังไม่กำหนดเวลาการเรียกแบบหน่วง ความจุและโควตาของผู้ให้บริการอาจทำให้คำขอเข้าคิวหรือถูกปฏิเสธ ไม่มี fallback หรือ retry อัตโนมัติ คำตอบเป็นข้อมูล ไม่ใช่ JavaScript; rule เลือก action เอง
+
+ตัวอย่าง panel ที่มีปุ่ม `ask` และช่อง `note`:
 
 ```javascript
 (on, v) => {
   let pending = null;
   on("panel", ({ data }) => {
     if (data.controlId !== "ask" || pending) return;
-    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+    pending = v.ai({ model: "chatgpt:MODEL_ID", conversation: "notes", prompt: v.context.ai.prompt || "Summarize this text.", input: {context:v.context.ai.context, note:data.values?.note ?? ""} });
   });
   on("ai", ({ data }) => {
     if (data.requestId !== pending) return;
@@ -190,6 +196,6 @@ error}`. Success text is at most48KB; citations are `{url,title}` เก็บ�
 }
 ```
 
-คำขอค้างไม่เล่นซ้ำหลัง restart; Run, disable/re-enable และ delete ทิ้งคำตอบเก่า เบราว์เซอร์ที่ตัดการเชื่อมต่อแจ้ง `ai-unavailable` ข้อผิดพลาดอื่น ได้แก่ `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable` คำขอที่ล้มเหลวไม่เขียนทับผลเดิมที่ rule เก็บไว้ ขนาด state ยังคงจำกัด64KB
+call ที่ค้างจะไม่ทำซ้ำหลัง restart Run, disable/re-enable และ delete จะทิ้งคำตอบเก่า browser ที่ขาดการเชื่อมต่อแจ้ง `ai-unavailable` error อื่นได้แก่ `ai-not-configured`, `ai-invalid-input`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable` และ `ai-conversation-storage-unavailable` call ที่ล้มเหลวไม่เขียนทับผลเดิมที่เก็บไว้ จำกัด state ที่64KB
 
-ค้นตัวเลือกที่ไม่มี credentials ด้วย `rule_ai_models` บน Mac หรือ `settings-rule-ai-models` ใน browser ตั้ง `ruleAI` ผ่าน set-group path เดิม ฟิลด์คือ `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`) และ `dailyRequestLimit` (null หรือ1–100000) ใช้ตัวเลือกที่คืนมา อย่าใส่ key หรือ provider URL ใน source ของ rule
+ตัวเลือกที่ไม่ต้องใช้ credentials ดูจาก `rule_ai_models` บน Windows หรือ `settings-rule-ai-models` ใน browser และตั้ง `ruleAI` ผ่าน set-group เดิม ฟิลด์คือ `dailyRequestLimit` (null หรือ1–100000), `prompt`, `context` (string เลือกได้ ไม่เกิน16KBต่อค่า) เลือก model และ effort ทุก call ใช้ตัวเลือกที่ส่งกลับมา อย่าใส่ key หรือ provider URL ใน rule

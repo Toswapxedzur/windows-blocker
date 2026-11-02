@@ -75,7 +75,7 @@ function Start-App {
 }
 function Close-AppMainWindow {
     $windows=[Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Children,(New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ProcessIdProperty,$script:app.Id)))
-    $main=@($windows|Where-Object {$_.Current.Name -like 'Windows Vault*' -and $_.Current.ClassName -ne '#32770'})
+    $main=@($windows|Where-Object {$_.Current.Name -like 'Vault*' -and $_.Current.ClassName -ne '#32770'})
     if($main.Count -ne 1){throw 'Cannot identify one owned Windows Vault main window for ordinary close'}
     # Post to the identified main HWND: a synchronous UIA Close can block
     # behind the deliberate first-quit modal before this test can dismiss it.
@@ -122,7 +122,7 @@ try {
                 do {
                     $window=[Windows.Automation.AutomationElement]::RootElement.FindFirst([Windows.Automation.TreeScope]::Children,(New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ProcessIdProperty,$setup.Id)))
                     $open=$null
-                    if($window){$open=$window.FindFirst([Windows.Automation.TreeScope]::Descendants,(New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::NameProperty,'Open Windows Vault')))}
+                    if($window){$open=$window.FindFirst([Windows.Automation.TreeScope]::Descendants,(New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::NameProperty,'Open Vault')))}
                     if($open -and !$open.Current.IsOffscreen){break}
                     if($setup.HasExited){throw 'Setup GUI exited before installation finished'}
                     Start-Sleep -Milliseconds 250

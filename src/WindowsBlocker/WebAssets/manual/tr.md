@@ -1,6 +1,6 @@
-# Windows Vault kullanıcı kılavuzu
+# Windows için Adamancia Vault kullanıcı kılavuzu
 
-Windows Vault üç sayfaya sahiptir: **Vault** native uygulamaları engeller, **Classifier** desteklenen tarayıcı içeriğini etiketler, **Activity** kaydedilen kullanımı gösterir. Tarayıcı uzantısı desteklenen içeriği toplar ve tarayıcı engellemesini uygular. Kullandığınız tarayıcıya kurup bağlayın.
+Windows için Vault üç sayfaya sahiptir: **Vault** native uygulamaları engeller, **Classifier** desteklenen tarayıcı içeriğini etiketler, **Activity** kaydedilen kullanımı gösterir. Tarayıcı uzantısı desteklenen içeriği toplar ve tarayıcı engellemesini uygular. Kullandığınız tarayıcıya kurup bağlayın.
 
 ## Hızlı başlangıç
 
@@ -47,7 +47,7 @@ Grup donmuşken bekleme uzatılabilir ve yoksa PIN eklenebilir. Grup çözülene
 
 Diğer Vault programlarında açıkça seçilen grupları bağlamak için **Bağla** seçeneğini kullanın. Bağlı gruplar adlarını, desteklenen ilke ayarlarını, hedefleri, kullanımı ve dondurma koşullarını paylaşır. Her program desteklediği hedef türlerini düzenler ve uygular; diğer hedef kayıtları bağlı programlar için kullanılabilir kalır. Bağlantıyı kaldırmak grupları ve ayarlarını korur.
 
-Bağlı bir üye çevrimdışıysa düzenleme kullanılamayabilir. Yeniden bağlanmak için Windows Vault ve bağlı tarayıcıyı açın. Yerel olarak kaydedilen ilke, üye çevrimdışıyken uygulanmaya devam edebilir.
+Bağlı bir üye çevrimdışıysa düzenleme kullanılamayabilir. Yeniden bağlanmak için Windows için Vault ve bağlı tarayıcıyı açın. Yerel olarak kaydedilen ilke, üye çevrimdışıyken uygulanmaya devam edebilir.
 
 ## Yardım alma
 

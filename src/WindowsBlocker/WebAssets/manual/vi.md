@@ -1,6 +1,6 @@
-# Hướng dẫn sử dụng Windows Vault
+# Hướng dẫn sử dụng Adamancia Vault trên Windows
 
-Windows Vault có ba trang: **Vault** chặn ứng dụng native, **Bộ phân loại** gắn thẻ nội dung trình duyệt được hỗ trợ và **Activity** hiển thị mức sử dụng đã ghi nhận. Tiện ích trình duyệt thu thập nội dung được hỗ trợ và áp dụng việc chặn trong trình duyệt. Cài đặt và kết nối tiện ích trong trình duyệt bạn sử dụng.
+Vault trên Windows có ba trang: **Vault** chặn ứng dụng native, **Bộ phân loại** gắn thẻ nội dung trình duyệt được hỗ trợ và **Activity** hiển thị mức sử dụng đã ghi nhận. Tiện ích trình duyệt thu thập nội dung được hỗ trợ và áp dụng việc chặn trong trình duyệt. Cài đặt và kết nối tiện ích trong trình duyệt bạn sử dụng.
 
 ## Bắt đầu nhanh
 
@@ -47,7 +47,7 @@ Khi đang khóa, có thể kéo dài thời gian chờ và thêm PIN nếu chưa
 
 Dùng **Liên kết** để nối các nhóm được chọn rõ ràng trong những chương trình Vault khác. Các nhóm được liên kết dùng chung tên, cài đặt chính sách được hỗ trợ, mục tiêu, mức sử dụng và điều kiện khóa. Mỗi chương trình chỉnh sửa và thực thi các loại mục tiêu mà chương trình đó hỗ trợ; các mục tiêu loại khác vẫn có sẵn cho chương trình liên kết. Hủy liên kết vẫn giữ từng nhóm và cài đặt của nhóm.
 
-Nếu thành viên được liên kết ngoại tuyến, có thể không chỉnh sửa được. Mở Windows Vault và trình duyệt đã liên kết để kết nối lại. Chính sách đã lưu cục bộ có thể tiếp tục áp dụng khi thành viên ngoại tuyến.
+Nếu thành viên được liên kết ngoại tuyến, có thể không chỉnh sửa được. Mở Vault trên Windows và trình duyệt đã liên kết để kết nối lại. Chính sách đã lưu cục bộ có thể tiếp tục áp dụng khi thành viên ngoại tuyến.
 
 ## Trợ giúp
 

@@ -1,6 +1,6 @@
-# Windows Vault Benutzerhandbuch
+# Adamancia Vault für Windows Benutzerhandbuch
 
-Windows Vault hat drei Seiten: **Vault** blockiert native Apps, **Klassifizierung** weist unterstützten Browserinhalten Tags zu und **Aktivität** zeigt aufgezeichnete Nutzung. Die Browsererweiterung erfasst unterstützte Inhalte und setzt die Browserblockierung durch. Installieren und verbinden Sie sie in dem Browser, den Sie verwenden.
+Vault für Windows hat drei Seiten: **Vault** blockiert native Apps, **Klassifizierung** weist unterstützten Browserinhalten Tags zu und **Aktivität** zeigt aufgezeichnete Nutzung. Die Browsererweiterung erfasst unterstützte Inhalte und setzt die Browserblockierung durch. Installieren und verbinden Sie sie in dem Browser, den Sie verwenden.
 
 ## Schnellstart
 
@@ -47,7 +47,7 @@ Im eingefrorenen Zustand kann die Wartezeit verlängert und eine PIN hinzugefüg
 
 Verwenden Sie **Verknüpfen**, um ausdrücklich ausgewählte Gruppen in anderen Vault-Programmen zu verbinden. Verknüpfte Gruppen teilen ihren Namen, unterstützte Richtlinieneinstellungen, Ziele, Nutzung und Einfrierbedingungen. Jedes Programm bearbeitet und setzt die von ihm unterstützten Zieltypen durch; andere Zieleinträge bleiben für verknüpfte Programme verfügbar. Beim Aufheben der Verknüpfung bleiben jede Gruppe und ihre Einstellungen erhalten.
 
-Ist ein verknüpftes Mitglied offline, kann die Bearbeitung nicht verfügbar sein. Öffnen Sie Windows Vault und den verknüpften Browser, um die Verbindung wiederherzustellen. Eine lokal gespeicherte Richtlinie kann weiter gelten, während ein Mitglied offline ist.
+Ist ein verknüpftes Mitglied offline, kann die Bearbeitung nicht verfügbar sein. Öffnen Sie Vault für Windows und den verknüpften Browser, um die Verbindung wiederherzustellen. Eine lokal gespeicherte Richtlinie kann weiter gelten, während ein Mitglied offline ist.
 
 ## Hilfe erhalten
 

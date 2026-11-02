@@ -1,4 +1,4 @@
-# Windows Vault ਕੋਡ ਮੈਨੂਅਲ
+# Windows ਲਈ Adamancia Vault ਕੋਡ ਮੈਨੂਅਲ
 
 [ਵਰਤੋਂਕਾਰ ਮੈਨੂਅਲ](../manual/pa.md)
 
@@ -167,19 +167,25 @@ Steam blocked ਰਹਿੰਦਾ ਹੈ, ਸਿਵਾਏ ਪੰਜ ਮਿੰਟ�
 
 ## ਚੱਲਦੇ ਨਿਯਮ ਤੋਂ AI calls
 
-ਹਰ custom group **AI calls** ਵਿੱਚ ਇੱਕ connection/model ਅਤੇ reasoning effort ਚੁਣਦਾ ਹੈ। Mac ਅਤੇ browser rules ਇੱਕੋ API ਵਰਤਦੇ ਹਨ; browser request ਲਈ Windows Vault connected ਹੋਣਾ ਲਾਜ਼ਮੀ ਹੈ ਅਤੇ provider credentials ਉੱਥੇ ਹੀ ਰਹਿੰਦੇ ਹਨ। Linked groups ਚੋਣ ਅਤੇ optional daily cap ਸਾਂਝੇ ਕਰਦੇ ਹਨ। ਖਾਲੀ ਦਾ ਅਰਥ group cap ਨਹੀਂ, account limits ਫਿਰ ਵੀ ਲਾਗੂ ਹਨ। Cap UTC ਦਿਨ ਅਨੁਸਾਰ, restart ਮਗਰੋਂ ਕਾਇਮ ਅਤੇ failed ਸਮੇਤ submitted attempts ਗਿਣਦਾ ਹੈ। Link ਪੁਰਾਣੀ usage ਜੋੜਦਾ ਹੈ; unlink ਪੁਰਾਣੀ usage ਰੱਖਦਾ ਹੈ।
+ਹਰ `v.ai` call ਵਿੱਚ connection ਅਤੇ model ਚੁਣੇ ਜਾਂਦੇ ਹਨ। ਚੋਣਵਾਂ ਸੰਭਾਲਿਆ prompt ਅਤੇ context handler ਵਿੱਚ `v.context.ai.prompt` ਅਤੇ `v.context.ai.context` ਰਾਹੀਂ ਮਿਲਦੇ ਹਨ; Vault ਇਹਨਾਂ ਨੂੰ ਆਪਣੇ ਆਪ ਨਹੀਂ ਭੇਜਦਾ। ਹਰ `v.ai` call ਵਿੱਚ ਕੀ ਭੇਜਣਾ ਹੈ, rule ਚੁਣਦਾ ਹੈ। ਬਦਲਾਅ ਪੁਰਾਣੀ configuration ਦੇ ਜਵਾਬ ਰੱਦ ਕਰਦੇ ਹਨ।
 
-`v.ai({ prompt, input? })` ਤੁਰੰਤ request ID ਵਾਪਸ ਕਰਦਾ ਹੈ। Handler ਵਿੱਚ call ਕਰੋ, rule registration ਵੇਲੇ ਨਹੀਂ। `input` ਕੋਈ ਵੀ JSON value ਹੋ ਸਕਦੀ ਹੈ; prompt/input ਹਰ ਇੱਕ20KB ਤੱਕ। Replies `ai` event ਵਿੱਚ `{requestId, ok, text, citations,
-error}`. Success text is at most48KB; citations are `{url,title}`। Web-search ਜਵਾਬ ਦਿਖਾਉਣ ਵੇਲੇ source links ਦਿੱਖਣਯੋਗ ਅਤੇ clickable ਰੱਖੋ। Search model ਲਈ ਹਮੇਸ਼ਾ ਉਪਲਬਧ ਹੈ। ਨਿਰਧਾਰਤ app deadline ਨਹੀਂ, concurrency ਸੀਮਤ ਹੈ, provider fallback/automatic retry ਨਹੀਂ। Reply data ਹੈ, JavaScript ਵਜੋਂ execute ਨਹੀਂ; ਮੌਜੂਦਾ actions ਕਦੋਂ ਲੈਣੇ ਹਨ rule ਤੈਅ ਕਰਦਾ ਹੈ।
+ਚੋਣਵਾਂ `conversation` ਨਾਮ ਪੂਰਾ user/assistant transcript ਸਥਾਨਕ ਤੌਰ ’ਤੇ ਰੱਖਦਾ ਹੈ; ਅਗਲੀ call ਵਿੱਚ ਨਵੇਂ messages ਦੇ16KB ਤੱਕ ਸ਼ਾਮਲ ਹੁੰਦੇ ਹਨ। Model ਬਦਲ ਸਕਦਾ ਹੈ। Group delete ਜਾਂ unlink ਕਰਨ ਨਾਲ conversation ਨਹੀਂ ਮਿਟਦੀ। ਪੁਰਾਣੀਆਂ same-name histories ਵੱਖਰੇ ਨਾਮਾਂ ਨਾਲ import ਹੋਣ ਤਾਂ `preservedConversations` ਵਿੱਚ ਦੱਸੀਆਂ ਜਾਂਦੀਆਂ ਹਨ। ਸਾਂਝੀ conversation ਮਿਟਾਉਣ ਲਈ `v.ai({op:"delete", conversation:"name"})` ਵਰਤੋ; ਜਵਾਬ `ai` event ਵਜੋਂ ਆਉਂਦਾ ਹੈ। ਉਸੇ ਨਾਮ ਦੀ ਚੱਲਦੀ call `ai-conversation-busy` ਦਿੰਦੀ ਹੈ।
 
-`ask` ਬਟਨ ਅਤੇ `note` field ਵਾਲੇ panel ਲਈ:
+`v.ai({ model, reasoningEffort?, conversation?, prompt, input? })` ਤੁਰੰਤ request ID ਦਿੰਦੀ ਹੈ। Handler ਅੰਦਰ call ਕਰੋ। `model` ਉਪਲਬਧ ID ਹੈ; supported effort `default`, `low`, `medium`, `high` ਹੈ। `input` ਕੋਈ ਵੀ JSON ਹੋ ਸਕਦਾ ਹੈ; prompt/input ਹਰ ਇੱਕ20KB ਤੱਕ। Replies arrive as `ai` events: `{requestId, ok, text, citations,
+error, preservedConversations?}`. Success text is at most48KB; citations are `{url,title}`. Preserve visible,
+clickable source links when displaying answers based on web search. Search is always
+available to the model. Generation requests have no fixed app deadline. Several
+named conversations can run at once; calls using the same name run in order.
+Start another call from an `ai` event for a sequence. Vault ਹਾਲੇ delayed calls schedule ਨਹੀਂ ਕਰਦਾ। Provider capacity ਅਤੇ quotas ਬੇਨਤੀਆਂ ਨੂੰ ਕਤਾਰ ਵਿੱਚ ਰੱਖ ਜਾਂ ਰੱਦ ਕਰ ਸਕਦੇ ਹਨ; fallback ਜਾਂ automatic retry ਨਹੀਂ। ਜਵਾਬ data ਹਨ, JavaScript ਨਹੀਂ; actions rule ਚੁਣਦੀ ਹੈ।
+
+`ask` ਬਟਨ ਅਤੇ `note` ਖੇਤਰ ਵਾਲੇ panel ਦੀ ਮਿਸਾਲ:
 
 ```javascript
 (on, v) => {
   let pending = null;
   on("panel", ({ data }) => {
     if (data.controlId !== "ask" || pending) return;
-    pending = v.ai({ prompt: "Summarize this text.", input: data.values?.note ?? "" });
+    pending = v.ai({ model: "chatgpt:MODEL_ID", conversation: "notes", prompt: v.context.ai.prompt || "Summarize this text.", input: {context:v.context.ai.context, note:data.values?.note ?? ""} });
   });
   on("ai", ({ data }) => {
     if (data.requestId !== pending) return;
@@ -190,6 +196,6 @@ error}`. Success text is at most48KB; citations are `{url,title}`। Web-search 
 }
 ```
 
-Outstanding calls restart ਮਗਰੋਂ ਮੁੜ ਨਹੀਂ ਚਲਦੀਆਂ। Run, disable/re-enable ਅਤੇ delete ਪੁਰਾਣੇ replies discard ਕਰਦੇ ਹਨ; disconnected browser `ai-unavailable` ਦਿੰਦਾ ਹੈ। ਹੋਰ errors: `ai-not-configured`, `ai-invalid-input`, `ai-busy`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`। Failed call rule ਵੱਲੋਂ ਰੱਖਿਆ ਪਿਛਲਾ result ਨਹੀਂ ਬਦਲਦੀ। Rule state ਦੀ ਹੱਦ64KB ਹੈ।
+Pending calls restart ਮਗਰੋਂ ਮੁੜ ਨਹੀਂ ਚਲਦੀਆਂ। Run, disable/re-enable ਅਤੇ delete ਪੁਰਾਣੇ replies ਹਟਾਉਂਦੇ ਹਨ; disconnected browser `ai-unavailable` ਦੱਸਦਾ ਹੈ। ਹੋਰ errors: `ai-not-configured`, `ai-invalid-input`, `ai-daily-limit`, `ai-request-failed`, `ai-usage-storage-unavailable`, `ai-conversation-storage-unavailable`। Failed call ਰੱਖੇ ਨਤੀਜੇ ਨੂੰ overwrite ਨਹੀਂ ਕਰਦੀ; state ਹੱਦ64KB ਹੈ।
 
-Credential-free choices Mac `rule_ai_models` ਜਾਂ browser `settings-rule-ai-models` ਨਾਲ ਲੱਭੋ; ਮੌਜੂਦਾ set-group ਰਾਹੀਂ `ruleAI` configure ਕਰੋ। Fields: `providerModel`, `accountID`, `reasoningEffort` (`default`, `low`, `medium`, `high`), `dailyRequestLimit` (null ਜਾਂ1–100000)। ਵਾਪਸ ਮਿਲੀ choice ਵਰਤੋ; rule source ਵਿੱਚ key ਜਾਂ provider URL ਨਾ ਰੱਖੋ।
+ਬਿਨਾਂ credentials ਚੋਣਾਂ Windows `rule_ai_models` ਜਾਂ browser `settings-rule-ai-models` ਵਿੱਚ ਲੱਭੋ; ਮੌਜੂਦਾ set-group ਰਾਹੀਂ `ruleAI` ਦਿਓ। Fields `dailyRequestLimit` (null ਜਾਂ1–100000), `prompt`, `context` (ਚੋਣਵਾਂ text, ਹਰ ਇੱਕ16KB ਤੱਕ) ਹਨ। Model ਅਤੇ effort ਹਰ call ਵਿੱਚ ਚੁਣੋ। ਵਾਪਸ ਮਿਲਿਆ ਵਿਕਲਪ ਵਰਤੋ; key ਜਾਂ provider URL rule ਵਿੱਚ ਨਾ ਰੱਖੋ।

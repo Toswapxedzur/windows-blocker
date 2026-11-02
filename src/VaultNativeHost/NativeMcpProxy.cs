@@ -56,7 +56,7 @@ internal static class NativeMcpProxy
                 // Notifications have no response. Invalid JSON still receives
                 // a protocol error with a null ID; stdout stays JSON-only.
                 if (!notification)
-                    await output.WriteLineAsync(new JsonObject { ["jsonrpc"] = "2.0", ["id"] = id, ["error"] = new JsonObject { ["code"] = error is System.Text.Json.JsonException ? -32700 : -32000, ["message"] = error is HttpRequestException ? "Windows Vault is unavailable." : error.Message } }.ToJsonString());
+                    await output.WriteLineAsync(new JsonObject { ["jsonrpc"] = "2.0", ["id"] = id, ["error"] = new JsonObject { ["code"] = error is System.Text.Json.JsonException ? -32700 : -32000, ["message"] = error is HttpRequestException ? "Vault on Windows is unavailable." : error.Message } }.ToJsonString());
             }
         }
     }

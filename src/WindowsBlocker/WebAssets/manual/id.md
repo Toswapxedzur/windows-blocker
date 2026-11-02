@@ -1,6 +1,6 @@
-# Panduan pengguna Windows Vault
+# Panduan pengguna Adamancia Vault di Windows
 
-Windows Vault memiliki tiga halaman: **Vault** memblokir aplikasi native, **Klasifikasi** memberi tag pada konten browser yang didukung, dan **Aktivitas** menampilkan penggunaan yang direkam. Ekstensi browser mengumpulkan konten yang didukung dan menerapkan pemblokiran browser. Pasang dan hubungkan di browser yang Anda gunakan.
+Vault di Windows memiliki tiga halaman: **Vault** memblokir aplikasi native, **Klasifikasi** memberi tag pada konten browser yang didukung, dan **Aktivitas** menampilkan penggunaan yang direkam. Ekstensi browser mengumpulkan konten yang didukung dan menerapkan pemblokiran browser. Pasang dan hubungkan di browser yang Anda gunakan.
 
 ## Mulai cepat
 
@@ -47,7 +47,7 @@ Saat grup dibekukan, waktu tunggu dapat diperpanjang dan PIN dapat ditambahkan j
 
 Gunakan **Tautkan** untuk menghubungkan grup yang dipilih secara eksplisit di program Vault lain. Grup tertaut berbagi nama, setelan kebijakan yang didukung, target, penggunaan, dan syarat pembekuan. Tiap program mengedit dan menerapkan jenis target yang didukungnya; entri target lain tetap tersedia bagi program tertaut. Membatalkan tautan mempertahankan setiap grup dan setelannya.
 
-Jika anggota tertaut offline, pengeditan mungkin tidak tersedia. Buka Windows Vault dan browser tertaut untuk menyambung kembali. Kebijakan tersimpan lokal dapat terus berlaku saat anggota offline.
+Jika anggota tertaut offline, pengeditan mungkin tidak tersedia. Buka Vault di Windows dan browser tertaut untuk menyambung kembali. Kebijakan tersimpan lokal dapat terus berlaku saat anggota offline.
 
 ## Bantuan
 
