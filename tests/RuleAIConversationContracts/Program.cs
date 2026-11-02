@@ -1,4 +1,7 @@
 using System.Text.Json.Nodes;
+using System.Text.Json;
+using System.Text;
+using System.Security.Cryptography;
 using WindowsBlocker.Bridge;
 using WindowsBlocker.Rules;
 using WindowsBlocker.WebUI;
@@ -9,22 +12,34 @@ try
 {
     var transcripts = new RuleAIConversations();
     transcripts.Append(["mac:a"], "topic", "chatgpt:first", "Mac question", "Mac answer");
+    Check(transcripts.Setting("status", null) == 1024, "default total limit is 1 GB");
+    Check(transcripts.Prepare(["browser:b"], "topic").History.Contains("Mac answer"), "unlinked groups share a named conversation");
     transcripts.Append(["browser:b"], "topic", "api:second", "Browser question", "Browser answer");
-    var linked = new[] { "browser:b", "mac:a" };
-    var prepared = transcripts.Prepare(linked, "topic");
-    Check(prepared.PreservedNames.Length == 1, "link keeps the conflicting transcript under a distinct name");
-    Check(new RuleAIConversations().Prepare(linked, "topic").PreservedNames.SequenceEqual(prepared.PreservedNames), "preserved names remain discoverable after restart");
-    Check(transcripts.Prepare(["mac:a"], prepared.PreservedNames[0]).History.Contains("question"), "preserved name is usable after unlink");
-    transcripts.Append(linked, "topic", "api:second", "Shared question", "Shared answer");
-    foreach (var member in linked)
-        Check(transcripts.Prepare([member], "topic").History.Contains("Shared answer"), "each member retains shared history after unlink");
     var resumed = new RuleAIConversations().Prepare(["mac:a"], "topic");
-    Check(resumed.History.Contains("Shared answer"), "conversation survives store restart");
-    transcripts.Append(["mac:a"], "unopened", "chatgpt:first", "Prior-only question", "Prior-only answer");
-    transcripts.CopyAllBeforeUnlink(linked);
-    Check(new RuleAIConversations().Prepare(["browser:b"], "unopened").History.Contains("Prior-only answer"), "unlink copies even conversations never opened during the link");
+    Check(resumed.History.Contains("Browser answer"), "conversation survives restart and model switch");
+    transcripts.CopyAllBeforeUnlink(["mac:a", "browser:b"]);
+    Check(transcripts.Prepare(["browser:b"], "topic").History.Contains("Mac answer"), "unlink does not delete global history");
+    transcripts.Append(["mac:a"], "older", "chatgpt:first", "Old question", new string('x', 600_000));
+    transcripts.Append(["mac:a"], "newer", "chatgpt:first", "New question", new string('y', 600_000));
+    Check(transcripts.Setting("set", 1) == 1, "user can configure the total limit");
+    Check(transcripts.Prepare(["mac:a"], "older").History.Length == 0, "least recently used conversation is evicted");
+    Check(transcripts.Prepare(["browser:b"], "newer").History.Length > 0, "newer conversation remains");
+    transcripts.Delete("topic");
+    Check(transcripts.Prepare(["browser:b"], "topic").History.Length == 0, "explicit deletion removes a shared conversation");
+    var legacyRoot = Path.Combine(root, "rule-ai-conversations");
+    var nameHash = Hash("legacy");
+    foreach (var (member, text) in new[] { ("mac:a", "Mac-only"), ("browser:b", "Browser-only") })
+    {
+        var folder = Path.Combine(legacyRoot, Hash(member));
+        Directory.CreateDirectory(folder);
+        var doc = new RuleAIConversations.Document(1, "legacy", [new(Guid.NewGuid().ToString("N"), "assistant", text, "fixture", 1)]);
+        File.WriteAllBytes(Path.Combine(folder, nameHash + ".json"), JsonSerializer.SerializeToUtf8Bytes(doc));
+    }
+    var imported = transcripts.Prepare(["mac:a"], "legacy");
+    Check(imported.PreservedNames.Length == 1 && imported.History.Contains("only"), "legacy same-name collision keeps a distinct alias");
+    Check(transcripts.Prepare(["browser:b"], imported.PreservedNames[0]).History.Contains("only"), "legacy alias is globally usable");
 
-    var hub = new ConnectionHub(linked);
+    var hub = new ConnectionHub(["browser:b", "mac:a"]);
     var worker = new ClassifierWorkerClient();
     var service = new RuleAIService(hub, worker);
     var first = service.Request("windowsapp", "g", "generate", "{\"model\":\"chatgpt:first\",\"conversation\":\"sequential\",\"prompt\":\"First\"}");
@@ -33,6 +48,9 @@ try
     Check(replies.All(reply => reply["ok"]?.GetValue<bool>() == true), "same-name calls succeed");
     Check(worker.Prompts[1].Contains("First") && worker.Prompts[1].Contains("reply 1"), "second call sees the first turn across a model switch");
     Check(worker.MaxActive == 1, "same-name calls serialize");
+    var deletedByRule = await service.Request("windowsapp", "g", "generate", "{\"op\":\"delete\",\"conversation\":\"sequential\"}");
+    Check(deletedByRule["ok"]?.GetValue<bool>() == true, "rule command deletes a named conversation");
+    Check(transcripts.Prepare(["mac:a"], "sequential").History.Length == 0, "rule deletion affects every group");
 
     worker.ResetConcurrency();
     var parallel = await Task.WhenAll(
@@ -41,7 +59,7 @@ try
     Check(parallel.All(reply => reply["ok"]?.GetValue<bool>() == true) && worker.MaxActive >= 2, "different names run concurrently");
     var noModel = await service.Request("windowsapp", "g", "generate", "{\"prompt\":\"Missing model\"}");
     Check(noModel["error"]?.GetValue<string>() == "ai-invalid-input", "model is required per call");
-    Console.WriteLine("PASS Windows rule AI persistence, link collision, model switching, ordered and parallel calls");
+    Console.WriteLine("PASS Windows rule AI global persistence, eviction, deletion, model switching, ordered and parallel calls");
 }
 finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
 
@@ -49,6 +67,7 @@ static void Check(bool condition, string message)
 {
     if (!condition) throw new Exception(message);
 }
+static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
 namespace WindowsBlocker.WebUI
 {

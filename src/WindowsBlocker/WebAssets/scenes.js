@@ -48,6 +48,24 @@
     + '<input id="vaultAutoUpdates" type="checkbox"><span>Auto install updates</span></label>'
     + '<div class="field-actions"><button id="vaultCheckUpdates" type="button" class="secondary">Check for updates</button></div>';
   settingsModal.querySelector(".settings-col").appendChild(updatesSection);
+  const conversationSection = document.createElement("section");
+  conversationSection.className = "settings-group";
+  conversationSection.innerHTML = '<label class="label" for="vaultConversationLimit">Saved AI conversations (MB)</label>'
+    + '<input id="vaultConversationLimit" type="number" min="1" max="1000000" step="1" inputmode="numeric">'
+    + '<p class="small-copy">Shared by all rules. When full, Vault removes the least recently used conversations.</p>';
+  settingsModal.querySelector(".settings-col").appendChild(conversationSection);
+  const conversationLimit = conversationSection.querySelector("#vaultConversationLimit");
+  async function refreshConversationLimit() {
+    const result = await window.__cbConversationSettings("status");
+    if (result.ok) conversationLimit.value = result.limitMB;
+  }
+  conversationLimit.addEventListener("change", async () => {
+    const value = Number(conversationLimit.value);
+    if (Number.isSafeInteger(value) && value > 0 && value <= 1000000) {
+      const result = await window.__cbConversationSettings("set", value);
+      if (!result.ok) await refreshConversationLimit();
+    } else await refreshConversationLimit();
+  });
   const autoUpdates = updatesSection.querySelector("#vaultAutoUpdates");
   const checkUpdates = updatesSection.querySelector("#vaultCheckUpdates");
   async function refreshUpdates() {
@@ -90,7 +108,7 @@
     const visible = !settingsModal.classList.contains("hidden");
     if (visible === settingsVisible) return;
     settingsVisible = visible;
-    if (visible) refreshUpdates();
+    if (visible) { refreshUpdates(); refreshConversationLimit(); }
     notifyScene(visible ? "settings" : document.body.dataset.scene || "vault");
     window.dispatchEvent(new CustomEvent("vault-settings-changed", { detail: { open: visible } }));
   }

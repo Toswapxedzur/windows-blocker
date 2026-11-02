@@ -47,6 +47,21 @@ public sealed class RuleAIService
             catch { return new JsonObject { ["ok"] = false, ["error"] = "ai-unavailable", ["models"] = new JsonArray() }; }
         }
         if (operation != "generate") return Failure("ai-invalid-input");
+        JsonObject? deletion = null;
+        try { deletion = JsonNode.Parse(payload) as JsonObject; } catch { }
+        if (Text(deletion?["op"]) == "delete")
+        {
+            var name = Text(deletion?["conversation"]);
+            if (deletion!.Count != 2 || string.IsNullOrWhiteSpace(name) || Encoding.UTF8.GetByteCount(name) > 128
+                || name.Any(char.IsControl) || _hub.CaptureRuleAI(program, groupId) == null) return Failure("ai-invalid-input");
+            lock (_conversationGate)
+            {
+                if (_conversationLocks.ContainsKey(name)) return Failure("ai-conversation-busy");
+                try { _conversations.Delete(name); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return Failure("ai-conversation-storage-unavailable"); }
+            }
+            return new JsonObject { ["ok"] = true, ["error"] = "", ["text"] = null, ["citations"] = new JsonArray() };
+        }
         var request = ParseInput(payload);
         if (request == null) return Failure("ai-invalid-input");
         var model = Text(request["model"]);
@@ -54,7 +69,7 @@ public sealed class RuleAIService
         var conversation = Text(request["conversation"]);
         var context = _hub.CaptureRuleAI(program, groupId);
         if (context == null || !ValidConfiguration(context.Configuration, out var limit)) return Failure("ai-not-configured");
-        var key = conversation.Length == 0 ? null : string.Join("|", context.Members.OrderBy(value => value, StringComparer.Ordinal)) + "\0" + conversation;
+        var key = conversation.Length == 0 ? null : conversation;
         SemaphoreSlim? semaphore = null;
         if (key != null)
         {

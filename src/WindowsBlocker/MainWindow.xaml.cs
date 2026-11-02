@@ -311,6 +311,18 @@ public partial class MainWindow : Window
             }
             switch (kindEl.GetString())
             {
+                case "conversation-settings":
+                    var settingsMessage = root.TryGetProperty("message", out var conversationMessage) && conversationMessage.ValueKind == JsonValueKind.Object
+                        ? conversationMessage : default;
+                    var settingsAction = settingsMessage.ValueKind == JsonValueKind.Object
+                        && settingsMessage.TryGetProperty("action", out var settingsActionElement)
+                        ? settingsActionElement.GetString() ?? "status" : "status";
+                    int? settingsLimit = settingsMessage.ValueKind == JsonValueKind.Object
+                        && settingsMessage.TryGetProperty("limitMB", out var settingsLimitElement)
+                        && settingsLimitElement.TryGetInt32(out var parsedLimit) ? parsedLimit : null;
+                    try { NativeReply(root, new JsonObject { ["ok"] = true, ["limitMB"] = new RuleAIConversations().Setting(settingsAction, settingsLimit) }); }
+                    catch { NativeReply(root, new JsonObject { ["ok"] = false, ["error"] = "ai-conversation-storage-unavailable" }); }
+                    break;
                 case "updater":
                     var action = root.TryGetProperty("message", out var updateMessage)
                         && updateMessage.ValueKind == JsonValueKind.Object
