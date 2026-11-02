@@ -5,3 +5,5 @@
 - `RuleEngine.cs` imports active source/state and dispatches current native events.
 - `LocalFolderGrant.cs` stores an explicit folder grant and brokers bounded text/JSON/CSV operations.
 - `LocalFolderPathPolicy.cs` rejects Windows name-surrogate redirects while allowing ordinary Cloud Files placeholders.
+- `RuleAIService.cs` routes each explicit model request through the worker and orders calls within a named conversation.
+- `RuleAIConversations.cs` saves complete local transcripts and copies linked histories to each member.

@@ -278,7 +278,7 @@ public sealed class ConnectionHub
             if (cluster?.Scalars.ContainsKey("groupType") == true && Text(cluster.Scalars["groupType"]) != "custom") return null;
             var configuration = cluster?.Scalars.ContainsKey("ruleAI") == true
                 ? cluster.Scalars["ruleAI"] as JsonObject : group["ruleAI"] as JsonObject;
-            if (configuration == null) return null;
+            configuration ??= new JsonObject();
             string[] members = cluster == null ? [program + ":" + groupId]
                 : cluster.Members.Select(member => member.Key + ":" + member.Value).OrderBy(value => value, StringComparer.Ordinal).ToArray();
             var peer = program == LocalProgram ? "local"
@@ -337,7 +337,12 @@ public sealed class ConnectionHub
     }
     public string? Unlink(string program, string groupId)
     {
-        lock (_gate) { var c = Find(program, groupId); if (c == null) return "not-linked"; if (IsLocked(c.Lock)) return "group-locked"; RemoveMember(c, program); Persist(); }
+        lock (_gate) {
+            var c = Find(program, groupId); if (c == null) return "not-linked"; if (IsLocked(c.Lock)) return "group-locked";
+            try { new WindowsBlocker.Rules.RuleAIConversations().CopyAllBeforeUnlink(c.Members.Select(member => member.Key + ":" + member.Value).ToArray()); }
+            catch { return "ai-conversation-storage-unavailable"; }
+            RemoveMember(c, program); Persist();
+        }
         BroadcastClusters(); return null;
     }
     private void RemoveMember(Cluster c, string program)

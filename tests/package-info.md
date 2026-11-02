@@ -14,3 +14,4 @@ All suites run on mini1, with native .NET/WebView2 suites in its Windows VM.
 - `McpConnectorContracts/` — nondestructive client registration and authenticated bundled stdio framing.
 - `WorkerClientContracts/`, `WorkerFixture/` — backend process replacement, crash/restart and request attribution.
 - `WindowsUpdateContracts/` — signed feed verification, tamper and expiry rejection, and release identity checks.
+- `RuleAIConversationContracts/` — portable .NET 8 contract for named local transcripts, linked-name collisions, restart persistence, per-call model switching, and ordered or parallel generation. Run on mini1 without a Windows UI.

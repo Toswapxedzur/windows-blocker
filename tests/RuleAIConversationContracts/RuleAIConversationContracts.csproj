@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/WindowsBlocker/Rules/RuleAIConversations.cs" Link="RuleAIConversations.cs" />
+    <Compile Include="../../src/WindowsBlocker/Rules/RuleAIService.cs" Link="RuleAIService.cs" />
+  </ItemGroup>
+</Project>
