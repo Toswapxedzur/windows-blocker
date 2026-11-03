@@ -2,6 +2,10 @@
 
 > 🤖 **AI protocol:** Read `../package-info.md` (group), the group `AGENTS.md`, and `../misc/project-memory/PROJECT-MEMORY.md` before working here. Update this file when the folder changes. Never delete without owner consent; keep secrets out of git.
 
+- **Icon palette:** the WPF project embeds bright `Assets/windows-vault.ico`;
+  `Assets/windows-vault-dark.svg` is retained for the website. See
+  `src/WindowsBlocker/Assets/package-info.md`.
+
 - **What:** the native Windows member (public name **Windows Vault**): .NET 8 WPF app with a WebView2 editor (mirrored extension UI in `src/WindowsBlocker/WebAssets`), app inventory, enforcement, custom-rule runtime, the authenticated protocol-4 hub, and the shared Swift Classifier/Activity worker.
 - **Own git repo:** `Toswapxedzur/windows-blocker`; version source of truth = `<Version>` in `src/WindowsBlocker/WindowsBlocker.csproj`. The 0.3.0 parity candidate is in progress on `feature/ai-content-parity`; generated editor assets alone do not establish native AI or rule parity.
 - **Build/test:** needs Windows + .NET 8 SDK (`WindowsBlocker.sln`). Real-Windows testing: the QEMU Windows 11 VM on mini1 (`~/winvm`, recipe in `~/Desktop/agentic/memory/mini1-windows-test-vm.md`; `guest-build.ps1` builds + launches, `gui.sh` drives the desktop). All builds/tests run on mini1, including Node contracts and native Windows tests; no laptop testing. `sync-webui.sh` generates canonical browser editor, Mac native shim/scenes, languages, and the native rule engine. `tests/runner-custom-rule-stress.js`, `runner-rule-worker.js`, and `runner-editor-syntax.js` exercise the current raw-event API, disposable-worker isolation, and native storage/log callbacks on mini1.
