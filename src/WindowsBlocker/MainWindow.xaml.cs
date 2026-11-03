@@ -425,10 +425,22 @@ public partial class MainWindow : Window
                 case "fire-snooze-press":
                 {
                     var gid = ReadMessageString(root, "groupId");
-                    if (gid.Length > 0)
+                    var expected = -1;
+                    var hasExpected = root.TryGetProperty("message", out var request)
+                        && request.TryGetProperty("expectedConfirmations", out var value)
+                        && value.TryGetInt32(out expected);
+                    var document = JsonNode.Parse(_store.LoadRawJson() ?? "{}") as JsonObject;
+                    var group = (document?["blockedGroups"] as JsonArray)?.OfType<JsonObject>()
+                        .FirstOrDefault(item => item["id"]?.GetValue<string>() == gid);
+                    if (!hasExpected || group?["groupType"]?.GetValue<string>() != "custom"
+                        || group["allowSnooze"]?.GetValueKind() == JsonValueKind.False
+                        || Math.Max(0, group["snoozeConfirmations"]?.GetValue<int>() ?? 0) != expected)
                     {
-                        _ = FireUserEventAndRenderAsync("snoozePress", gid, new Dictionary<string, string>());
+                        NativeReply(root, new JsonObject { ["ok"] = false, ["error"] = "snooze-settings-changed" });
+                        break;
                     }
+                    _ = FireUserEventAndRenderAsync("snoozePress", gid, new Dictionary<string, string>());
+                    NativeReply(root, new JsonObject { ["ok"] = true });
                     break;
                 }
                 case "custom-panel-event":

@@ -120,6 +120,15 @@ public sealed class NativePolicyTools(WebStore store, ConnectionHub hub, RuleEng
                 if (name == "snooze_group" && Text(group["groupType"]) == "custom")
                 {
                     if (group["allowSnooze"]?.GetValueKind() == JsonValueKind.False) throw new InvalidOperationException("snooze-disabled");
+                    var count = Math.Max(0, group["snoozeConfirmations"]?.GetValue<int>() ?? 0);
+                    if (count > 0)
+                    {
+                        var pending = await Confirm("snooze:" + id, group.ToJsonString(),
+                            args["confirm"]?.GetValue<bool>() == true, now, count);
+                        if (pending != null) { pending["snoozePressed"] = false; return pending; }
+                    }
+                    var fresh = Group(Document(), id);
+                    if (fresh.ToJsonString() != group.ToJsonString()) throw new InvalidOperationException("snooze-settings-changed");
                     var effects = await rules.FireUserEventAsync("snoozePress",id,new(),new()); RulesEvent?.Invoke(effects); return new JsonObject { ["snoozePressed"]=true };
                 }
                 var snoozes = document["groupSnoozes"] as JsonObject ?? new(); var entry = snoozes[id];
