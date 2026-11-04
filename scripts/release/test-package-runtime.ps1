@@ -143,7 +143,9 @@ try {
     foreach($key in $keys){$manifest=(Get-Item $key).GetValue('');Check ($manifest.StartsWith($install+'\',[StringComparison]::OrdinalIgnoreCase) -and (Test-Path $manifest)) 'Installed browser native registration points to this installation'}
     Check (Test-Path $shortcut) 'Current-user Start menu launcher exists'
     Start-App
-    Check (@((Rpc 'tools/list').tools).Count -eq 38) 'Self-contained installed app exposes the canonical 38 MCP tools without SDK or runtime paths'
+    $expectedTools=(Get-Content "$install\WebAssets\mcp-tools.json" -Raw | ConvertFrom-Json).Count
+    $actualTools=@((Rpc 'tools/list').tools).Count
+    Check ($expectedTools -ge 38 -and $actualTools -eq $expectedTools) "Self-contained installed app exposes its complete bundled MCP catalog without SDK or runtime paths (expected $expectedTools, observed $actualTools)"
     $state=Tool 'classifier_state' @{section='all'}
     Check ($null -ne $state.assets) 'Installed native host communicates interactively with the production Swift Classifier'
     $name='Installed '+[char]0x4e2d+[char]0x6587
