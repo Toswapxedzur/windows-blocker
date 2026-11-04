@@ -1,6 +1,6 @@
 # Windows Vault package
 
-Build and verify on mini1's Windows VM. `package-windows-vault.ps1` requires the
+Build and verify on Mini2's Windows VM. `package-windows-vault.ps1` requires the
 bundled shared Classifier worker produced by `scripts/classifier-worker/` and
 checks its dependency hashes before publishing a self-contained x64 .NET app
 and native authentication/MCP helper. Exact .NET, WebView2 and worker dependency

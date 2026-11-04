@@ -60,6 +60,24 @@ recordStore.SaveRaw("""{"blockedGroups":[{"id":"native-rule","groupType":"custom
 Check(JsonNode.Parse(recordStore.LoadRawJson()!)?["cbRuleRecords"]?["groups"]?["native-rule"]?["item"]?["value"]?["label"]?.ToString() == "saved", "native custom record survives a store write");
 recordStore.Update(document => (document["blockedGroups"] as JsonArray)!.Clear());
 Check(JsonNode.Parse(recordStore.LoadRawJson()!)?["cbRuleRecords"]?["groups"]?["native-rule"] == null, "deleting a custom group prunes only its generic records");
+var validStore = File.ReadAllBytes(recordStore.FilePath);
+foreach (var unreadable in new[] { "not JSON", """{"schemaVersion":99,"private":"keep"}""",
+    """{"schemaVersion":7,"storageMetadata":{"format":"future.store","schemaVersion":7,"product":"windows","writtenByAppVersion":"4.0.1"}}""" })
+{
+    File.WriteAllText(recordStore.FilePath, unreadable);
+    var before = File.ReadAllBytes(recordStore.FilePath);
+    foreach (Action mutation in new Action[] {
+        () => recordStore.Merge(new JsonObject { ["blockedGroups"] = new JsonArray() }),
+        () => recordStore.Update(root => root["globalSettings"] = new JsonObject()),
+        () => recordStore.SaveRaw("""{"blockedGroups":[]}""")
+    })
+    {
+        var refused = false;
+        try { mutation(); } catch (InvalidDataException) { refused = true; }
+        Check(refused && File.ReadAllBytes(recordStore.FilePath).SequenceEqual(before), "unreadable or future native store refuses mutation and preserves bytes");
+    }
+}
+File.WriteAllBytes(recordStore.FilePath, validStore);
 Check(!(JsonNode.Parse(hub.CurrentStatusJson())!["peers"] as JsonArray)!.OfType<JsonObject>().Any(p=>p["program"]?.GetValue<string>()=="classifier"),"Absent embedded Classifier handler is not advertised to browsers");
 hub.ClassifierRequest=(_,_,_,_)=>Task.FromResult(new JsonObject());
 Check((JsonNode.Parse(hub.CurrentStatusJson())!["peers"] as JsonArray)!.OfType<JsonObject>().Any(p=>p["program"]?.GetValue<string>()=="classifier" && p["connected"]?.GetValue<bool>()==true),"Embedded shared Classifier route is discoverable by canonical browser readiness");
@@ -135,6 +153,20 @@ Check(SnoozeTotal(budgets,"rolling")==3_000,"Rolling seeds and unrelated fixed-d
 var restored=new ConnectionHub();restored.Start();
 try { Check(restored.SharedUsage("fixed")?.Ms==61_500 && SnoozeTotal(restored,"fixed")==1_500 && SnoozeTotal(restored,"rolling")==3_000,"Usage-only contributions and snooze consumption survive a hub restart"); }
 finally { await restored.StopAsync(); }
+var savedClusters = File.ReadAllBytes(Storage.ClustersPath);
+foreach (var unreadableClusters in new[] { "not JSON", """{"version":99,"clusters":[]}""" })
+{
+    File.WriteAllText(Storage.ClustersPath, unreadableClusters);
+    var before = File.ReadAllBytes(Storage.ClustersPath);
+    var guardedHub = new ConnectionHub();
+    guardedHub.Start();
+    guardedHub.SetRoster(ConnectionHub.LocalProgram, new JsonArray(new JsonObject { ["id"] = "local" }));
+    Check(JsonNode.Parse(guardedHub.CurrentStatusJson())?["state"]?.ToString() == "error"
+        && guardedHub.Link(ConnectionHub.LocalProgram, "local", "chrome", "remote") == "unsupported-cluster-store"
+        && File.ReadAllBytes(Storage.ClustersPath).SequenceEqual(before),
+        "unreadable or future cluster store blocks links and preserves bytes");
+}
+File.WriteAllBytes(Storage.ClustersPath, savedClusters);
 Check(WindowsBlocker.Rules.LocalFolderPathPolicy.RedirectsName(0xA000000C) && WindowsBlocker.Rules.LocalFolderPathPolicy.RedirectsName(0xA0000003),"Windows junction and symlink tags are name redirections");
 Check(!WindowsBlocker.Rules.LocalFolderPathPolicy.RedirectsName(0x9000001A) && !WindowsBlocker.Rules.LocalFolderPathPolicy.RedirectsName(0x9000F01A) && !WindowsBlocker.Rules.LocalFolderPathPolicy.RedirectsName(0x80000021),"Cloud placeholders and OneDrive tags retain ordinary selected-folder access");
 var historicalIcons=new JsonObject{["kind"]="known-items",["items"]=new JsonArray(new JsonObject{["id"]=@"app|C:\History\closed.exe"},new JsonObject{["id"]="app|family_name!App"},new JsonObject{["id"]="web|example.com"}),["icons"]=new JsonObject{["example.com"]="browser-cache"}};

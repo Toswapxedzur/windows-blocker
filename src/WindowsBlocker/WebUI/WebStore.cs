@@ -39,8 +39,12 @@ public sealed class WebStore
 
     public void SaveRaw(string rawJson)
     {
-        if (JsonNode.Parse(rawJson) is not JsonObject root) return;
-        lock (_gate) Write(root);
+        if (JsonNode.Parse(rawJson) is not JsonObject root) throw new InvalidDataException("Invalid Vault store.");
+        lock (_gate)
+        {
+            _ = LoadObject(); // Refuse to replace an unreadable existing store.
+            Write(root);
+        }
     }
 
     // Patch only the keys a writer changed. Native usage and another group's
@@ -71,6 +75,7 @@ public sealed class WebStore
     private static readonly HashSet<string> PerGroupKeys = new() { "usageTimersMs", "usageResetAtMs", "usageBucketsMs", "groupSnoozes", "groupSnoozeTotalsMs", "cbRuleLog", "cbRuleQuarantine", "cbRuleState" };
     private void Write(JsonObject root)
     {
+        ValidateStore(root);
         // Native and editor deletion share this writer. Generic records belong
         // only to live custom groups, never to a recreated ID or linked peer.
         if (root["cbRuleRecords"] is JsonObject records && records["version"]?.GetValueKind() == JsonValueKind.Number &&
@@ -241,15 +246,33 @@ public sealed class WebStore
 
     private JsonObject? LoadObject()
     {
+        var json = LoadRawJson();
+        if (json == null) return null;
         try
         {
-            var json = LoadRawJson();
-            if(json==null) return null;
-            return JsonNode.Parse(json) as JsonObject;
+            var root = JsonNode.Parse(json) as JsonObject ?? throw new InvalidDataException("Invalid Vault store.");
+            ValidateStore(root);
+            return root;
         }
-        catch
+        catch (JsonException error) { throw new InvalidDataException("Invalid Vault store; saved data was preserved.", error); }
+    }
+
+    private static void ValidateStore(JsonObject root)
+    {
+        var rawVersion = root["schemaVersion"];
+        var version = 0;
+        if (rawVersion != null && (!int.TryParse(rawVersion.ToJsonString(),
+                System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out version)
+            || version < 0 || version > 7))
+            throw new InvalidDataException("Unsupported Vault store schema; saved data was preserved.");
+        if (root["storageMetadata"] is not null)
         {
-            return null;
+            if (root["storageMetadata"] is not JsonObject metadata
+                || metadata["format"]?.ToString() != "vault.web-store"
+                || metadata["schemaVersion"]?.ToJsonString() != version.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                || string.IsNullOrWhiteSpace(metadata["product"]?.ToString())
+                || string.IsNullOrWhiteSpace(metadata["writtenByAppVersion"]?.ToString()))
+                throw new InvalidDataException("Unsupported Vault store metadata; saved data was preserved.");
         }
     }
 
