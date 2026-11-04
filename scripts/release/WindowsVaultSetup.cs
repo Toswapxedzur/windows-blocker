@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 // A per-user bootstrapper. The embedded, pinned ZIP is the same independently
 // verified payload used by Install.ps1; this wrapper changes only presentation.
@@ -84,8 +85,14 @@ internal static class WindowsVaultSetup
 
     private static string Install(string environment, string destination)
     {
-        if (!Environment.Is64BitOperatingSystem || Environment.Is64BitProcess == false)
-            throw new InvalidOperationException("Use x64 Windows 10 22H2 or Windows 11.");
+        var os = Environment.OSVersion.Version;
+        var installationType = Registry.GetValue(
+            @"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion",
+            "InstallationType", null) as string;
+        if (!Environment.Is64BitOperatingSystem || !Environment.Is64BitProcess ||
+            os.Major != 10 || os.Build < 22000 ||
+            !String.Equals(installationType, "Client", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Use Windows 11 x64.");
         destination = Path.GetFullPath(destination ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "AdamanciaVault", environment));
         string temporary = Path.Combine(Path.GetTempPath(), "WindowsVaultSetup-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(temporary);

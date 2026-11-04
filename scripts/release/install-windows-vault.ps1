@@ -1,7 +1,8 @@
 param([ValidateSet('development','production')][string]$Environment='production',[string]$Destination)
 $ErrorActionPreference='Stop'
-if (![Environment]::Is64BitOperatingSystem) { throw 'This Windows Vault package requires x64 Windows.' }
-if ([Environment]::OSVersion.Version.Build -lt 19045) { throw 'Use Windows 10 22H2 or Windows 11.' }
+$os=[Environment]::OSVersion.Version
+$installationType=(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name InstallationType -ErrorAction SilentlyContinue).InstallationType
+if (![Environment]::Is64BitOperatingSystem -or $os.Major -ne 10 -or $os.Build -lt 22000 -or $installationType -ne 'Client') { throw 'Use Windows 11 x64.' }
 $source=$PSScriptRoot
 if (!$Destination) { $Destination=Join-Path $env:LOCALAPPDATA ('Programs\AdamanciaVault\'+$Environment) }
 $Destination=[IO.Path]::GetFullPath($Destination)

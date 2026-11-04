@@ -30,9 +30,8 @@ previous app directory, browser native-host registrations and Start menu shortcu
 reporting the error. If restoration itself fails, the error names the retained old-app
 backup path for recovery.
 
-Windows 10 22H2 and Windows 11 are the intended x64 targets. Runtime acceptance
-on each OS is required before claiming release support; a cross-build alone is
-insufficient. Windows ARM64 has no acceptance claim.
+Windows 11 x64 is the supported Beta 1 target. Setup.exe and Install.ps1 refuse
+Windows 10 and Windows Server. Windows ARM64 has no acceptance claim.
 
 Configuration locations/formats follow the native Mac client catalog with
 Windows paths. Default MCP registration runs only after its authenticated
