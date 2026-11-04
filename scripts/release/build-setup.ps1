@@ -17,8 +17,10 @@ try {
     [xml]$project=Get-Content "$repo\src\WindowsBlocker\WindowsBlocker.csproj" -Raw
     $version=($project.Project.PropertyGroup|Where-Object{$_.Version}|Select-Object -First 1).Version
     if($version -notmatch '^\d+\.\d+\.\d+$'){throw 'Missing current setup version.'}
+    $informationalVersion=($project.Project.PropertyGroup|Where-Object{$_.InformationalVersion}|Select-Object -First 1).InformationalVersion
+    if(!$informationalVersion -or !$informationalVersion.StartsWith($version)){throw 'Setup informational version must match the app.'}
     $metadata=Join-Path $temporary 'SetupVersion.cs'
-    [IO.File]::WriteAllText($metadata,"using System.Reflection; [assembly: AssemblyTitle(`"Windows Vault Setup`")] [assembly: AssemblyProduct(`"Windows Vault`")] [assembly: AssemblyVersion(`"$version.0`")] [assembly: AssemblyFileVersion(`"$version.0`")] [assembly: AssemblyInformationalVersion(`"$version-alpha`")]")
+    [IO.File]::WriteAllText($metadata,"using System.Reflection; [assembly: AssemblyTitle(`"Windows Vault Setup`")] [assembly: AssemblyProduct(`"Windows Vault`")] [assembly: AssemblyVersion(`"$version.0`")] [assembly: AssemblyFileVersion(`"$version.0`")] [assembly: AssemblyInformationalVersion(`"$informationalVersion`")]")
     & $compiler /nologo /target:winexe /platform:x64 /optimize+ "/win32manifest:$repo\src\WindowsBlocker\app.manifest" "/win32icon:$repo\src\WindowsBlocker\Assets\windows-vault.ico" "/out:$output" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll "/resource:$zip,VaultPayload" "/resource:$hash,VaultPayloadHash" "$PSScriptRoot\WindowsVaultSetup.cs" $metadata
     if($LASTEXITCODE -ne 0){throw 'Setup compilation failed.'}
     $setupHash=(Get-FileHash $output -Algorithm SHA256).Hash.ToLowerInvariant()

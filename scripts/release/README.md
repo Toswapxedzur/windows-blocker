@@ -5,7 +5,7 @@ bundled shared Classifier worker produced by `scripts/classifier-worker/` and
 checks its dependency hashes before publishing a self-contained x64 .NET app
 and native authentication/MCP helper. Exact .NET, WebView2 and worker dependency
 notices are included in the hashed payload. End users need no .NET SDK, Swift, Node or
-compiler. The current alpha build is distributed as an unsigned Setup.exe;
+compiler. The Windows package is distributed as an unsigned Setup.exe;
 Windows can show an unknown-publisher or SmartScreen warning.
 
 Open Setup.exe as your normal user. It installs for your account and then offers

@@ -137,6 +137,14 @@ public partial class MainWindow : Window
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        try { _ = _store.LoadUsageTimers(); }
+        catch (InvalidDataException error)
+        {
+            MessageBox.Show(this, error.Message + "\n\nSaved data was not changed: " + _store.FilePath,
+                "Vault data cannot be loaded", MessageBoxButton.OK, MessageBoxImage.Error);
+            Close();
+            return;
+        }
         _selfHwnd = new WindowInteropHelper(this).Handle;
         _engine.SetSelfWindow(_selfHwnd);
         await InitWebViewAsync();
