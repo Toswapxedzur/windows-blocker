@@ -50,6 +50,7 @@ public sealed class ConnectionHub
         public string Initiator { get; set; } = "";
         public Dictionary<string, string> Members { get; set; } = new();
         public HashSet<string> Contributed { get; set; } = new();
+        public bool? LinkEnabledSeed { get; set; }
         public JsonObject Scalars { get; set; } = new();
         public JsonArray Scopes { get; set; } = new();
         public JsonObject Lock { get; set; } = new();
@@ -334,6 +335,19 @@ public sealed class ConnectionHub
             var c = own ?? other ?? new Cluster { Name = Text(a["name"]), Initiator = program };
             if (IsLocked(c.Lock)) return "group-locked";
             if (c.Members.ContainsKey(program) && c.Members[program] != groupId || c.Members.ContainsKey(targetProgram) && c.Members[targetProgram] != targetGroupId) return "program-already-linked";
+            static bool? Enabled(JsonObject group) => group["enabled"]?.GetValueKind() switch { JsonValueKind.True => true, JsonValueKind.False => false, _ => null };
+            var previousEnabled = c.Scalars["enabled"]?.GetValueKind() switch { JsonValueKind.True => (bool?)true, JsonValueKind.False => false, _ => null };
+            var joining = new[] { (Program: program, Group: a), (Program: targetProgram, Group: b) }
+                .Where(member => !c.Members.ContainsKey(member.Program)).Select(member => Enabled(member.Group)).ToArray();
+            bool? linkEnabled = previousEnabled == true || joining.Any(value => value == true) ? true
+                : joining.All(value => value.HasValue) && (own == null && other == null || previousEnabled.HasValue) ? false : null;
+            c.LinkEnabledSeed = linkEnabled;
+            if ((own != null || other != null) && linkEnabled.HasValue && previousEnabled != linkEnabled)
+            {
+                c.Scalars["enabled"] = linkEnabled.Value;
+                c.Timestamp = Math.Max(c.Timestamp, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) + 1;
+                c.AiEpoch = Guid.NewGuid().ToString("N");
+            }
             c.Members[program] = groupId; c.Members[targetProgram] = targetGroupId; c.AiEpoch = Guid.NewGuid().ToString("N"); _clusters[c.Id] = c; Persist();
         }
         BroadcastClusters(); return null;
@@ -365,10 +379,12 @@ public sealed class ConnectionHub
             var first = !c.Contributed.Contains(program); var ts = Number(frame["ts"]); var priority = first && program == c.Initiator; var wins = priority || ts >= c.Timestamp;
             if (frame["scalars"] is JsonObject scalars && wins)
             {
-                if (c.Scalars["ruleAI"]?.ToJsonString() != scalars["ruleAI"]?.ToJsonString() || c.Scalars["enabled"]?.ToJsonString() != scalars["enabled"]?.ToJsonString())
+                var accepted = (JsonObject)scalars.DeepClone();
+                if (first && c.LinkEnabledSeed.HasValue) accepted["enabled"] = c.LinkEnabledSeed.Value;
+                if (c.Scalars["ruleAI"]?.ToJsonString() != accepted["ruleAI"]?.ToJsonString() || c.Scalars["enabled"]?.ToJsonString() != accepted["enabled"]?.ToJsonString())
                     c.AiEpoch = Guid.NewGuid().ToString("N");
-                var budgetChanged = new[] { "mode", "allowedMinutes", "resetIntervalHours", "resetAtMidnight", "rollingLimit" }.Any(k => c.Scalars.ContainsKey(k) && c.Scalars[k]?.ToJsonString() != scalars[k]?.ToJsonString());
-                c.Scalars = (JsonObject)scalars.DeepClone(); c.Timestamp = priority ? Math.Max(ts, c.Timestamp) + 1 : ts; c.Name = Text(c.Scalars["name"]);
+                var budgetChanged = new[] { "mode", "allowedMinutes", "resetIntervalHours", "resetAtMidnight", "rollingLimit" }.Any(k => c.Scalars.ContainsKey(k) && c.Scalars[k]?.ToJsonString() != accepted[k]?.ToJsonString());
+                c.Scalars = accepted; c.Timestamp = priority ? Math.Max(ts, c.Timestamp) + 1 : ts; c.Name = Text(c.Scalars["name"]);
                 if (budgetChanged) { c.Usage = 0; c.Anchor = DateTimeOffset.Now.ToUnixTimeMilliseconds(); c.Buckets.Clear(); c.UsageSeeded = c.BucketsSeeded = true; }
             }
             if (frame["scopes"] is JsonArray scopes && (first || wins))
@@ -382,6 +398,7 @@ public sealed class ConnectionHub
             }
             if (frame["lock"] is JsonObject incoming && (c.Lock.Count == 0 || !first && Number(frame["lockBase"]) == Number(c.Lock["lockVersion"]) && Number(incoming["lockVersion"]) > Number(c.Lock["lockVersion"]))) c.Lock = (JsonObject)incoming.DeepClone();
             if (frame.ContainsKey("scalars") || frame.ContainsKey("scopes")) c.Contributed.Add(program);
+            if (ts != 0 || c.Members.Keys.All(c.Contributed.Contains)) c.LinkEnabledSeed = null;
             if (c.Anchor <= 0 && Number(frame["usageResetAtMs"]) > 0) c.Anchor = Number(frame["usageResetAtMs"]);
             Roll(c);
             var now = DateTimeOffset.Now.ToUnixTimeMilliseconds();

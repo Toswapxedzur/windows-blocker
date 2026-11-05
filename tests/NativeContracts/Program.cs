@@ -97,6 +97,34 @@ hub.SetRoster("windowsapp", new JsonArray(new JsonObject { ["id"]="local",["name
 hub.SetRoster("chrome", new JsonArray(new JsonObject { ["id"]="browser",["name"]="Different",["frozen"]=false }));
 Check(hub.Link("windowsapp","local","chrome","browser") == null, "explicit link joins differently named groups");
 Check(JsonNode.Parse(hub.ClustersJson())?["clusters"]?[0]?["shared"]?["scopes"]==null,"Unseeded linked group does not overwrite scope lines");
+foreach (var nativeEnabled in new[] { false, true }) foreach (var browserEnabled in new[] { false, true })
+{
+    var enabledHub = new ConnectionHub();
+    enabledHub.SetRoster("windowsapp", new JsonArray(new JsonObject { ["id"]="local-enabled", ["name"]="Native", ["enabled"]=nativeEnabled }));
+    enabledHub.SetRoster("chrome", new JsonArray(new JsonObject { ["id"]="browser-enabled", ["name"]="Browser", ["enabled"]=browserEnabled }));
+    Check(enabledHub.Link("chrome", "browser-enabled", "windowsapp", "local-enabled") == null,
+        "Browser-initiated initial link accepts the original groups");
+    enabledHub.ApplySync("chrome", "browser-enabled", new JsonObject { ["scalars"] = new JsonObject { ["name"]="Browser", ["enabled"]=browserEnabled }, ["ts"]=0 });
+    enabledHub.ApplySync("windowsapp", "local-enabled", new JsonObject { ["scalars"] = new JsonObject { ["name"]="Native", ["enabled"]=nativeEnabled }, ["ts"]=0 });
+    Check(JsonNode.Parse(enabledHub.ClustersJson())?["clusters"]?[0]?["shared"]?["scalars"]?["enabled"]?.GetValue<bool>() == (nativeEnabled || browserEnabled),
+        "Initial shared enabled state is the OR of the original groups");
+    enabledHub.ApplySync("chrome", "browser-enabled", new JsonObject { ["scalars"] = new JsonObject { ["name"]="Changed", ["enabled"]=false }, ["ts"]=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() });
+    Check(JsonNode.Parse(enabledHub.ClustersJson())?["clusters"]?[0]?["shared"]?["scalars"]?["enabled"]?.GetValue<bool>() == false,
+        "A later explicit edit replaces the initial enabled merge");
+}
+{
+    var enabledHub = new ConnectionHub();
+    enabledHub.SetRoster("windowsapp", new JsonArray(new JsonObject { ["id"]="local-enabled", ["name"]="Native", ["enabled"]=false }));
+    enabledHub.SetRoster("chrome", new JsonArray(new JsonObject { ["id"]="browser-enabled", ["name"]="Browser", ["enabled"]=false }));
+    Check(enabledHub.Link("windowsapp", "local-enabled", "chrome", "browser-enabled") == null, "Disabled groups can link");
+    enabledHub.ApplySync("windowsapp", "local-enabled", new JsonObject { ["scalars"] = new JsonObject { ["name"]="Native", ["enabled"]=false }, ["ts"]=0 });
+    enabledHub.ApplySync("chrome", "browser-enabled", new JsonObject { ["scalars"] = new JsonObject { ["name"]="Browser", ["enabled"]=false }, ["ts"]=0 });
+    enabledHub.SetRoster("edge", new JsonArray(new JsonObject { ["id"]="edge-enabled", ["name"]="Edge", ["enabled"]=true }));
+    Check(enabledHub.Link("edge", "edge-enabled", "windowsapp", "local-enabled") == null, "Enabled member joins disabled shared group");
+    enabledHub.ApplySync("edge", "edge-enabled", new JsonObject { ["scalars"] = new JsonObject { ["name"]="Edge", ["enabled"]=true }, ["ts"]=0 });
+    Check(JsonNode.Parse(enabledHub.ClustersJson())?["clusters"]?[0]?["shared"]?["scalars"]?["enabled"]?.GetValue<bool>() == true,
+        "An enabled joining member enables the shared group");
+}
 Check(hub.SharedUsage("Same") == null, "display name never identifies a link");
 hub.ApplySync("windowsapp","local",new JsonObject { ["scalars"]=new JsonObject { ["name"]="Chosen",["allowedMinutes"]=10,["resetIntervalHours"]=24 },["scopes"]=new JsonArray(new JsonObject { ["id"]="apps-1",["surface"]="apps",["apps"]=new JsonArray() }),["ts"]=1 });
 hub.ApplySync("chrome","browser",new JsonObject { ["scalars"]=new JsonObject { ["name"]="Browser" },["scopes"]=new JsonArray(new JsonObject { ["id"]="site-1",["surface"]="site",["sites"]=new JsonArray("example.com") }),["usageMs"]=5000,["ts"]=1 });
