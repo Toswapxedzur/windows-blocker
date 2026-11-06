@@ -457,6 +457,12 @@ public sealed class ConnectionHub
     {
         lock (_gate) { var c = Find(LocalProgram, groupId); if (c == null) return null; Roll(c); return (c.Usage, c.Anchor, c.Buckets.ToDictionary(k => double.Parse(k.Key, System.Globalization.CultureInfo.InvariantCulture), k => Number(k.Value))); }
     }
+    private static string DefinitionKey(JsonObject group)
+    {
+        var scalars = new JsonObject(); foreach (var field in ScalarFields) if (group.ContainsKey(field)) scalars[field] = group[field]?.DeepClone();
+        var lockUnit = new JsonObject(); if (group.ContainsKey("lockVersion")) foreach (var field in LockFields) lockUnit[field] = group[field]?.DeepClone();
+        return scalars.ToJsonString() + group["scopes"]?.ToJsonString() + lockUnit.ToJsonString();
+    }
     public void ReconcileLocal(WebStore store)
     {
         if (JsonNode.Parse(store.LoadRawJson() ?? "{}") is not JsonObject document) return;
@@ -471,7 +477,7 @@ public sealed class ConnectionHub
                 ApplySync(LocalProgram,gid,new() { ["snooze"]=snooze.DeepClone(),["snoozeTs"]=SnoozeChanged(snooze),["ts"]=0 });
             var scalars = new JsonObject(); foreach (var field in ScalarFields) if (g.ContainsKey(field)) scalars[field] = g[field]?.DeepClone();
             var lockUnit = new JsonObject(); if(g.ContainsKey("lockVersion")) foreach (var field in LockFields) lockUnit[field]=g[field]?.DeepClone();
-            var definition = scalars.ToJsonString() + g["scopes"]?.ToJsonString() + lockUnit.ToJsonString();
+            var definition = DefinitionKey(g);
             var previous = _seenDefinitions.GetValueOrDefault(gid); if(previous==definition) continue; _seenDefinitions[gid]=definition;
             var joined=c.Contributed.Contains(LocalProgram);
             if(joined && previous==null) continue;
@@ -493,7 +499,7 @@ public sealed class ConnectionHub
                 if(c.SnoozeTotal>0) { var totals=root["groupSnoozeTotalsMs"] as JsonObject ?? new(); root["groupSnoozeTotalsMs"]=totals; totals[gid]=c.SnoozeTotal; }
                 foreach (var (k, v) in c.Lock) g[k] = v?.DeepClone();
                 if (c.Lock.Count > 0) g["lockSyncedVersion"] = c.Lock["lockVersion"]?.DeepClone();
-                _seenDefinitions[gid] = new JsonObject(ScalarFields.Where(g.ContainsKey).Select(k => KeyValuePair.Create(k, g[k]?.DeepClone()))).ToJsonString() + g["scopes"]?.ToJsonString();
+                _seenDefinitions[gid] = DefinitionKey(g);
             }
         });
     }

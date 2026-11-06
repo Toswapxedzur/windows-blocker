@@ -130,6 +130,26 @@ hub.ApplySync("windowsapp","local",new JsonObject { ["scalars"]=new JsonObject {
 hub.ApplySync("chrome","browser",new JsonObject { ["scalars"]=new JsonObject { ["name"]="Browser" },["scopes"]=new JsonArray(new JsonObject { ["id"]="site-1",["surface"]="site",["sites"]=new JsonArray("example.com") }),["usageMs"]=5000,["ts"]=1 });
 Check(hub.SharedUsage("local")?.Ms == 5000, "linked usage seeds once");
 
+// Repeated native reconciliation must not reclaim a later browser edit.
+var renameStore = new WebStore();
+renameStore.SaveRaw("""{"blockedGroups":[{"id":"native-rename","groupType":"site","name":"Before","enabled":false,"lockVersion":0,"lockedAtMs":null,"lockWaitHours":0,"scopes":[{"id":"apps-1","surface":"apps","apps":[]}]}]}""");
+var renameHub = new ConnectionHub();
+renameHub.SetRoster("chrome", new JsonArray(new JsonObject { ["id"]="browser-rename", ["name"]="Before", ["enabled"] = false }));
+renameHub.ReconcileLocal(renameStore);
+Check(renameHub.Link("windowsapp", "native-rename", "chrome", "browser-rename") == null, "native and browser rename fixtures link");
+renameHub.ReconcileLocal(renameStore);
+var settledRevision = JsonNode.Parse(renameHub.ClustersJson())?["clusters"]?[0]?["shared"]?["ts"]?.GetValue<double>();
+Thread.Sleep(5);
+renameHub.ReconcileLocal(renameStore);
+Check(JsonNode.Parse(renameHub.ClustersJson())?["clusters"]?[0]?["shared"]?["ts"]?.GetValue<double>() == settledRevision,
+    "unchanged native definition does not publish a newer linked revision");
+renameHub.ApplySync("chrome", "browser-rename", new JsonObject { ["scalars"] = new JsonObject { ["name"]="From Browser", ["enabled"] = false }, ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 1000 });
+renameHub.ReconcileLocal(renameStore);
+renameHub.ReconcileLocal(renameStore);
+Check(JsonNode.Parse(renameHub.ClustersJson())?["clusters"]?[0]?["shared"]?["scalars"]?["name"]?.ToString() == "From Browser"
+    && JsonNode.Parse(renameStore.LoadRawJson()!)?["blockedGroups"]?[0]?["name"]?.ToString() == "From Browser",
+    "repeated native reconciliation preserves a browser-side linked edit");
+
 hub.ReportLocalUsage("local",1000,now.ToUnixTimeMilliseconds()); Check(hub.SharedUsage("local")?.Ms == 6000, "linked usage accumulates deltas");
 hub.SetRoster("chrome",new JsonArray(new JsonObject { ["id"]="replacement",["name"]="Different" }));
 Check(hub.ActiveClusterCount()==0, "delete and recreate does not rejoin by name");
